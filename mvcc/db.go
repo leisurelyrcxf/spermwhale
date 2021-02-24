@@ -83,7 +83,7 @@ func NewDB() *DB {
 }
 
 func (db *DB) Get(key string, upperVersion uint64) (types.VersionedValue, error) {
-	vvs, err := db.getDBVersionedValues(key)
+	vvs, err := db.getVersionedValues(key)
 	if err != nil {
 		return types.VersionedValue{}, err
 	}
@@ -94,19 +94,9 @@ func (db *DB) Set(key string, val string, version uint64, writeIntent bool) {
 	db.values.GetLazy(key, func() interface{} {
 		return NewDBVersionedValues()
 	}).(*VersionedValues).Put(val, version, writeIntent)
-
-	//var vvs VersionedValues
-	//vvsObj, ok := db.values.Get(key)
-	//if !ok {
-	//	vvs = NewDBVersionedValues()
-	//	db.values.Set(key, vvs)
-	//} else {
-	//	vvs = vvsObj.(VersionedValues)
-	//}
-	//vvs.Put(writtenTxn.GetTimestamp(), NewValue(val, writtenTxn))
 }
 
-func (db *DB) getDBVersionedValues(key string) (*VersionedValues, error) {
+func (db *DB) getVersionedValues(key string) (*VersionedValues, error) {
 	val, ok := db.values.Get(key)
 	if !ok {
 		return nil, ErrKeyNotExist
@@ -115,7 +105,7 @@ func (db *DB) getDBVersionedValues(key string) (*VersionedValues, error) {
 }
 
 func (db *DB) MustRemoveVersion(key string, version uint64) {
-	vvs, err := db.getDBVersionedValues(key)
+	vvs, err := db.getVersionedValues(key)
 	assert.MustNoError(err)
 	_, err = vvs.Get(version)
 	assert.MustNoError(err)
@@ -123,7 +113,7 @@ func (db *DB) MustRemoveVersion(key string, version uint64) {
 }
 
 func (db *DB) MustClearVersions(key string) {
-	vvs, err := db.getDBVersionedValues(key)
+	vvs, err := db.getVersionedValues(key)
 	assert.MustNoError(err)
 	vvs.Clear()
 }

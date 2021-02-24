@@ -1,0 +1,118 @@
+package tablet
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/leisurelyrcxf/spermwhale/data_struct"
+	"github.com/leisurelyrcxf/spermwhale/mvcc"
+	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
+	"github.com/leisurelyrcxf/spermwhale/sync2"
+	"github.com/leisurelyrcxf/spermwhale/types"
+)
+
+const (
+	ErrCodeVersionConflict = 1
+)
+
+var (
+	ErrVersionConflict = fmt.Errorf("version conflict")
+)
+
+type TimestampCache struct {
+	m data_struct.ConcurrentMap
+}
+
+func NewTimestampCache() *TimestampCache {
+	return &TimestampCache{
+		m: data_struct.NewConcurrentMap(64),
+	}
+}
+
+func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
+	v, ok := cache.m.Get(key)
+	if !ok {
+		return 0
+	}
+	return v.(uint64)
+}
+
+func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (success bool, prev uint64) {
+	b, v := cache.m.SetIf(key, version, func(prev interface{}, exist bool) bool {
+		if !exist {
+			return true
+		}
+		return version > prev.(uint64)
+	})
+	if v == nil {
+		return b, 0
+	}
+	return b, v.(uint64)
+}
+
+type KV struct {
+	kvpb.UnimplementedKVServer
+
+	lm      *sync2.LockManager
+	tsCache *TimestampCache
+	db      *mvcc.DB
+}
+
+func NewKV() *KV {
+	return &KV{
+		lm:      sync2.NewLockManager(),
+		tsCache: NewTimestampCache(),
+		db:      mvcc.NewDB(),
+	}
+}
+
+func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, error) {
+	vv, err := kv.get(req.Key, req.Version)
+	if err != nil {
+		return &kvpb.GetResponse{
+			Err: &kvpb.Error{
+				Code: -1,
+				Msg:  err.Error(),
+			},
+		}, nil
+	}
+	return &kvpb.GetResponse{
+		V: &kvpb.VersionedValue{
+			Value: &kvpb.Value{
+				Meta: &kvpb.ValueMeta{WriteIntent: vv.M.WriteIntent},
+				Val:  vv.V,
+			},
+			Version: vv.Version,
+		},
+	}, nil
+}
+
+func (kv *KV) Set(_ context.Context, req *kvpb.SetRequest) (*kvpb.SetResponse, error) {
+	err := kv.set(req.Key, req.Value.Value.Val, req.Value.Version, req.Value.Value.Meta.WriteIntent)
+	return &kvpb.SetResponse{Err: kvpb.ToPBError(err)}, nil
+}
+
+func (kv *KV) get(key string, version uint64) (types.VersionedValue, error) {
+	kv.lm.Lock(key)
+	defer kv.lm.Unlock(key)
+
+	kv.tsCache.UpdateMaxReadVersion(key, version)
+	return kv.db.Get(key, version)
+}
+
+func (kv *KV) set(key string, val string, version uint64, writeIntent bool) *types.Error {
+	kv.lm.Lock(key)
+	defer kv.lm.Unlock(key)
+
+	maxVersion := kv.tsCache.GetMaxReadVersion(key)
+	if version < maxVersion {
+		return &types.Error{
+			Code: ErrCodeVersionConflict,
+			Msg:  ErrVersionConflict.Error(),
+		}
+	}
+	kv.db.Set(key, val, version, writeIntent)
+	return nil
+}
+
+func (kv *KV) mustEmbedUnimplementedKVServer() {}

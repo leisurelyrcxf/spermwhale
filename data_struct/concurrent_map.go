@@ -52,7 +52,7 @@ func (cmp *concurrentMapPartition) setIf(key string, val interface{}, pred func(
 	prev, ok := cmp.m[key]
 	if pred(prev, ok) {
 		cmp.m[key] = val
-		return true, nil
+		return true, prev
 	}
 	return false, prev
 }
@@ -76,7 +76,7 @@ type ConcurrentMap struct {
 func NewConcurrentMap(partitionNum int) ConcurrentMap {
 	cm := ConcurrentMap{partitions: make([]*concurrentMapPartition, partitionNum)}
 	for i := 0; i < partitionNum; i++ {
-		cm.partitions[i] = &concurrentMapPartition{m:make(map[string]interface{})}
+		cm.partitions[i] = &concurrentMapPartition{m: make(map[string]interface{})}
 	}
 	return cm
 }

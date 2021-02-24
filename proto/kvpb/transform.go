@@ -6,6 +6,16 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
+func ToPBError(e *types.Error) *Error {
+	if e == nil {
+		return nil
+	}
+	return &Error{
+		Code: int32(e.Code),
+		Msg:  e.Msg,
+	}
+}
+
 func (x *Error) Error() error {
 	if x == nil {
 		return nil

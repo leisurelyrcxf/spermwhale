@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
@@ -71,58 +70,6 @@ func (c *Client) Set(ctx context.Context, key, val string, version uint64, write
 	return resp.Err.Error()
 }
 
-func (c *Client) Del(ctx context.Context, key string) error {
-	resp, err := c.kv.Del(ctx, &kvpb.DelRequest{
-		Key: key,
-	})
-	if err != nil {
-		return err
-	}
-	if resp == nil {
-		return NilSetResponse
-	}
-	return resp.Err.Error()
-}
-
 func (c *Client) Close() error {
 	return c.conn.Close()
 }
-
-type KV struct {
-	kvpb.UnimplementedKVServer
-	db *mvcc.DB
-}
-
-func NewKV() *KV {
-	return &KV{
-		db: mvcc.NewDB(),
-	}
-}
-
-func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, error) {
-	vv, err := kv.db.Get(req.Key, req.Version)
-	if err != nil {
-		return &kvpb.GetResponse{
-			Err: &kvpb.Error{
-				Code: -1,
-				Msg:  err.Error(),
-			},
-		}, nil
-	}
-	return &kvpb.GetResponse{
-		V: &kvpb.VersionedValue{
-			Value: &kvpb.Value{
-				Meta: &kvpb.ValueMeta{WriteIntent: vv.M.WriteIntent},
-				Val:  vv.V,
-			},
-			Version: vv.Version,
-		},
-	}, nil
-}
-
-func (kv *KV) Set(_ context.Context, req *kvpb.SetRequest) (*kvpb.SetResponse, error) {
-	kv.db.Set(req.Key, req.Value.Value.Val, req.Value.Version, req.Value.Value.Meta.WriteIntent)
-	return &kvpb.SetResponse{}, nil
-}
-
-func (kv *KV) mustEmbedUnimplementedKVServer() {}
