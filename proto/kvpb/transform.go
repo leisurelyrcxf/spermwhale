@@ -15,7 +15,12 @@ func (x *Error) Error() error {
 
 func (x *VersionedValue) ToVersionedValue() types.VersionedValue {
 	return types.VersionedValue{
-		Value:   x.Value,
+		Value: types.Value{
+			V: x.Value.Val,
+			M: types.Meta{
+				WriteIntent: x.Value.Meta.WriteIntent,
+			},
+		},
 		Version: x.Version,
 	}
 }

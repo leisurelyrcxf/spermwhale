@@ -9,10 +9,20 @@ message Error {
     string msg = 2;
 }
 
+message ValueMeta {
+    bool write_intent = 1;
+}
+
+message Value {
+    ValueMeta Meta = 1;
+    string val = 2;
+}
+
 message VersionedValue {
-    string value = 1;
+    Value value = 1;
     uint64 version = 2;
 }
+
 message GetRequest {
     string key = 1;
     uint64 version = 2;

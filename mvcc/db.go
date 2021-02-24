@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	KeyNotExist     = fmt.Errorf("key not exist")
-	VersionNotExist = fmt.Errorf("version not exist")
+	ErrKeyNotExist     = fmt.Errorf("key not exist")
+	ErrVersionNotExist = fmt.Errorf("version not exist")
 )
 
 type VersionedValues struct {
@@ -20,39 +20,46 @@ type VersionedValues struct {
 func NewDBVersionedValues() *VersionedValues {
 	return &VersionedValues{
 		ConcurrentTreeMap: *data_struct.NewConcurrentTreeMap(func(a, b interface{}) int {
-			return -int(a.(uint64) - b.(uint64))
+			av, bv := a.(uint64), b.(uint64)
+			if av > bv {
+				return -1
+			}
+			if av == bv {
+				return 0
+			}
+			return 1
 		}),
 	}
 }
 
-func (vvs *VersionedValues) Get(version uint64) (string, error) {
+func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	val, ok := vvs.ConcurrentTreeMap.Get(version)
 	if ok {
-		return val.(string), nil
+		return val.(types.Value), nil
 	}
-	return "", VersionNotExist
+	return types.Value{}, ErrVersionNotExist
 }
 
-func (vvs *VersionedValues) Put(dbValue string, version uint64) {
-	vvs.ConcurrentTreeMap.Put(version, dbValue)
+func (vvs *VersionedValues) Put(dbValue string, version uint64, writeIntent bool) {
+	vvs.ConcurrentTreeMap.Put(version, types.NewValue(dbValue, writeIntent))
 }
 
 func (vvs *VersionedValues) Max() (types.VersionedValue, error) {
 	// Key is revered sorted, thus min is actually max version..
 	key, dbVal := vvs.ConcurrentTreeMap.Min()
 	if key == nil {
-		return types.VersionedValue{}, VersionNotExist
+		return types.VersionedValue{}, ErrVersionNotExist
 	}
-	return types.NewVersionedValue(dbVal.(string), key.(uint64)), nil
+	return types.NewVersionedValue(dbVal.(types.Value), key.(uint64)), nil
 }
 
 func (vvs *VersionedValues) Min() (types.VersionedValue, error) {
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := vvs.ConcurrentTreeMap.Max()
 	if key == nil {
-		return types.VersionedValue{}, VersionNotExist
+		return types.VersionedValue{}, ErrVersionNotExist
 	}
-	return types.NewVersionedValue(dbVal.(string), key.(uint64)), nil
+	return types.NewVersionedValue(dbVal.(types.Value), key.(uint64)), nil
 }
 
 func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.VersionedValue, error) {
@@ -60,9 +67,9 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.VersionedVa
 		return key.(uint64) <= upperVersion
 	})
 	if version == nil {
-		return types.VersionedValue{}, VersionNotExist
+		return types.VersionedValue{}, ErrVersionNotExist
 	}
-	return types.NewVersionedValue(dbVal.(string), version.(uint64)), nil
+	return types.NewVersionedValue(dbVal.(types.Value), version.(uint64)), nil
 }
 
 type DB struct {
@@ -83,10 +90,10 @@ func (db *DB) Get(key string, upperVersion uint64) (types.VersionedValue, error)
 	return vvs.FindMaxBelow(upperVersion)
 }
 
-func (db *DB) Set(key string, val string, version uint64) {
+func (db *DB) Set(key string, val string, version uint64, writeIntent bool) {
 	db.values.GetLazy(key, func() interface{} {
 		return NewDBVersionedValues()
-	}).(*VersionedValues).Put(val, version)
+	}).(*VersionedValues).Put(val, version, writeIntent)
 
 	//var vvs VersionedValues
 	//vvsObj, ok := db.values.Get(key)
@@ -99,12 +106,12 @@ func (db *DB) Set(key string, val string, version uint64) {
 	//vvs.Put(writtenTxn.GetTimestamp(), NewValue(val, writtenTxn))
 }
 
-func (db *DB) getDBVersionedValues(key string) (VersionedValues, error) {
+func (db *DB) getDBVersionedValues(key string) (*VersionedValues, error) {
 	val, ok := db.values.Get(key)
 	if !ok {
-		return VersionedValues{}, KeyNotExist
+		return nil, ErrKeyNotExist
 	}
-	return val.(VersionedValues), nil
+	return val.(*VersionedValues), nil
 }
 
 func (db *DB) MustRemoveVersion(key string, version uint64) {

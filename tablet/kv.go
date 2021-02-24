@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
-
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
@@ -52,11 +51,14 @@ func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Ver
 	return resp.V.ToVersionedValue(), nil
 }
 
-func (c *Client) Set(ctx context.Context, key, val string, version uint64) error {
+func (c *Client) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
 	resp, err := c.kv.Set(ctx, &kvpb.SetRequest{
 		Key: key,
 		Value: &kvpb.VersionedValue{
-			Value:   val,
+			Value: &kvpb.Value{
+				Meta: &kvpb.ValueMeta{WriteIntent: writeIntent},
+				Val:  val,
+			},
 			Version: version,
 		},
 	})
@@ -66,10 +68,20 @@ func (c *Client) Set(ctx context.Context, key, val string, version uint64) error
 	if resp == nil {
 		return NilSetResponse
 	}
-	if resp.Err != nil {
-		return resp.Err.Error()
+	return resp.Err.Error()
+}
+
+func (c *Client) Del(ctx context.Context, key string) error {
+	resp, err := c.kv.Del(ctx, &kvpb.DelRequest{
+		Key: key,
+	})
+	if err != nil {
+		return err
 	}
-	return nil
+	if resp == nil {
+		return NilSetResponse
+	}
+	return resp.Err.Error()
 }
 
 func (c *Client) Close() error {
@@ -79,6 +91,12 @@ func (c *Client) Close() error {
 type KV struct {
 	kvpb.UnimplementedKVServer
 	db *mvcc.DB
+}
+
+func NewKV() *KV {
+	return &KV{
+		db: mvcc.NewDB(),
+	}
 }
 
 func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, error) {
@@ -93,13 +111,17 @@ func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, e
 	}
 	return &kvpb.GetResponse{
 		V: &kvpb.VersionedValue{
-			Value:   vv.Value,
+			Value: &kvpb.Value{
+				Meta: &kvpb.ValueMeta{WriteIntent: vv.M.WriteIntent},
+				Val:  vv.V,
+			},
 			Version: vv.Version,
 		},
 	}, nil
 }
+
 func (kv *KV) Set(_ context.Context, req *kvpb.SetRequest) (*kvpb.SetResponse, error) {
-	kv.db.Set(req.Key, req.Value.Value, req.Value.Version)
+	kv.db.Set(req.Key, req.Value.Value.Val, req.Value.Version, req.Value.Value.Meta.WriteIntent)
 	return &kvpb.SetResponse{}, nil
 }
 
