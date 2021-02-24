@@ -44,6 +44,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (string, error) {
 	}
 	assert.Must(vv.Version <= txn.ID)
 	if !vv.M.WriteIntent {
+		// committed value
 		return vv.V, nil
 	}
 	writeTxn, err := txn.tm.GetTxn(vv.Version)

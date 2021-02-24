@@ -2,29 +2,21 @@ package types
 
 type Meta struct {
 	WriteIntent bool
+	Version     uint64
 }
 
 type Value struct {
-	M Meta
+	Meta
 
 	V string
 }
 
-func NewValue(v string, writeIntent bool) Value {
+func NewValue(v string, version uint64, writeIntent bool) Value {
 	return Value{
 		V: v,
-		M: Meta{WriteIntent: writeIntent},
-	}
-}
-
-type VersionedValue struct {
-	Value
-	Version uint64
-}
-
-func NewVersionedValue(val Value, version uint64) VersionedValue {
-	return VersionedValue{
-		Value:   val,
-		Version: version,
+		Meta: Meta{
+			WriteIntent: writeIntent,
+			Version:     version,
+		},
 	}
 }

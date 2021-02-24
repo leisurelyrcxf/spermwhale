@@ -77,22 +77,22 @@ func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, e
 		}, nil
 	}
 	return &kvpb.GetResponse{
-		V: &kvpb.VersionedValue{
-			Value: &kvpb.Value{
-				Meta: &kvpb.ValueMeta{WriteIntent: vv.M.WriteIntent},
-				Val:  vv.V,
+		V: &kvpb.Value{
+			Meta: &kvpb.ValueMeta{
+				WriteIntent: vv.WriteIntent,
+				Version:     vv.Version,
 			},
-			Version: vv.Version,
+			Val: vv.V,
 		},
 	}, nil
 }
 
 func (kv *KV) Set(_ context.Context, req *kvpb.SetRequest) (*kvpb.SetResponse, error) {
-	err := kv.set(req.Key, req.Value.Value.Val, req.Value.Version, req.Value.Value.Meta.WriteIntent)
+	err := kv.set(req.Key, req.Value.Val, req.Value.Meta.Version, req.Value.Meta.WriteIntent)
 	return &kvpb.SetResponse{Err: kvpb.ToPBError(err)}, nil
 }
 
-func (kv *KV) get(key string, version uint64) (types.VersionedValue, error) {
+func (kv *KV) get(key string, version uint64) (types.Value, error) {
 	kv.lm.Lock(key)
 	defer kv.lm.Unlock(key)
 

@@ -11,16 +11,12 @@ message Error {
 
 message ValueMeta {
     bool write_intent = 1;
+    uint64 version = 2;
 }
 
 message Value {
     ValueMeta Meta = 1;
     string val = 2;
-}
-
-message VersionedValue {
-    Value value = 1;
-    uint64 version = 2;
 }
 
 message GetRequest {
@@ -29,13 +25,13 @@ message GetRequest {
 }
 
 message GetResponse {
-    VersionedValue v = 1;
+    Value v = 1;
     Error err = 2;
 }
 
 message SetRequest {
     string key = 1;
-    VersionedValue value = 2;
+    Value value = 2;
 }
 
 message SetResponse {

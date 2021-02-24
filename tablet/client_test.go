@@ -76,8 +76,8 @@ func TestKV_Get(t *testing.T) {
 			return
 		}
 		assert.Equal(uint64(1), vv.Version)
-		assert.Equal("v1", vv.Value.V)
-		assert.Equal(true, vv.Value.M.WriteIntent)
+		assert.Equal("v1", vv.V)
+		assert.Equal(true, vv.WriteIntent)
 	}
 
 	{
@@ -86,8 +86,8 @@ func TestKV_Get(t *testing.T) {
 			return
 		}
 		assert.Equal(uint64(2), vv.Version)
-		assert.Equal("v2", vv.Value.V)
-		assert.Equal(false, vv.Value.M.WriteIntent)
+		assert.Equal("v2", vv.V)
+		assert.Equal(false, vv.WriteIntent)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestKV_Get2(t *testing.T) {
 			return
 		}
 		assert.Equal(uint64(1), vv.Version)
-		assert.Equal("v1", vv.Value.V)
-		assert.Equal(true, vv.Value.M.WriteIntent)
+		assert.Equal("v1", vv.V)
+		assert.Equal(true, vv.WriteIntent)
 	}
 
 	{
@@ -136,8 +136,8 @@ func TestKV_Get2(t *testing.T) {
 			return
 		}
 		assert.Equal(uint64(2), vv.Version)
-		assert.Equal("v2", vv.Value.V)
-		assert.Equal(false, vv.Value.M.WriteIntent)
+		assert.Equal("v2", vv.V)
+		assert.Equal(false, vv.WriteIntent)
 	}
 
 	err = client.Set(ctx, "k1", "v5", 5, true)

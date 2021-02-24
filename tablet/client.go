@@ -30,35 +30,35 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, version uint64) (types.VersionedValue, error) {
+func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
 	resp, err := c.kv.Get(ctx, &kvpb.GetRequest{
 		Key:     key,
 		Version: version,
 	})
 	if err != nil {
-		return types.VersionedValue{}, err
+		return types.Value{}, err
 	}
 	if resp == nil {
-		return types.VersionedValue{}, NilGetResponse
+		return types.Value{}, NilGetResponse
 	}
 	if resp.Err != nil {
-		return types.VersionedValue{}, resp.Err.Error()
+		return types.Value{}, resp.Err.Error()
 	}
 	if resp.V == nil {
-		return types.VersionedValue{}, NilGetResponse
+		return types.Value{}, NilGetResponse
 	}
-	return resp.V.ToVersionedValue(), nil
+	return resp.V.ToValue(), nil
 }
 
 func (c *Client) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
 	resp, err := c.kv.Set(ctx, &kvpb.SetRequest{
 		Key: key,
-		Value: &kvpb.VersionedValue{
-			Value: &kvpb.Value{
-				Meta: &kvpb.ValueMeta{WriteIntent: writeIntent},
-				Val:  val,
+		Value: &kvpb.Value{
+			Meta: &kvpb.ValueMeta{
+				WriteIntent: writeIntent,
+				Version:     version,
 			},
-			Version: version,
+			Val: val,
 		},
 	})
 	if err != nil {
