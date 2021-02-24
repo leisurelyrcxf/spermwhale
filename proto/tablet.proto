@@ -2,22 +2,9 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "proto/kvpb";
+import "common.proto";
 
-message Error {
-    int32 code = 1;
-    string msg = 2;
-}
-
-message ValueMeta {
-    bool write_intent = 1;
-    uint64 version = 2;
-}
-
-message Value {
-    ValueMeta Meta = 1;
-    string val = 2;
-}
+option go_package = "proto/tabletpb";
 
 message GetRequest {
     string key = 1;
@@ -35,7 +22,7 @@ message SetRequest {
 }
 
 message SetResponse {
-    Error err = 2;
+    Error err = 1;
 }
 
 

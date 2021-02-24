@@ -1,4 +1,4 @@
-package kvpb
+package commonpb
 
 import (
 	"fmt"

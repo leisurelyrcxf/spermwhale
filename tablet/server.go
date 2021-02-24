@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+
 	"github.com/leisurelyrcxf/spermwhale/data_struct"
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
-	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
+	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/sync2"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -51,7 +53,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 }
 
 type KV struct {
-	kvpb.UnimplementedKVServer
+	tabletpb.UnimplementedKVServer
 
 	lm      *sync2.LockManager
 	tsCache *TimestampCache
@@ -66,19 +68,19 @@ func NewKV(db mvcc.DB) *KV {
 	}
 }
 
-func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, error) {
+func (kv *KV) Get(_ context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
 	vv, err := kv.get(req.Key, req.Version)
 	if err != nil {
-		return &kvpb.GetResponse{
-			Err: &kvpb.Error{
+		return &tabletpb.GetResponse{
+			Err: &tabletpb.Error{
 				Code: -1,
 				Msg:  err.Error(),
 			},
 		}, nil
 	}
-	return &kvpb.GetResponse{
-		V: &kvpb.Value{
-			Meta: &kvpb.ValueMeta{
+	return &tabletpb.GetResponse{
+		V: &tabletpb.Value{
+			Meta: &tabletpb.ValueMeta{
 				WriteIntent: vv.WriteIntent,
 				Version:     vv.Version,
 			},
@@ -87,9 +89,9 @@ func (kv *KV) Get(_ context.Context, req *kvpb.GetRequest) (*kvpb.GetResponse, e
 	}, nil
 }
 
-func (kv *KV) Set(_ context.Context, req *kvpb.SetRequest) (*kvpb.SetResponse, error) {
+func (kv *KV) Set(_ context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
 	err := kv.set(req.Key, req.Value.Val, req.Value.Meta.Version, req.Value.Meta.WriteIntent)
-	return &kvpb.SetResponse{Err: kvpb.ToPBError(err)}, nil
+	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
 }
 
 func (kv *KV) get(key string, version uint64) (types.Value, error) {

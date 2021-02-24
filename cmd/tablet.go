@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
+	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/tablet"
 	"google.golang.org/grpc"
 )
@@ -20,7 +20,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	kvpb.RegisterKVServer(grpcServer, tablet.NewKV())
+	tabletpb.RegisterKVServer(grpcServer, tablet.NewKV())
 	if err := grpcServer.Serve(lis); err != nil {
 		glog.Fatalf("serve failed: %v", err)
 	}

@@ -13,4 +13,6 @@
 # If this is not what you need, feel free to make your own scripts. Again, this
 # script is for demonstration purpose.
 #
-protoc --go_out=. --go-grpc_out=. proto/kv.proto
+protoc --go_out=. --go-grpc_out=. proto/common.proto
+protoc --go_out=. --go-grpc_out=. --proto_path proto proto/gate.proto
+protoc --go_out=. --go-grpc_out=. --proto_path proto proto/tablet.proto

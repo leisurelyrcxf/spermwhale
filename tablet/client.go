@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
+	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
 )
@@ -15,7 +15,7 @@ var (
 )
 
 type Client struct {
-	kv   kvpb.KVClient
+	kv   tabletpb.KVClient
 	conn *grpc.ClientConn
 }
 
@@ -26,12 +26,12 @@ func NewClient(serverAddr string) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		kv:   kvpb.NewKVClient(conn),
+		kv:   tabletpb.NewKVClient(conn),
 	}, nil
 }
 
 func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
-	resp, err := c.kv.Get(ctx, &kvpb.GetRequest{
+	resp, err := c.kv.Get(ctx, &tabletpb.GetRequest{
 		Key:     key,
 		Version: version,
 	})
@@ -51,10 +51,10 @@ func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Val
 }
 
 func (c *Client) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
-	resp, err := c.kv.Set(ctx, &kvpb.SetRequest{
+	resp, err := c.kv.Set(ctx, &tabletpb.SetRequest{
 		Key: key,
-		Value: &kvpb.Value{
-			Meta: &kvpb.ValueMeta{
+		Value: &tabletpb.Value{
+			Meta: &tabletpb.ValueMeta{
 				WriteIntent: writeIntent,
 				Version:     version,
 			},

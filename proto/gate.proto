@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package proto;
+
+import "common.proto";
+
+option go_package = "proto/gatepb";
+
+message GetRequest {
+    string key = 1;
+    uint64 version = 2;
+    uint64 txn_id = 3;
+}
+
+message GetResponse {
+    Value v = 1;
+    Error err = 2;
+}
+
+message SetRequest {
+    string key = 1;
+    Value value = 2;
+    uint64 txn_id = 3;
+}
+
+message SetResponse {
+    Error err = 1;
+}
+
+message BeginRequest {
+
+}
+
+message BeginResponse {
+    uint64 txn_id = 1;
+    Error err = 2;
+}
+
+message RollbackRequest {
+    uint64 txn_id = 1;
+}
+
+message RollbackResponse {
+    Error err = 1;
+}
+
+message CommitRequest {
+    uint64 txn_id = 1;
+}
+
+message CommitResponse {
+    Error err = 1;
+}
+
+
+service Txn {
+    rpc Begin(BeginRequest) returns (BeginResponse) {}
+    rpc Get(GetRequest) returns (GetResponse) {}
+    rpc Set(SetRequest) returns (SetResponse) {}
+    rpc Rollback(RollbackRequest) returns (RollbackResponse) {}
+    rpc Commit(CommitRequest) returns (CommitResponse) {}
+}

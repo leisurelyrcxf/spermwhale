@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "proto/commonpb";
+
+message Error {
+    int32 code = 1;
+    string msg = 2;
+}
+
+message ValueMeta {
+    bool write_intent = 1;
+    uint64 version = 2;
+}
+
+message Value {
+    ValueMeta Meta = 1;
+    string val = 2;
+}
