@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
+
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 	"google.golang.org/grpc"
 
@@ -21,7 +23,8 @@ func StartTabletServer(t *testing.T) (stopper func()) {
 	}
 
 	grpcServer := grpc.NewServer()
-	kvpb.RegisterKVServer(grpcServer, NewKV())
+	db := memory.NewDB()
+	kvpb.RegisterKVServer(grpcServer, NewKV(db))
 
 	done := make(chan struct{})
 

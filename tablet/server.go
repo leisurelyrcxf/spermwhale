@@ -55,14 +55,14 @@ type KV struct {
 
 	lm      *sync2.LockManager
 	tsCache *TimestampCache
-	db      *mvcc.DB
+	db      mvcc.DB
 }
 
-func NewKV() *KV {
+func NewKV(db mvcc.DB) *KV {
 	return &KV{
 		lm:      sync2.NewLockManager(),
 		tsCache: NewTimestampCache(),
-		db:      mvcc.NewDB(),
+		db:      db,
 	}
 }
 
