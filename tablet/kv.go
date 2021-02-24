@@ -2,7 +2,6 @@ package tablet
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 
@@ -17,8 +16,8 @@ const (
 	ErrCodeVersionConflict = 1
 )
 
-var (
-	ErrVersionConflict = fmt.Errorf("version conflict")
+const (
+	ErrMsgVersionConflict = "version conflict"
 )
 
 type TimestampCache struct {
@@ -110,7 +109,7 @@ func (kv *KV) set(key string, val string, version uint64, writeIntent bool) *typ
 	if version < maxVersion {
 		return &types.Error{
 			Code: ErrCodeVersionConflict,
-			Msg:  ErrVersionConflict.Error(),
+			Msg:  ErrMsgVersionConflict,
 		}
 	}
 	kv.db.Set(key, val, version, writeIntent)

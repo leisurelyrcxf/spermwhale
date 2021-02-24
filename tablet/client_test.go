@@ -27,7 +27,7 @@ func TestKV_Get(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	_, err = client.Get(ctx, "k1", 10)
+	_, err = client.Get(ctx, "k1", 0)
 	assert.Error(err)
 
 	if !assert.NoError(client.Set(ctx, "k1", "v1", 1, true)) {
@@ -108,5 +108,5 @@ func TestKV_Get2(t *testing.T) {
 
 	err = client.Set(ctx, "k1", "v5", 5, true)
 	assert.Error(err)
-	t.Logf("set error: %v", err)
+	assert.Contains(err.Error(), ErrMsgVersionConflict)
 }

@@ -63,5 +63,6 @@ func (s *Server) Start() error {
 
 func (s *Server) Stop() {
 	s.grpcServer.Stop()
+	_ = s.client.Close()
 	<-s.Done
 }

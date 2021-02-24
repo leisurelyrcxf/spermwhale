@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/models/common"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/utils/errors"
@@ -272,6 +274,9 @@ func (c *Client) Read(path string, must bool) ([]byte, error) {
 
 	b, err := ioutil.ReadFile(realpath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, common.ErrKeyNotExists
+		}
 		glog.Warningf("fsclient - read %s failed", path)
 		return nil, errors.Trace(err)
 	}

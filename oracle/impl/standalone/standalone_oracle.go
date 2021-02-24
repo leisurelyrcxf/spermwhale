@@ -47,7 +47,7 @@ func NewOracle(allocInAdvance uint64, c models.Client) (*Oracle, error) {
 		next = persisted + 1
 	}
 	return &Oracle{
-		counter:   sync2.NewAtomicUint64(0),
+		counter:   sync2.NewAtomicUint64(next),
 		persisted: sync2.NewAtomicUint64(next),
 		client:    c,
 
@@ -70,7 +70,7 @@ func (o *Oracle) Fetch(context.Context, *oraclepb.FetchRequest) (*oraclepb.Fetch
 
 func (o *Oracle) FetchTimestamp() (uint64, error) {
 	for {
-		if current, persisted := o.counter.Get(), o.persisted.Get(); current < persisted {
+		if current, persisted := o.counter.Get(), o.persisted.Get(); current+o.allocInAdvance/3 < persisted {
 			if o.counter.CompareAndSwap(current, current+1) {
 				return current + 1, nil
 			}
@@ -85,7 +85,7 @@ func (o *Oracle) alloc(counter uint64) {
 	defer o.Unlock()
 
 	oldPersisted := o.persisted.Get()
-	if counter < oldPersisted {
+	if counter+o.allocInAdvance/3 < oldPersisted {
 		return
 	}
 	newPersisted := oldPersisted + o.allocInAdvance
