@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "proto/kvpb";
+
+message Error {
+    int32 code = 1;
+    string msg = 2;
+}
+
+message VersionedValue {
+    string value = 1;
+    uint64 version = 2;
+}
+message GetRequest {
+    string key = 1;
+    uint64 version = 2;
+}
+
+message GetResponse {
+    VersionedValue v = 1;
+    Error err = 2;
+}
+
+message SetRequest {
+    string key = 1;
+    VersionedValue value = 2;
+}
+
+message SetResponse {
+    Error err = 2;
+}
+
+
+service KV {
+    rpc Get(GetRequest) returns (GetResponse) {}
+    rpc Set(SetRequest) returns (SetResponse) {}
+}
