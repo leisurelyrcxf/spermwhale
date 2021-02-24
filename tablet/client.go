@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
@@ -53,8 +55,8 @@ func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Val
 func (c *Client) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
 	resp, err := c.kv.Set(ctx, &tabletpb.SetRequest{
 		Key: key,
-		Value: &tabletpb.Value{
-			Meta: &tabletpb.ValueMeta{
+		Value: &commonpb.Value{
+			Meta: &commonpb.ValueMeta{
 				WriteIntent: writeIntent,
 				Version:     version,
 			},

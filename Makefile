@@ -17,7 +17,7 @@ deps:
 	env GO111MODULE=on go mod vendor
 
 binary:
-	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spermwhale
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spermwhale_tablet ./cmd/tablet
 
 build: deps binary
 

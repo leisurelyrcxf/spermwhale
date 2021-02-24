@@ -1,13 +1,13 @@
 package txn
 
 import (
+	"github.com/leisurelyrcxf/spermwhale/oracle"
 	"github.com/leisurelyrcxf/spermwhale/tablet"
-	"github.com/leisurelyrcxf/spermwhale/time2"
 )
 
 type TransactionManager struct {
 	client *tablet.Client
-	tm     *time2.TimeServer
+	tm     *oracle.TimeServer
 }
 
 func NewTransactionManager(tabletAddr string) (*TransactionManager, error) {
@@ -17,7 +17,7 @@ func NewTransactionManager(tabletAddr string) (*TransactionManager, error) {
 	}
 	return &TransactionManager{
 		client: cli,
-		tm:     time2.NewTimeServer(),
+		tm:     oracle.NewTimeServer(),
 	}, nil
 }
 

@@ -1,3 +1,5 @@
 .idea/*
 *.swp
 vendor/*
+spermwhale_*
+

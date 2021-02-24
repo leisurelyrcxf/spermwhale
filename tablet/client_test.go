@@ -3,57 +3,21 @@ package tablet
 import (
 	"context"
 	"fmt"
-	"net"
 	"testing"
 	"time"
-
-	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
-
-	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
-	"google.golang.org/grpc"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
-func StartTabletServer(t *testing.T) (stopper func()) {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 9999))
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-		return nil
-	}
-
-	grpcServer := grpc.NewServer()
-	db := memory.NewDB()
-	tabletpb.RegisterKVServer(grpcServer, NewKV(db))
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		if err := grpcServer.Serve(lis); err != nil {
-			t.Fatalf("serve failed: %v", err)
-		} else {
-			t.Logf("server terminated successfully")
-		}
-	}()
-
-	return func() {
-		grpcServer.Stop()
-		<-done
-	}
-}
-
 func TestKV_Get(t *testing.T) {
 	assert := testifyassert.New(t)
 
-	stopper := StartTabletServer(t)
-	if !assert.NotNil(stopper) {
-		return
-	}
-	defer stopper()
+	const port = 9999
+	server := NewServer(port)
+	assert.NoError(server.Start())
+	defer server.Stop()
+	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
-	const serverAddr = "localhost:9999"
 	client, err := NewClient(serverAddr)
 	if !assert.NoError(err) {
 		return
@@ -97,13 +61,12 @@ func TestKV_Get(t *testing.T) {
 func TestKV_Get2(t *testing.T) {
 	assert := testifyassert.New(t)
 
-	stopper := StartTabletServer(t)
-	if !assert.NotNil(stopper) {
-		return
-	}
-	defer stopper()
+	const port = 9999
+	server := NewServer(port)
+	assert.NoError(server.Start())
+	defer server.Stop()
+	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
-	const serverAddr = "localhost:9999"
 	client, err := NewClient(serverAddr)
 	if !assert.NoError(err) {
 		return

@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package proto;
+
+import "common.proto";
+
+option go_package = "proto/oraclepb";
+
+
+message FetchRequest {}
+message FetchResponse {
+  uint64 ts = 1;
+  Error err = 2;
+}
+
+service Oracle {
+  rpc Fetch(FetchRequest) returns (FetchResponse) {}
+}

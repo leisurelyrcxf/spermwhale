@@ -1,120 +1,58 @@
 package tablet
 
 import (
-	"context"
 	"fmt"
+	"net"
+	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-
-	"github.com/leisurelyrcxf/spermwhale/data_struct"
-	"github.com/leisurelyrcxf/spermwhale/mvcc"
+	"github.com/golang/glog"
+	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
-	"github.com/leisurelyrcxf/spermwhale/sync2"
-	"github.com/leisurelyrcxf/spermwhale/types"
+	"google.golang.org/grpc"
 )
 
-const (
-	ErrCodeVersionConflict = 1
-)
+type Server struct {
+	grpcServer *grpc.Server
 
-var (
-	ErrVersionConflict = fmt.Errorf("version conflict")
-)
-
-type TimestampCache struct {
-	m data_struct.ConcurrentMap
+	port int
+	Done chan struct{}
 }
 
-func NewTimestampCache() *TimestampCache {
-	return &TimestampCache{
-		m: data_struct.NewConcurrentMap(64),
+func NewServer(port int) *Server {
+	grpcServer := grpc.NewServer()
+	db := memory.NewDB()
+	tabletpb.RegisterKVServer(grpcServer, NewKV(db))
+
+	return &Server{
+		grpcServer: grpcServer,
+
+		port: port,
+		Done: make(chan struct{}),
 	}
 }
 
-func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
-	v, ok := cache.m.Get(key)
-	if !ok {
-		return 0
-	}
-	return v.(uint64)
-}
-
-func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (success bool, prev uint64) {
-	b, v := cache.m.SetIf(key, version, func(prev interface{}, exist bool) bool {
-		if !exist {
-			return true
-		}
-		return version > prev.(uint64)
-	})
-	if v == nil {
-		return b, 0
-	}
-	return b, v.(uint64)
-}
-
-type KV struct {
-	tabletpb.UnimplementedKVServer
-
-	lm      *sync2.LockManager
-	tsCache *TimestampCache
-	db      mvcc.DB
-}
-
-func NewKV(db mvcc.DB) *KV {
-	return &KV{
-		lm:      sync2.NewLockManager(),
-		tsCache: NewTimestampCache(),
-		db:      db,
-	}
-}
-
-func (kv *KV) Get(_ context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
-	vv, err := kv.get(req.Key, req.Version)
+func (s *Server) Start() error {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
-		return &tabletpb.GetResponse{
-			Err: &tabletpb.Error{
-				Code: -1,
-				Msg:  err.Error(),
-			},
-		}, nil
+		glog.Errorf("failed to listen: %v", err)
+		return err
 	}
-	return &tabletpb.GetResponse{
-		V: &tabletpb.Value{
-			Meta: &tabletpb.ValueMeta{
-				WriteIntent: vv.WriteIntent,
-				Version:     vv.Version,
-			},
-			Val: vv.V,
-		},
-	}, nil
-}
 
-func (kv *KV) Set(_ context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
-	err := kv.set(req.Key, req.Value.Val, req.Value.Meta.Version, req.Value.Meta.WriteIntent)
-	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
-}
+	go func() {
+		defer close(s.Done)
 
-func (kv *KV) get(key string, version uint64) (types.Value, error) {
-	kv.lm.Lock(key)
-	defer kv.lm.Unlock(key)
-
-	kv.tsCache.UpdateMaxReadVersion(key, version)
-	return kv.db.Get(key, version)
-}
-
-func (kv *KV) set(key string, val string, version uint64, writeIntent bool) *types.Error {
-	kv.lm.Lock(key)
-	defer kv.lm.Unlock(key)
-
-	maxVersion := kv.tsCache.GetMaxReadVersion(key)
-	if version < maxVersion {
-		return &types.Error{
-			Code: ErrCodeVersionConflict,
-			Msg:  ErrVersionConflict.Error(),
+		if err := s.grpcServer.Serve(lis); err != nil {
+			glog.Errorf("tablet serve failed: %v", err)
+		} else {
+			glog.Infof("tablet server terminated successfully")
 		}
-	}
-	kv.db.Set(key, val, version, writeIntent)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
 	return nil
 }
 
-func (kv *KV) mustEmbedUnimplementedKVServer() {}
+func (s *Server) Stop() {
+	s.grpcServer.Stop()
+	<-s.Done
+}
