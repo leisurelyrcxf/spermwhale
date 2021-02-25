@@ -120,6 +120,10 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 	return nil
 }
 
+func (db *DB) Close() error {
+	return nil
+}
+
 func (db *DB) getVersionedValues(key string) (*VersionedValues, error) {
 	val, ok := db.values.Get(key)
 	if !ok {

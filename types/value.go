@@ -13,6 +13,7 @@ type Value struct {
 
 var EmptyValue = Value{}
 
+// NewValue create a value with write intent
 func NewValue(val []byte, version uint64) Value {
 	return Value{
 		V: val,

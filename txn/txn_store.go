@@ -12,38 +12,48 @@ import (
 )
 
 type TransactionStore struct {
-	kv          types.KV
-	oracle      *physical.Oracle
-	stalePeriod time.Duration
+	kv             types.KV
+	oracle         *physical.Oracle
+	staleThreshold time.Duration
+	asyncJobs      chan<- Job
 }
 
 func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, error) {
-	val, err := s.kv.Get(ctx, TransactionKey(txnID), types.NewReadOption(math.MaxUint64).SetNotUpdateTimestampCache())
+	readOpt := types.NewReadOption(math.MaxUint64)
+	isTooStale := s.oracle.IsTooStale(txnID, s.staleThreshold)
+	if !isTooStale {
+		readOpt = readOpt.SetNotUpdateTimestampCache()
+	}
+	txnRecordData, err := s.kv.Get(ctx, TransactionKey(txnID), readOpt)
 	if err != nil && !errors.IsNotExistsErr(err) {
 		return nil, err
 	}
+
 	if err == nil {
-		assert.Must(val.Meta.Version == txnID)
-		return DecodeTxn(val.V)
+		assert.Must(txnRecordData.Meta.Version == txnID)
+		txn, err := DecodeTxn(txnRecordData.V)
+		if err != nil {
+			return nil, err
+		}
+		assert.Must(txn.State == StateStaging)
+		txn.kv = s.kv
+		txn.staleThreshold = s.staleThreshold
+		txn.oracle = s.oracle
+		txn.store = s
+		txn.asyncJobs = s.asyncJobs
+		return txn, nil
 	}
 
-	if !s.oracle.IsTooStale(txnID, s.stalePeriod) {
+	assert.Must(errors.IsNotExistsErr(err))
+	if !isTooStale {
 		return nil, err
 	}
 
-	if val, err = s.kv.Get(ctx, TransactionKey(txnID), types.NewReadOption(math.MaxUint64)); err != nil &&
-		!errors.IsNotExistsErr(err) {
-		return nil, err
-	}
-
-	if err == nil {
-		assert.Must(val.Meta.Version == txnID)
-		return DecodeTxn(val.V)
-	}
-
-	// errors.IsKeyNotExistsErr(err), since we updated timestamp cache of txn record,
-	// thus txn commit will never succeed in the future, hence safe to rollback.
-	txn := NewTxn(txnID, s.kv)
+	// since we've updated timestamp cache of txn record,
+	// thus transaction commit won't succeed in the future (
+	// because it needs to write transaction record with intent),
+	// hence safe to rollback.
+	txn := NewTxn(txnID, s.kv, s.staleThreshold, s.oracle, s, s.asyncJobs)
 	_ = txn.Rollback(ctx)
 	return txn, nil
 }

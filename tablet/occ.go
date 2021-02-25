@@ -129,3 +129,7 @@ func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	return kv.db.Set(ctx, key, val, opt)
 }
+
+func (kv *OCCPhysical) Close() error {
+	return kv.db.Close()
+}

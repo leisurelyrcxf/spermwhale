@@ -46,4 +46,5 @@ func (opt WriteOption) SetRemoveVersion() WriteOption {
 type KV interface {
 	Get(ctx context.Context, key string, opt ReadOption) (Value, error)
 	Set(ctx context.Context, key string, val Value, opt WriteOption) error
+	Close() error
 }
