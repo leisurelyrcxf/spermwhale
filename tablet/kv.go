@@ -94,8 +94,11 @@ func (kv *KV) Set(_ context.Context, req *tabletpb.SetRequest) (*tabletpb.SetRes
 }
 
 func (kv *KV) get(key string, version uint64) (types.Value, error) {
-	kv.lm.Lock(key)
-	defer kv.lm.Unlock(key)
+	// guarantee mutual exclusion with set,
+	// note this is different from row lock in 2PL because it gets
+	// unlocked immediately after read finish, which is not allowed in 2PL
+	kv.lm.RLock(key)
+	defer kv.lm.RUnlock(key)
 
 	kv.tsCache.UpdateMaxReadVersion(key, version)
 	return kv.db.Get(key, version)

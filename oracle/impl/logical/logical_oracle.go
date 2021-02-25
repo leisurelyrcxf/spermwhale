@@ -1,4 +1,4 @@
-package standalone
+package logical
 
 import (
 	"context"
@@ -8,11 +8,8 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/models"
 	"github.com/leisurelyrcxf/spermwhale/models/common"
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-	"github.com/leisurelyrcxf/spermwhale/proto/oraclepb"
 	"github.com/leisurelyrcxf/spermwhale/sync2"
 )
 
@@ -23,8 +20,6 @@ const (
 )
 
 type Oracle struct {
-	oraclepb.UnimplementedOracleServer
-
 	counter   sync2.AtomicUint64
 	persisted sync2.AtomicUint64
 	client    models.Client
@@ -55,20 +50,7 @@ func NewOracle(allocInAdvance uint64, c models.Client) (*Oracle, error) {
 	}, nil
 }
 
-func (o *Oracle) Fetch(context.Context, *oraclepb.FetchRequest) (*oraclepb.FetchResponse, error) {
-	ts, err := o.FetchTimestamp()
-	if err != nil {
-		return &oraclepb.FetchResponse{
-			Err: &commonpb.Error{
-				Code: consts.ErrCodeOther,
-				Msg:  err.Error(),
-			},
-		}, nil
-	}
-	return &oraclepb.FetchResponse{Ts: ts}, nil
-}
-
-func (o *Oracle) FetchTimestamp() (uint64, error) {
+func (o *Oracle) FetchTimestamp(_ context.Context) (uint64, error) {
 	for {
 		if current, persisted := o.counter.Get(), o.persisted.Get(); current+o.allocInAdvance/3 < persisted {
 			if o.counter.CompareAndSwap(current, current+1) {

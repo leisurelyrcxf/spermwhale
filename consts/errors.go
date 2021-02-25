@@ -1,9 +1,10 @@
 package consts
 
-import "fmt"
+import "github.com/leisurelyrcxf/spermwhale/utils/errors"
 
 var (
-	ErrTxnConflict = fmt.Errorf("transaction conflict")
+	ErrTxnConflict    = errors.Errorf("transaction conflict")
+	ErrShardNotExists = errors.Errorf("shard not exists")
 )
 
 const (

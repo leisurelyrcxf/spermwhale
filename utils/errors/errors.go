@@ -95,3 +95,7 @@ func Wrap(err, other error) error {
 	}
 	return Errorf("%v: %v", err, other)
 }
+
+func Annotatef(err error, format string, args ...interface{}) error {
+	return New(err.Error() + ", " + fmt.Sprintf(format, args...))
+}

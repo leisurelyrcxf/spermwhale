@@ -1,4 +1,4 @@
-package standalone
+package impl
 
 import (
 	"context"
@@ -9,26 +9,54 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
+	"github.com/leisurelyrcxf/spermwhale/models"
+	"github.com/leisurelyrcxf/spermwhale/oracle"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/logical"
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
-func TestClient_FetchTimestamp(t *testing.T) {
-	assert := testifyassert.New(t)
+const rounds = 10
 
-	dataPath := filepath.Join("/tmp/data/", OraclePath)
-	if exists(dataPath) {
-		if !assert.NoError(os.Remove(dataPath)) {
-			return
+func newOracle(assert *testifyassert.Assertions, port int, logicalOracle bool, clearDataForLogical bool) oracle.Oracle {
+	if logicalOracle {
+		if clearDataForLogical {
+			dataPath := filepath.Join("/tmp/data/", logical.OraclePath)
+			if exists(dataPath) {
+				if !assert.NoError(os.Remove(dataPath)) {
+					return nil
+				}
+			}
+		}
+		modelClient, err := models.NewClient("fs", "/tmp/", "", time.Minute)
+		if !assert.NoError(err) {
+			return nil
+		}
+		o, err := logical.NewOracle(100, modelClient)
+		if !assert.NoError(err) {
+			return nil
+		}
+		return o
+	}
+	return physical.NewOracle()
+}
+
+func TestClient_FetchTimestamp(t *testing.T) {
+	for i := 0; i < rounds; i++ {
+		for _, l := range []bool{true} {
+			if !testClientFetchTimestamp(t, l) {
+				return
+			}
 		}
 	}
+}
+
+func testClientFetchTimestamp(t *testing.T, logicalOracle bool) (b bool) {
+	assert := testifyassert.New(t)
+
 	const port = 9999
-	modelClient, err := models.NewClient("fs", "/tmp/", "", time.Minute)
-	if !assert.NoError(err) {
-		return
-	}
-	server := NewServer(port, 100, modelClient)
+	server := NewServer(port, newOracle(assert, port, logicalOracle, true))
 	assert.NoError(server.Start())
 	defer server.Stop()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
@@ -43,28 +71,31 @@ func TestClient_FetchTimestamp(t *testing.T) {
 	defer cancel()
 
 	ts1, err := client.FetchTimestamp(ctx)
-	assert.Equal(uint64(1), ts1)
-
-	ts2, err := client.FetchTimestamp(ctx)
-	assert.Equal(uint64(2), ts2)
-}
-
-func TestClient_FetchTimestamp2(t *testing.T) {
-	assert := testifyassert.New(t)
-
-	dataPath := filepath.Join("/tmp/data/", OraclePath)
-	if exists(dataPath) {
-		if !assert.NoError(os.Remove(dataPath)) {
-			return
-		}
-	}
-
-	const port = 9999
-	modelClient, err := models.NewClient("fs", "/tmp/", "", time.Minute)
-	if !assert.NoError(err) {
+	if !assert.Equal(uint64(1), ts1) {
 		return
 	}
-	server := NewServer(port, 100, modelClient)
+
+	ts2, err := client.FetchTimestamp(ctx)
+	return assert.Equal(uint64(2), ts2)
+}
+
+func TestClient_FetchTimestampLogical(t *testing.T) {
+	if !testClientFetchTimestamp2(t, true) {
+		return
+	}
+}
+
+func TestClient_FetchTimestampPhysical(t *testing.T) {
+	if !testClientFetchTimestamp2(t, false) {
+		return
+	}
+}
+
+func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
+	assert := testifyassert.New(t)
+
+	const port = 9999
+	server := NewServer(port, newOracle(assert, port, logicalOracle, true))
 	assert.NoError(server.Start())
 
 	var fetchWg sync.WaitGroup
@@ -109,11 +140,7 @@ func TestClient_FetchTimestamp2(t *testing.T) {
 	}
 
 	{
-		modelClient, err := models.NewClient("fs", "/tmp/", "", time.Minute)
-		if !assert.NoError(err) {
-			return
-		}
-		server2 := NewServer(port, 100, modelClient)
+		server2 := NewServer(port, newOracle(assert, port, logicalOracle, false))
 		assert.NoError(server2.Start())
 		defer server2.Stop()
 
@@ -123,10 +150,17 @@ func TestClient_FetchTimestamp2(t *testing.T) {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
+
 		newTS, err := client.FetchTimestamp(ctx)
-		assert.NoError(err)
-		assert.Greater(newTS, maxSeenTS)
+		if !assert.NoError(err) {
+			return
+		}
+		if !assert.Greater(newTS, maxSeenTS) {
+			return
+		}
 	}
+
+	return true
 }
 
 func exists(file string) bool {

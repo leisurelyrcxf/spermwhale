@@ -7,17 +7,17 @@ import (
 
 type TransactionManager struct {
 	client *tablet.Client
-	tm     *oracle.TimeServer
+	oracle oracle.Oracle
 }
 
-func NewTransactionManager(tabletAddr string) (*TransactionManager, error) {
+func NewTransactionManager(tabletAddr string, o oracle.Oracle) (*TransactionManager, error) {
 	cli, err := tablet.NewClient(tabletAddr)
 	if err != nil {
 		return nil, err
 	}
 	return &TransactionManager{
 		client: cli,
-		tm:     oracle.NewTimeServer(),
+		oracle: o,
 	}, nil
 }
 
@@ -31,5 +31,4 @@ func (m *TransactionManager) BeginTxn() (*Txn, error) {
 
 func (m *TransactionManager) GetTxn(version uint64) (*Txn, error) {
 	return nil, nil
-
 }
