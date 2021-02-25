@@ -11,10 +11,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-type Store interface {
-	GetTxn(ctx context.Context, id uint64) (*Txn, error)
-}
-
 type TransactionStore struct {
 	kv          types.KV
 	oracle      *physical.Oracle
@@ -23,7 +19,7 @@ type TransactionStore struct {
 
 func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, error) {
 	val, err := s.kv.Get(ctx, TransactionKey(txnID), types.NewReadOption(math.MaxUint64).SetNotUpdateTimestampCache())
-	if err != nil && !errors.IsKeyNotExistsErr(err) {
+	if err != nil && !errors.IsNotExistsErr(err) {
 		return nil, err
 	}
 	if err == nil {
@@ -36,7 +32,7 @@ func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, erro
 	}
 
 	if val, err = s.kv.Get(ctx, TransactionKey(txnID), types.NewReadOption(math.MaxUint64)); err != nil &&
-		!errors.IsKeyNotExistsErr(err) {
+		!errors.IsNotExistsErr(err) {
 		return nil, err
 	}
 
@@ -48,5 +44,6 @@ func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, erro
 	// errors.IsKeyNotExistsErr(err), since we updated timestamp cache of txn record,
 	// thus txn commit will never succeed in the future, hence safe to rollback.
 	txn := NewTxn(txnID, s.kv)
-	return txn, txn.Rollback(ctx)
+	_ = txn.Rollback(ctx)
+	return txn, nil
 }

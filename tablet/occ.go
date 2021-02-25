@@ -78,11 +78,12 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	if opt.NotUpdateTimestampCache {
 		val, err := kv.db.Get(ctx, key, opt)
 		if !opt.ExactVersion {
+			// only used by TransactionStore::GetTxn
 			return val, err
 		}
 
-		// opt.ExactVersion is true, which means is doing txn state checking.
-		if !errors.IsKeyOrVersionNotExistsErr(err) {
+		// opt.ExactVersion is true, doing txn state checking for all written keys.
+		if !errors.IsNotExistsErr(err) {
 			return val, err
 		}
 

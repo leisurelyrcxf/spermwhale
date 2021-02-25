@@ -7,11 +7,9 @@ import (
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
-
 	"github.com/leisurelyrcxf/spermwhale/models"
 	"github.com/leisurelyrcxf/spermwhale/models/client"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	testifyassert "github.com/stretchr/testify/assert"
