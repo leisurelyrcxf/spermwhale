@@ -74,6 +74,10 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	txn.Lock()
 	defer txn.Unlock()
 
+	if txn.State != StateUncommitted {
+		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
+	}
+
 	vv, err := txn.kv.Get(ctx, key, types.NewReadOption(txn.ID))
 	if err != nil {
 		return types.EmptyValue, err
@@ -83,7 +87,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 		// committed value
 		return vv, nil
 	}
-	writeTxn, err := txn.store.GetTxn(ctx, vv.Version)
+	writeTxn, err := txn.store.GetTxn(ctx, vv.Version, key)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTxnConflict, "reason: %v", err)
 	}
@@ -95,10 +99,33 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 }
 
 func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
-	return txn.kv.Set(ctx, key, types.NewValue(val, txn.ID), types.WriteOption{})
+	txn.Lock()
+	defer txn.Unlock()
+
+	if txn.State != StateUncommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
+	}
+
+	err := txn.kv.Set(ctx, key, types.NewValue(val, txn.ID), types.WriteOption{})
+	if err != nil {
+		return err
+	}
+	txn.WrittenKeys = append(txn.WrittenKeys, key)
+	return nil
 }
 
 func (txn *Txn) Commit(ctx context.Context) error {
+	txn.Lock()
+	defer txn.Unlock()
+
+	if txn.State != StateUncommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
+	}
+
+	if len(txn.WrittenKeys) == 0 {
+		return nil
+	}
+
 	// TODO change to async
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
@@ -110,10 +137,20 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	txn.onCommitted()
+	txn.State = StateCommitted
 	return nil
 }
 
 func (txn *Txn) Rollback(ctx context.Context) (err error) {
+	txn.Lock()
+	defer txn.Unlock()
+
+	if txn.State != StateUncommitted && txn.State != StateStaging {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v or %v, but got %v", StateUncommitted, StateStaging, txn.State)
+	}
+
+	assert.Must(len(txn.WrittenKeys) > 0)
+
 	for _, key := range txn.WrittenKeys {
 		if oneErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID).SetNoWriteIntent(),
@@ -135,6 +172,13 @@ func (txn *Txn) Key() string {
 	return TransactionKey(txn.ID)
 }
 
+func (txn *Txn) addWrittenKey(key string) {
+	txn.Lock()
+	defer txn.Unlock()
+
+	txn.WrittenKeys = append(txn.WrittenKeys, key)
+}
+
 func (txn *Txn) onCommitted() {
 	txn.asyncJobs <- func(ctx context.Context) error {
 		return txn.clearCommitted(ctx)
@@ -142,6 +186,13 @@ func (txn *Txn) onCommitted() {
 }
 
 func (txn *Txn) clearCommitted(ctx context.Context) (err error) {
+	txn.Lock()
+	defer txn.Unlock()
+
+	if txn.State != StateCommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateCommitted, txn.State)
+	}
+
 	for _, key := range txn.WrittenKeys {
 		if setErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID).SetNoWriteIntent(),

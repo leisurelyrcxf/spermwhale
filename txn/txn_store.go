@@ -18,7 +18,7 @@ type TransactionStore struct {
 	asyncJobs      chan<- Job
 }
 
-func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, error) {
+func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
 	readOpt := types.NewReadOption(math.MaxUint64)
 	isTooStale := s.oracle.IsTooStale(txnID, s.staleThreshold)
 	if !isTooStale {
@@ -35,6 +35,8 @@ func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, erro
 		if err != nil {
 			return nil, err
 		}
+		assert.Must(txn.ID == txnID)
+		assert.Must(len(txn.WrittenKeys) > 0)
 		assert.Must(txn.State == StateStaging)
 		txn.kv = s.kv
 		txn.staleThreshold = s.staleThreshold
@@ -54,6 +56,7 @@ func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64) (*Txn, erro
 	// because it needs to write transaction record with intent),
 	// hence safe to rollback.
 	txn := NewTxn(txnID, s.kv, s.staleThreshold, s.oracle, s, s.asyncJobs)
+	txn.addWrittenKey(conflictedKey)
 	_ = txn.Rollback(ctx)
 	return txn, nil
 }

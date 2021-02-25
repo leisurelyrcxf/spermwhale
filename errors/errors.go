@@ -47,4 +47,8 @@ var (
 		Code: consts.ErrCodeTransactionNotFound,
 		Msg:  "transaction not found",
 	}
+	ErrTransactionStateCorrupted = &Error{
+		Code: consts.ErrCodeTransactionStateCorrupted,
+		Msg:  "transaction state corrupted",
+	}
 )
