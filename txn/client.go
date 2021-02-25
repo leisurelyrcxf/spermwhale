@@ -5,13 +5,13 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/gatepb"
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
 )
 
 type Client struct {
-	c    gatepb.TxnClient
+	c    txnpb.TxnClient
 	conn *grpc.ClientConn
 }
 
@@ -22,12 +22,12 @@ func NewClient(serverAddr string) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		c:    gatepb.NewTxnClient(conn),
+		c:    txnpb.NewTxnClient(conn),
 	}, nil
 }
 
 func (c *Client) Begin(ctx context.Context) (uint64, error) {
-	resp, err := c.c.Begin(ctx, &gatepb.BeginRequest{})
+	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{})
 	if err != nil {
 		return 0, err
 	}
@@ -41,7 +41,7 @@ func (c *Client) Begin(ctx context.Context) (uint64, error) {
 }
 
 func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value, error) {
-	resp, err := c.c.Get(ctx, &gatepb.GetRequest{
+	resp, err := c.c.Get(ctx, &txnpb.GetRequest{
 		Key:   key,
 		TxnId: txnID,
 	})
@@ -61,7 +61,7 @@ func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value
 }
 
 func (c *Client) Set(ctx context.Context, key string, val []byte, txnID uint64) error {
-	resp, err := c.c.Set(ctx, &gatepb.SetRequest{
+	resp, err := c.c.Set(ctx, &txnpb.SetRequest{
 		Key:   key,
 		Value: val,
 		TxnId: txnID,
@@ -76,7 +76,7 @@ func (c *Client) Set(ctx context.Context, key string, val []byte, txnID uint64) 
 }
 
 func (c *Client) Commit(ctx context.Context, txnID uint64) error {
-	resp, err := c.c.Commit(ctx, &gatepb.CommitRequest{
+	resp, err := c.c.Commit(ctx, &txnpb.CommitRequest{
 		TxnId: txnID,
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func (c *Client) Commit(ctx context.Context, txnID uint64) error {
 }
 
 func (c *Client) Rollback(ctx context.Context, txnID uint64) error {
-	resp, err := c.c.Rollback(ctx, &gatepb.RollbackRequest{
+	resp, err := c.c.Rollback(ctx, &txnpb.RollbackRequest{
 		TxnId: txnID,
 	})
 	if err != nil {

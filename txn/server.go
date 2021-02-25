@@ -11,7 +11,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-	"github.com/leisurelyrcxf/spermwhale/proto/gatepb"
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
@@ -19,55 +19,55 @@ type Stub struct {
 	m *TransactionManager
 }
 
-func (s *Stub) Begin(ctx context.Context, req *gatepb.BeginRequest) (*gatepb.BeginResponse, error) {
+func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.BeginResponse, error) {
 	txn, err := s.m.BeginTxn(ctx)
 	if err != nil {
-		return &gatepb.BeginResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.BeginResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &gatepb.BeginResponse{
+	return &txnpb.BeginResponse{
 		TxnId: txn.ID,
 	}, nil
 }
 
-func (s *Stub) Get(ctx context.Context, req *gatepb.GetRequest) (*gatepb.GetResponse, error) {
+func (s *Stub) Get(ctx context.Context, req *txnpb.GetRequest) (*txnpb.GetResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &gatepb.GetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.GetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
 	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
-		return &gatepb.GetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.GetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &gatepb.GetResponse{
+	return &txnpb.GetResponse{
 		V: commonpb.ToPBValue(val),
 	}, nil
 }
 
-func (s *Stub) Set(ctx context.Context, req *gatepb.SetRequest) (*gatepb.SetResponse, error) {
+func (s *Stub) Set(ctx context.Context, req *txnpb.SetRequest) (*txnpb.SetResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &gatepb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &gatepb.SetResponse{Err: commonpb.ToPBError(
+	return &txnpb.SetResponse{Err: commonpb.ToPBError(
 		txn.Set(ctx, req.Key, req.Value)),
 	}, nil
 }
 
-func (s *Stub) Rollback(ctx context.Context, req *gatepb.RollbackRequest) (*gatepb.RollbackResponse, error) {
+func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb.RollbackResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &gatepb.RollbackResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.RollbackResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &gatepb.RollbackResponse{Err: commonpb.ToPBError(
+	return &txnpb.RollbackResponse{Err: commonpb.ToPBError(
 		txn.Rollback(ctx))}, nil
 }
 
-func (s *Stub) Commit(ctx context.Context, req *gatepb.CommitRequest) (*gatepb.CommitResponse, error) {
+func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.CommitResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &gatepb.CommitResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.CommitResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &gatepb.CommitResponse{Err: commonpb.ToPBError(
+	return &txnpb.CommitResponse{Err: commonpb.ToPBError(
 		txn.Commit(ctx))}, nil
 }
 
@@ -84,7 +84,7 @@ func NewServer(
 	port int) *Server {
 	grpcServer := grpc.NewServer()
 
-	gatepb.RegisterTxnServer(grpcServer, &Stub{
+	txnpb.RegisterTxnServer(grpcServer, &Stub{
 		m: NewTransactionManager(kv, staleWriteThreshold, workerNumber),
 	})
 
