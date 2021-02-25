@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/models/common"
+	"github.com/leisurelyrcxf/spermwhale/models/client/common"
 	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 	"go.etcd.io/etcd/clientv3"
 )
@@ -21,6 +21,7 @@ import (
 var ErrClosedClient = errors.New("use of closed etcdclient client")
 
 type Client struct {
+	addrlist string
 	sync.Mutex
 	kapi clientv3.KV
 	c    *clientv3.Client
@@ -65,10 +66,15 @@ func New(addrlist string, auth string, timeout time.Duration) (*Client, error) {
 	}
 
 	client := &Client{
-		kapi: clientv3.NewKV(c), timeout: timeout, c: c,
+		addrlist: addrlist,
+		kapi:     clientv3.NewKV(c), timeout: timeout, c: c,
 	}
 	client.context, client.cancel = context.WithCancel(context.Background())
 	return client, nil
+}
+
+func (c *Client) AddrList() string {
+	return c.addrlist
 }
 
 func (c *Client) Close() error {
@@ -239,4 +245,51 @@ func (c *Client) listLocked(path string) ([]string, error) {
 		}
 		return listedPaths, nil
 	}
+}
+
+func (c *Client) MkDir(path string) error {
+	return c.Create(path, []byte{})
+}
+
+func (c *Client) WatchOnce(path string) (<-chan struct{}, error) {
+	err := c.MkDir(path)
+	if err != nil && err != common.ErrKeyAlreadyExists {
+		return nil, err
+	}
+
+	c.Lock()
+	defer c.Unlock()
+	if c.closed {
+		return nil, errors.Trace(ErrClosedClient)
+	}
+
+	glog.Infof("etcd watch node %s", path)
+
+	signal := make(chan struct{})
+	watched := make(chan struct{})
+	go func() {
+		defer close(signal)
+
+		cancellableCtx, canceller := context.WithCancel(clientv3.WithRequireLeader(c.context))
+		// GC watched chan, otherwise will memory leak.
+		defer canceller()
+		ch := c.c.Watch(cancellableCtx, path, clientv3.WithPrefix())
+		close(watched)
+		for resp := range ch {
+			for _, event := range resp.Events {
+				glog.Infof("etcd watch node %s update, event: %v", path, event)
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-time.After(c.timeout):
+		return nil, fmt.Errorf("watch timeouted")
+	case <-watched:
+		break
+	}
+
+	glog.Info("etcd watch OK")
+	return signal, nil
 }

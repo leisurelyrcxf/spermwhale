@@ -1,80 +1,162 @@
 package gate
 
 import (
-	"bytes"
 	"context"
-	"hash/crc32"
+	"sync"
+
+	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/consts"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
+	"github.com/leisurelyrcxf/spermwhale/models"
+
 	"github.com/leisurelyrcxf/spermwhale/tablet"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 )
 
 type Shard struct {
-	tablet.Client
+	*tablet.Client
 
 	id int
 }
 
-type Shards []*Shard
-
-func NewShards(shardCount int) Shards {
-	return make([]*Shard, shardCount)
+func NewShard(g *models.Group) (*Shard, error) {
+	cli, err := tablet.NewClient(g.ServerAddr)
+	if err != nil {
+		return nil, err
+	}
+	return &Shard{
+		Client: cli,
+		id:     g.Id,
+	}, nil
 }
 
-func (ss Shards) AddShard(s *Shard) {
-	if s.id >= len(ss) || s.id < 0 {
-		glog.Fatalf("invalid shard id %d", s.id)
-	}
-	if ss[s.id] != nil {
-		glog.Fatalf("shard id %d already exists", s.id)
-	}
-	ss[s.id] = s
+// TODO the routing logic is not the key point of this project,
+// thus here is the simplest implementation. Cannot be used in product.
+type Gate struct {
+	shardsReady bool
+	shards      []*Shard
+	shardsRW    sync.RWMutex
 
+	store *models.Store
 }
 
-func (ss Shards) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
-	s, err := ss.route(key)
+func NewGate(store *models.Store) (*Gate, error) {
+	g := &Gate{store: store}
+	if err := g.syncShards(); err != nil {
+		return nil, err
+	}
+	if err := g.watchShards(); err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+func (g *Gate) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
+	s, err := g.route(key)
 	if err != nil {
 		return types.Value{}, err
 	}
 	return s.Get(ctx, key, version)
 }
 
-func (ss Shards) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
-	s, err := ss.route(key)
+func (g *Gate) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
+	s, err := g.route(key)
 	if err != nil {
 		return err
 	}
 	return s.Set(ctx, key, val, version, writeIntent)
 }
 
-func (ss Shards) Close() (err error) {
-	for _, s := range ss {
+func (g *Gate) Close() (err error) {
+	for _, s := range g.shards {
 		err = errors.Wrap(err, s.Close())
 	}
 	return
 }
 
-func (ss Shards) route(key string) (*Shard, error) {
-	var id = hash([]byte(key)) % len(ss)
-	if ss[id] == nil {
-		return nil, errors.Annotatef(consts.ErrShardNotExists, "id: %d", id)
+func (g *Gate) route(key string) (*Shard, error) {
+	g.shardsRW.RLock()
+	defer g.shardsRW.RUnlock()
+
+	if !g.shardsReady {
+		return nil, consts.ErrShardsNotReady
 	}
-	return ss[id], nil
+	var id = Hash([]byte(key)) % len(g.shards)
+	if g.shards[id] == nil {
+		glog.Fatalf("g.shards[%d] == nil", id)
+	}
+	return g.shards[id], nil
 }
 
-func hash(key []byte) uint32 {
-	const (
-		TagBeg = '{'
-		TagEnd = '}'
-	)
-	if beg := bytes.IndexByte(key, TagBeg); beg >= 0 {
-		if end := bytes.IndexByte(key[beg+1:], TagEnd); end >= 0 {
-			key = key[beg+1 : beg+1+end]
+func (g *Gate) watchShards() error {
+	watchFuture, err := g.store.Client().WatchOnce(g.store.GroupDir())
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		for {
+			<-watchFuture
+
+			if err := g.syncShards(); err != nil {
+				glog.Fatalf("update shards failed: '%v'", err)
+			}
+			var err error
+			if watchFuture, err = g.store.Client().WatchOnce(g.store.GroupDir()); err != nil {
+				glog.Fatalf("watch once failed: '%v'", err)
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (g *Gate) syncShards() error {
+	g.shardsRW.Lock()
+	defer g.shardsRW.Unlock()
+
+	groups, err := g.store.ListGroup()
+	if err != nil {
+		return err
+	}
+	for _, group := range groups {
+		if err := g.syncShard(group); err != nil {
+			return err
 		}
 	}
-	return crc32.ChecksumIEEE(key)
+	g.checkShards()
+	return nil
+}
+
+func (g *Gate) syncShard(group *models.Group) error {
+	if group.Id < 0 {
+		return errors.Errorf("group.Id < 0")
+	}
+	if group.Id >= len(g.shards) {
+		for i := 0; i < group-len(g.shards)+1; i++ {
+			g.shards = append(g.shards, nil)
+		}
+	}
+	assert.Must(group.Id < len(g.shards))
+
+	shard, err := NewShard(group)
+	if err != nil {
+		return err
+	}
+	g.shards[shard.id] = shard
+	return nil
+}
+
+func (g *Gate) checkShards() {
+	for i := 0; i < len(g.shards); i++ {
+		if g.shards[i] == nil {
+			glog.Warningf("shard %d not ready", i)
+			g.shardsReady = false
+		}
+	}
+	g.shardsReady = true
 }

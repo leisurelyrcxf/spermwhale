@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/models/common"
+	"github.com/leisurelyrcxf/spermwhale/models/client/common"
 
 	"github.com/golang/glog"
 
@@ -27,6 +27,7 @@ var (
 )
 
 type Client struct {
+	AddrList string
 	sync.Mutex
 
 	RootDir  string
@@ -44,11 +45,16 @@ func New(dir string) (*Client, error) {
 		return nil, errors.Trace(err)
 	}
 	return &Client{
+		AddrList: dir,
 		RootDir:  fullpath,
 		DataDir:  filepath.Join(fullpath, "data"),
 		TempDir:  filepath.Join(fullpath, "temp"),
 		LockFile: filepath.Join(fullpath, "data.lck"),
 	}, nil
+}
+
+func (c *Client) AddrList() string {
+	return c.AddrList()
 }
 
 func (c *Client) realpath(path string) string {
@@ -329,4 +335,8 @@ func (c *Client) list(path string, must bool) ([]string, error) {
 		results = append(results, filepath.Join(path, name))
 	}
 	return results, nil
+}
+
+func (c *Client) WatchOnce(path string) (<-chan struct{}, error) {
+	return nil, ErrNotSupported
 }

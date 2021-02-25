@@ -8,6 +8,7 @@ import (
 const (
 	ErrCodeVersionConflict = 1
 	ErrCodeStaleWrite      = 3
+	ErrCodeShardsNotReady  = 5
 	ErrCodeUnknown         = 1111
 )
 
@@ -18,5 +19,9 @@ var (
 	ErrStaleWrite         = &types.Error{
 		Code: ErrCodeStaleWrite,
 		Msg:  "stale write",
+	}
+	ErrShardsNotReady = &types.Error{
+		Code: ErrCodeShardsNotReady,
+		Msg:  "shards not ready",
 	}
 )

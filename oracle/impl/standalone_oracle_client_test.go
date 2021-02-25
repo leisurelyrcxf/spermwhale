@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/models/client"
+
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
 	"github.com/leisurelyrcxf/spermwhale/oracle"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/logical"
 	testifyassert "github.com/stretchr/testify/assert"
@@ -29,7 +30,7 @@ func newOracle(assert *testifyassert.Assertions, port int, logicalOracle bool, c
 				}
 			}
 		}
-		modelClient, err := models.NewClient("fs", "/tmp/", "", time.Minute)
+		modelClient, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
 			return nil
 		}

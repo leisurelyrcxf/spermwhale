@@ -1,15 +1,17 @@
-package models
+package client
 
 import (
 	"time"
 
-	fsclient "github.com/leisurelyrcxf/spermwhale/models/fs"
+	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
 
-	"github.com/leisurelyrcxf/spermwhale/models/etcdclient"
+	"github.com/leisurelyrcxf/spermwhale/models/client/etcdclient"
 	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 )
 
 type Client interface {
+	AddrList() string
+
 	Create(path string, data []byte) error
 	Update(path string, data []byte) error
 	Delete(path string) error
@@ -17,6 +19,8 @@ type Client interface {
 
 	Read(path string, must bool) ([]byte, error)
 	List(path string) ([]string, error)
+
+	WatchOnce(path string) (<-chan struct{}, error)
 
 	Close() error
 }

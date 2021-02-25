@@ -6,6 +6,10 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/utils/network"
+
+	"github.com/leisurelyrcxf/spermwhale/models"
+
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 
@@ -17,6 +21,7 @@ import (
 
 type Stub struct {
 	tabletpb.UnimplementedKVServer
+
 	kvcc *KVCCPhysical
 }
 
@@ -53,26 +58,34 @@ func (kv *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.Se
 }
 
 type Server struct {
-	grpcServer *grpc.Server
+	gid   int
+	store *models.Store
 
-	port int
-	Done chan struct{}
+	grpcServer *grpc.Server
+	port       int
+	Done       chan struct{}
 }
 
-func NewServer(port int) *Server {
+func NewServer(gid int, port int, store *models.Store) *Server {
 	grpcServer := grpc.NewServer()
 	db := memory.NewDB()
 	tabletpb.RegisterKVServer(grpcServer, NewStub(db))
 
 	return &Server{
-		grpcServer: grpcServer,
+		gid:   gid,
+		store: store,
 
-		port: port,
-		Done: make(chan struct{}),
+		grpcServer: grpcServer,
+		port:       port,
+		Done:       make(chan struct{}),
 	}
 }
 
 func (s *Server) Start() error {
+	if err := s.online(); err != nil {
+		return err
+	}
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		glog.Errorf("failed to listen: %v", err)
@@ -91,6 +104,19 @@ func (s *Server) Start() error {
 
 	time.Sleep(100 * time.Millisecond)
 	return nil
+}
+
+func (s *Server) online() error {
+	localAddr, err := network.GetLocalAddr(s.store.Client().AddrList())
+	if err != nil {
+		return err
+	}
+	return s.store.UpdateGroup(
+		&models.Group{
+			Id:         s.gid,
+			ServerAddr: localAddr,
+		},
+	)
 }
 
 func (s *Server) Stop() {

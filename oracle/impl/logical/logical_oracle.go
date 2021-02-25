@@ -6,10 +6,11 @@ import (
 	"sync"
 	"time"
 
+	client2 "github.com/leisurelyrcxf/spermwhale/models/client"
+
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
-	"github.com/leisurelyrcxf/spermwhale/models/common"
+	"github.com/leisurelyrcxf/spermwhale/models/client/common"
 	"github.com/leisurelyrcxf/spermwhale/sync2"
 )
 
@@ -22,13 +23,13 @@ const (
 type Oracle struct {
 	counter   sync2.AtomicUint64
 	persisted sync2.AtomicUint64
-	client    models.Client
+	client    client2.Client
 
 	allocInAdvance uint64
 	sync.Mutex
 }
 
-func NewOracle(allocInAdvance uint64, c models.Client) (*Oracle, error) {
+func NewOracle(allocInAdvance uint64, c client2.Client) (*Oracle, error) {
 	val, err := c.Read(OraclePath, true)
 	if err != nil && err != common.ErrKeyNotExists {
 		return nil, err

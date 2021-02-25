@@ -4,9 +4,9 @@ import (
 	"flag"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
+	client2 "github.com/leisurelyrcxf/spermwhale/models/client"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
 
 	"github.com/golang/glog"
 )
@@ -19,7 +19,7 @@ func main() {
 	coordinatorAuth := flag.String("coordinator-auth", "", "coordinator auth")
 	flag.Parse()
 
-	client, err := models.NewClient(*coordinator, *coordinatorAddrList, *coordinatorAuth, time.Minute)
+	client, err := client2.NewClient(*coordinator, *coordinatorAddrList, *coordinatorAuth, time.Minute)
 	if err != nil {
 		glog.Fatalf("failed to create client: %v", err)
 	}
