@@ -2,8 +2,11 @@ package commonpb
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
+
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -12,7 +15,7 @@ func ToPBError(e error) *Error {
 	if e == nil {
 		return nil
 	}
-	if e, ok := e.(*types.Error); ok {
+	if e, ok := e.(*errors.Error); ok {
 		return &Error{
 			Code: int32(e.Code),
 			Msg:  e.Msg,
@@ -59,14 +62,52 @@ func (x *ValueMeta) Meta() types.Meta {
 	}
 }
 
-func ToPBWriteOption(x types.WriteOption) *WriteOption {
-	return &WriteOption{
-		ClearWriteIntent: x.ClearWriteIntent,
+func ToPBReadOption(o types.ReadOption) *ReadOption {
+	return &ReadOption{
+		Version:          o.Version,
+		ExactReadVersion: o.ExactVersion,
 	}
 }
 
+func (x *ReadOption) ReadOption() types.ReadOption {
+	if x == nil {
+		return types.ReadOption{
+			Version:      math.MaxUint64,
+			ExactVersion: false,
+		}
+	}
+	return types.ReadOption{
+		Version:      x.Version,
+		ExactVersion: x.ExactReadVersion,
+	}
+}
+
+func ToPBWriteOption(o types.WriteOption) *WriteOption {
+	return &WriteOption{
+		ClearWriteIntent: o.ClearWriteIntent,
+		RemoveVersion:    o.RemoveVersion,
+	}
+}
+
+func (x *WriteOption) Validate() error {
+	if x == nil {
+		return nil
+	}
+	if x.ClearWriteIntent && x.RemoveVersion {
+		return errors.Annotatef(errors.ErrInvalidRequest, "x.ClearWriteIntent && x.RemoveVersion")
+	}
+	return nil
+}
+
 func (x *WriteOption) WriteOption() types.WriteOption {
+	if x == nil {
+		return types.WriteOption{
+			ClearWriteIntent: false,
+			RemoveVersion:    false,
+		}
+	}
 	return types.WriteOption{
 		ClearWriteIntent: x.ClearWriteIntent,
+		RemoveVersion:    x.RemoveVersion,
 	}
 }

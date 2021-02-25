@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/golang/glog"
@@ -14,7 +16,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/tablet"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 )
 
 type Shard struct {

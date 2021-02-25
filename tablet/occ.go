@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -47,7 +49,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 }
 
 // KV with concurrent control
-type KVCCPhysical struct {
+type OCCPhysical struct {
 	staleWriteThr, maxClockDrift time.Duration
 
 	lm *sync2.LockManager
@@ -58,13 +60,13 @@ type KVCCPhysical struct {
 	db mvcc.DB
 }
 
-func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *KVCCPhysical {
+func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *OCCPhysical {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
 	time.Sleep(consts.GetWaitTimestampCacheInvalidTimeout(staleWriteThr, maxClockDrift))
 
-	return &KVCCPhysical{
+	return &OCCPhysical{
 		staleWriteThr: staleWriteThr,
 		maxClockDrift: maxClockDrift,
 		lm:            sync2.NewLockManager(),
@@ -74,19 +76,22 @@ func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *KVCCPhysic
 	}
 }
 
-func (kv *KVCCPhysical) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
+func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
+	if opt.ExactVersion {
+		return kv.db.Get(ctx, key, opt)
+	}
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
 	kv.lm.RLock(key)
 	defer kv.lm.RUnlock(key)
 
-	kv.tsCache.UpdateMaxReadVersion(key, version)
-	return kv.db.Get(ctx, key, version)
+	kv.tsCache.UpdateMaxReadVersion(key, opt.Version)
+	return kv.db.Get(ctx, key, opt)
 }
 
-func (kv *KVCCPhysical) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
-	if opt.ClearWriteIntent {
+func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
+	if !val.WriteIntent {
 		return kv.db.Set(ctx, key, val, opt)
 	}
 
@@ -103,11 +108,11 @@ func (kv *KVCCPhysical) Set(ctx context.Context, key string, val types.Value, op
 		glog.Fatalf("failed to fetch timestamp: %v", err)
 	}
 	if val.Version < currentTS && currentTS-val.Version > uint64(kv.staleWriteThr) {
-		return consts.ErrStaleWrite
+		return errors.ErrStaleWrite
 	}
 	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
 	if val.Version < maxReadVersion {
-		return consts.ErrVersionConflict
+		return errors.ErrVersionConflict
 	}
 	// TODO check clock uncertainty and verify if this is the same transaction
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control

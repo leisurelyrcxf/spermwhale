@@ -8,7 +8,7 @@ option go_package = "proto/tabletpb";
 
 message GetRequest {
     string key = 1;
-    uint64 version = 2;
+    ReadOption opt = 2;
 }
 
 message GetResponse {

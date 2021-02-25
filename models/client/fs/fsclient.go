@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/models/client/common"
 
 	"github.com/golang/glog"
-
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 )
 
 var (

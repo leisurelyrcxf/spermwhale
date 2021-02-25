@@ -3,9 +3,9 @@ package models
 import (
 	"encoding/json"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type Cluster struct {

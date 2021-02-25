@@ -3,10 +3,11 @@ package client
 import (
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
 
 	"github.com/leisurelyrcxf/spermwhale/models/client/etcdclient"
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 )
 
 type Client interface {

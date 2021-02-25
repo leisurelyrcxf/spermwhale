@@ -3,11 +3,9 @@ package memory
 import (
 	"context"
 
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
-	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/data_struct"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
@@ -33,7 +31,7 @@ func NewVersionedValues() *VersionedValues {
 func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	val, ok := vvs.ConcurrentTreeMap.Get(version)
 	if !ok {
-		return types.Value{}, errors.Annotatef(consts.ErrVersionNotExists, "version: %d", version)
+		return types.Value{}, errors.Annotatef(errors.ErrVersionNotExists, "version: %d", version)
 	}
 	return val.(types.Value), nil
 }
@@ -46,7 +44,7 @@ func (vvs *VersionedValues) Max() (types.Value, error) {
 	// Key is revered sorted, thus min is actually max version..
 	key, dbVal := vvs.ConcurrentTreeMap.Min()
 	if key == nil {
-		return types.Value{}, consts.ErrVersionNotExists
+		return types.Value{}, errors.ErrVersionNotExists
 	}
 	return dbVal.(types.Value), nil
 }
@@ -55,7 +53,7 @@ func (vvs *VersionedValues) Min() (types.Value, error) {
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := vvs.ConcurrentTreeMap.Max()
 	if key == nil {
-		return types.Value{}, consts.ErrVersionNotExists
+		return types.Value{}, errors.ErrVersionNotExists
 	}
 	return dbVal.(types.Value), nil
 }
@@ -65,7 +63,7 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, erro
 		return key.(uint64) <= upperVersion
 	})
 	if version == nil {
-		return types.Value{}, consts.ErrVersionNotExists
+		return types.Value{}, errors.Annotatef(errors.ErrVersionNotExists, "upperVersion: %d", upperVersion)
 	}
 	return dbVal.(types.Value), nil
 }
@@ -80,12 +78,15 @@ func NewDB() *DB {
 	}
 }
 
-func (db *DB) Get(_ context.Context, key string, upperVersion uint64) (types.Value, error) {
+func (db *DB) Get(_ context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	vvs, err := db.getVersionedValues(key)
 	if err != nil {
 		return types.Value{}, err
 	}
-	return vvs.FindMaxBelow(upperVersion)
+	if opt.ExactVersion {
+		return vvs.Get(opt.Version)
+	}
+	return vvs.FindMaxBelow(opt.Version)
 }
 
 func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.WriteOption) error {
@@ -102,6 +103,17 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 		vvs.Put(vv)
 		return nil
 	}
+	if opt.RemoveVersion {
+		if val.WriteIntent {
+			return errors.Annotatef(errors.ErrNotSupported, "soft remove")
+		}
+		vvs, err := db.getVersionedValues(key)
+		if err != nil {
+			return errors.Annotatef(err, "key: %s", key)
+		}
+		vvs.Remove(val.Version)
+		return nil
+	}
 	db.values.GetLazy(key, func() interface{} {
 		return NewVersionedValues()
 	}).(*VersionedValues).Put(val)
@@ -111,7 +123,7 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 func (db *DB) getVersionedValues(key string) (*VersionedValues, error) {
 	val, ok := db.values.Get(key)
 	if !ok {
-		return nil, consts.ErrKeyNotExist
+		return nil, errors.ErrKeyNotExist
 	}
 	return val.(*VersionedValues), nil
 }

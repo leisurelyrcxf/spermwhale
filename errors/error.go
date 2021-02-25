@@ -1,6 +1,10 @@
-package types
+package errors
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/leisurelyrcxf/spermwhale/consts"
+)
 
 type Error struct {
 	Code int
@@ -19,4 +23,12 @@ func (e *Error) Error() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("%v, err_code:%v", e.Msg, e.Code)
+}
+
+func IsKeyNotExistsErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeKeyNotExists
 }

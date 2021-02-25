@@ -19,6 +19,12 @@ message Value {
     bytes val = 2;
 }
 
+message ReadOption {
+    uint64 version = 1;
+    bool exact_read_version = 2;
+}
+
 message WriteOption {
     bool clear_write_intent = 1;
+    bool remove_version = 2;
 }

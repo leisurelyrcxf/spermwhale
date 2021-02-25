@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
 	"github.com/leisurelyrcxf/spermwhale/models"
 	"github.com/leisurelyrcxf/spermwhale/models/client"
@@ -23,6 +23,10 @@ func newServer(assert *testifyassert.Assertions, port int) (server *Server) {
 		return nil
 	}
 	return NewServer(time.Second, time.Nanosecond, 1, port, models.NewStore(cli, "test_cluster"))
+}
+
+func newReadOption(version uint64) types.ReadOption {
+	return types.NewReadOption(version, false)
 }
 
 func TestKV_Get(t *testing.T) {
@@ -43,7 +47,7 @@ func TestKV_Get(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	_, err = client.Get(ctx, "k1", 0)
+	_, err = client.Get(ctx, "k1", newReadOption(0))
 	assert.Error(err)
 
 	base := physical.NewOracle().MustFetchTimestamp()
@@ -58,7 +62,7 @@ func TestKV_Get(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", base-uint64(time.Millisecond)*5)
+		vv, err := client.Get(ctx, "k1", newReadOption(base-uint64(time.Millisecond)*5))
 		if !assert.NoError(err) {
 			return
 		}
@@ -68,7 +72,7 @@ func TestKV_Get(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", base)
+		vv, err := client.Get(ctx, "k1", newReadOption(base))
 		if !assert.NoError(err) {
 			return
 		}
@@ -78,7 +82,7 @@ func TestKV_Get(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", physical.NewOracle().MustFetchTimestamp())
+		vv, err := client.Get(ctx, "k1", newReadOption(physical.NewOracle().MustFetchTimestamp()))
 		if !assert.NoError(err) {
 			return
 		}
@@ -106,7 +110,7 @@ func TestKV_Get2(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	_, err = client.Get(ctx, "k1", 0)
+	_, err = client.Get(ctx, "k1", newReadOption(0))
 	assert.Error(err)
 
 	base := physical.NewOracle().MustFetchTimestamp()
@@ -121,7 +125,7 @@ func TestKV_Get2(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", base-uint64(time.Millisecond)*5)
+		vv, err := client.Get(ctx, "k1", newReadOption(base-uint64(time.Millisecond)*5))
 		if !assert.NoError(err) {
 			return
 		}
@@ -131,7 +135,7 @@ func TestKV_Get2(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", base)
+		vv, err := client.Get(ctx, "k1", newReadOption(base))
 		if !assert.NoError(err) {
 			return
 		}
@@ -141,7 +145,7 @@ func TestKV_Get2(t *testing.T) {
 	}
 
 	{
-		vv, err := client.Get(ctx, "k1", base+uint64(time.Millisecond)*15)
+		vv, err := client.Get(ctx, "k1", newReadOption(base+uint64(time.Millisecond)*15))
 		if !assert.NoError(err) {
 			return
 		}
@@ -152,5 +156,5 @@ func TestKV_Get2(t *testing.T) {
 
 	err = client.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10, true), types.WriteOption{})
 	assert.Error(err)
-	assert.Contains(err.Error(), consts.ErrVersionConflict.Msg)
+	assert.Contains(err.Error(), errors.ErrVersionConflict.Msg)
 }

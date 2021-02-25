@@ -2,14 +2,9 @@ package txn
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
-
-func txnKey(id uint64) string {
-	return fmt.Sprintf("txn_%d", id)
-}
 
 type Store interface {
 	GetTxn(ctx context.Context, id uint64) (*Txn, error)

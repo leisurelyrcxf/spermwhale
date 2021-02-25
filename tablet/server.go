@@ -23,31 +23,25 @@ import (
 type Stub struct {
 	tabletpb.UnimplementedKVServer
 
-	kvcc *KVCCPhysical
+	kvcc *OCCPhysical
 }
 
 func (kv *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
-	vv, err := kv.kvcc.Get(ctx, req.Key, req.Version)
+	vv, err := kv.kvcc.Get(ctx, req.Key, req.Opt.ReadOption())
 	if err != nil {
 		return &tabletpb.GetResponse{
-			Err: &commonpb.Error{
-				Code: -1,
-				Msg:  err.Error(),
-			},
+			Err: commonpb.ToPBError(err),
 		}, nil
 	}
 	return &tabletpb.GetResponse{
-		V: &commonpb.Value{
-			Meta: &commonpb.ValueMeta{
-				WriteIntent: vv.WriteIntent,
-				Version:     vv.Version,
-			},
-			Val: vv.V,
-		},
+		V: commonpb.ToPBValue(vv),
 	}, nil
 }
 
 func (kv *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
+	if err := req.Validate(); err != nil {
+		return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+	}
 	err := kv.kvcc.Set(ctx, req.Key, req.Value.Value(), req.Opt.WriteOption())
 	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
 }

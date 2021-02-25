@@ -32,10 +32,10 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
+func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	resp, err := c.kv.Get(ctx, &tabletpb.GetRequest{
-		Key:     key,
-		Version: version,
+		Key: key,
+		Opt: commonpb.ToPBReadOption(opt),
 	})
 	if err != nil {
 		return types.Value{}, err

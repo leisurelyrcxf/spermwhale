@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/models/client/common"
-	"github.com/leisurelyrcxf/spermwhale/utils/errors"
 	"go.etcd.io/etcd/clientv3"
 )
 
