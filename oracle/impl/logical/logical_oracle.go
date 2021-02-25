@@ -6,10 +6,9 @@ import (
 	"sync"
 	"time"
 
-	client2 "github.com/leisurelyrcxf/spermwhale/models/client"
-
 	"github.com/golang/glog"
 
+	"github.com/leisurelyrcxf/spermwhale/models/client"
 	"github.com/leisurelyrcxf/spermwhale/models/client/common"
 	"github.com/leisurelyrcxf/spermwhale/sync2"
 )
@@ -23,13 +22,13 @@ const (
 type Oracle struct {
 	counter   sync2.AtomicUint64
 	persisted sync2.AtomicUint64
-	client    client2.Client
+	cli       client.Client
 
 	allocInAdvance uint64
 	sync.Mutex
 }
 
-func NewOracle(allocInAdvance uint64, c client2.Client) (*Oracle, error) {
+func NewOracle(allocInAdvance uint64, c client.Client) (*Oracle, error) {
 	val, err := c.Read(OraclePath, true)
 	if err != nil && err != common.ErrKeyNotExists {
 		return nil, err
@@ -45,7 +44,7 @@ func NewOracle(allocInAdvance uint64, c client2.Client) (*Oracle, error) {
 	return &Oracle{
 		counter:   sync2.NewAtomicUint64(next),
 		persisted: sync2.NewAtomicUint64(next),
-		client:    c,
+		cli:       c,
 
 		allocInAdvance: allocInAdvance,
 	}, nil
@@ -73,7 +72,7 @@ func (o *Oracle) alloc(counter uint64) {
 	}
 	newPersisted := oldPersisted + o.allocInAdvance
 	for i := 0; i < maxRetry; i++ {
-		if err := o.client.Update(OraclePath, []byte(strconv.FormatUint(newPersisted, 10))); err != nil {
+		if err := o.cli.Update(OraclePath, []byte(strconv.FormatUint(newPersisted, 10))); err != nil {
 			if i < maxRetry-1 {
 				glog.Warningf("update %v to %d failed: %v, retrying...", OraclePath, newPersisted, err)
 			} else {

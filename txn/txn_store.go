@@ -3,7 +3,6 @@ package txn
 import (
 	"context"
 	"math"
-	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -12,16 +11,16 @@ import (
 )
 
 type TransactionStore struct {
-	kv             types.KV
-	oracle         *physical.Oracle
-	staleThreshold time.Duration
-	asyncJobs      chan<- Job
+	kv        types.KV
+	oracle    *physical.Oracle
+	cfg       types.TxnConfig
+	asyncJobs chan<- Job
 }
 
 func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
 	// TODO maybe get from txn manager first?
 	readOpt := types.NewReadOption(math.MaxUint64)
-	isTooStale := s.oracle.IsTooStale(txnID, s.staleThreshold)
+	isTooStale := s.oracle.IsTooStale(txnID, s.cfg.StaleWriteThreshold)
 	if !isTooStale {
 		readOpt = readOpt.SetNotUpdateTimestampCache()
 	}
@@ -40,7 +39,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		assert.Must(len(txn.WrittenKeys) > 0)
 		assert.Must(txn.State == StateStaging)
 		txn.kv = s.kv
-		txn.staleThreshold = s.staleThreshold
+		txn.staleThreshold = s.cfg.StaleWriteThreshold
 		txn.oracle = s.oracle
 		txn.store = s
 		txn.asyncJobs = s.asyncJobs
@@ -56,7 +55,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	// thus transaction commit won't succeed in the future (
 	// because it needs to write transaction record with intent),
 	// hence safe to rollback.
-	txn := NewTxn(txnID, s.kv, s.staleThreshold, s.oracle, s, s.asyncJobs)
+	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.asyncJobs)
 	txn.addWrittenKey(conflictedKey)
 	_ = txn.Rollback(ctx)
 	return txn, nil

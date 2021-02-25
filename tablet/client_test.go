@@ -154,5 +154,5 @@ func TestKV_Get2(t *testing.T) {
 
 	err = client.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.WriteOption{})
 	assert.Error(err)
-	assert.Contains(err.Error(), errors.ErrVersionConflict.Msg)
+	assert.Contains(err.Error(), errors.ErrTransactionConflict.Msg)
 }

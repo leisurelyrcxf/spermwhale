@@ -23,7 +23,6 @@ import (
 
 var (
 	ErrClosedClient = errors.New("use of closed fs client")
-	ErrNotSupported = errors.New("not supported by fsclient")
 )
 
 type Client struct {
@@ -252,7 +251,7 @@ func (c *Client) Delete(path string) error {
 }
 
 func (c *Client) Rmdir(dir string) error {
-	return ErrNotSupported
+	return errors.Annotatef(errors.ErrNotSupported, "fsclient::Rmdir")
 }
 
 func (c *Client) Read(path string, must bool) ([]byte, error) {
@@ -338,5 +337,5 @@ func (c *Client) list(path string, must bool) ([]string, error) {
 }
 
 func (c *Client) WatchOnce(path string) (<-chan struct{}, error) {
-	return nil, ErrNotSupported
+	return nil, errors.Annotatef(errors.ErrNotSupported, "fsclient::WatchOnce")
 }

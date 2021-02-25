@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
 
 	"github.com/leisurelyrcxf/spermwhale/utils/network"
@@ -55,11 +57,11 @@ type Server struct {
 	Done       chan struct{}
 }
 
-func NewServer(staleWriteThr, maxClockDrift time.Duration, gid int, port int, store *models.Store) *Server {
+func NewServer(cfg types.TxnConfig, gid int, port int, store *models.Store) *Server {
 	grpcServer := grpc.NewServer()
 	db := memory.NewDB()
 	tabletpb.RegisterKVServer(grpcServer, &Stub{
-		kvcc: NewKVCC(db, staleWriteThr, maxClockDrift),
+		kvcc: NewKVCC(db, cfg),
 	})
 
 	return &Server{

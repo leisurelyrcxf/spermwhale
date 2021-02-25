@@ -1,7 +1,7 @@
 package consts
 
 const (
-	ErrCodeVersionConflict               = 1
+	ErrCodeTransactionConflict           = 1
 	ErrCodeKeyNotExists                  = 2
 	ErrCodeStaleWrite                    = 3
 	ErrCodeShardsNotReady                = 5

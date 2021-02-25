@@ -1,6 +1,8 @@
 package common
 
-import "errors"
+import (
+	"errors"
+)
 
 var (
 	ErrKeyNotExists     = errors.New("key not exists")

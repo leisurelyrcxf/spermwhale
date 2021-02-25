@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
@@ -46,27 +45,27 @@ type Txn struct {
 	WrittenKeys []string
 	State       State
 
-	kv             types.KV          `json:"-"`
-	staleThreshold time.Duration     `json:"-"`
-	oracle         *physical.Oracle  `json:"-"`
-	store          *TransactionStore `json:"-"`
-	asyncJobs      chan<- Job        `json:"-"`
-	sync.Mutex     `json:"-"`
+	cfg        types.TxnConfig   `json:"-"`
+	kv         types.KV          `json:"-"`
+	oracle     *physical.Oracle  `json:"-"`
+	store      *TransactionStore `json:"-"`
+	asyncJobs  chan<- Job        `json:"-"`
+	sync.Mutex `json:"-"`
 }
 
 func NewTxn(
 	id uint64,
-	kv types.KV, staleThreshold time.Duration,
+	kv types.KV, cfg types.TxnConfig,
 	oracle *physical.Oracle, store *TransactionStore,
 	asyncJobs chan<- Job) *Txn {
 	return &Txn{
-		ID:             id,
-		State:          StateUncommitted,
-		kv:             kv,
-		staleThreshold: staleThreshold,
-		oracle:         oracle,
-		store:          store,
-		asyncJobs:      asyncJobs,
+		ID:        id,
+		State:     StateUncommitted,
+		cfg:       cfg,
+		kv:        kv,
+		oracle:    oracle,
+		store:     store,
+		asyncJobs: asyncJobs,
 	}
 }
 
@@ -89,13 +88,13 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	}
 	writeTxn, err := txn.store.LoadTransactionRecord(ctx, vv.Version, key)
 	if err != nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrTxnConflict, "reason: %v", err)
+		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: %v", err)
 	}
 	if writeTxn.checkCommitState(ctx) {
 		writeTxn.onCommitted()
 		return vv, nil
 	}
-	return types.EmptyValue, errors.ErrTxnConflict
+	return types.EmptyValue, errors.ErrTransactionConflict
 }
 
 func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {

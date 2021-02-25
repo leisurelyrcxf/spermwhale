@@ -5,11 +5,9 @@ import (
 )
 
 var (
-	ErrTxnConflict     = Errorf("transaction conflict")
-	ErrShardNotExists  = Errorf("shard not exists")
-	ErrVersionConflict = &Error{
-		Code: consts.ErrCodeVersionConflict,
-		Msg:  "version conflict",
+	ErrTransactionConflict = &Error{
+		Code: consts.ErrCodeTransactionConflict,
+		Msg:  "transaction conflict",
 	}
 	ErrStaleWrite = &Error{
 		Code: consts.ErrCodeStaleWrite,

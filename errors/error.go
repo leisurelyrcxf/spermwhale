@@ -47,5 +47,13 @@ func IsRetryableErr(e error) bool {
 	if !ok {
 		return false
 	}
-	return ve.Code == consts.ErrCodeVersionConflict
+	return ve.Code == consts.ErrCodeTransactionConflict
+}
+
+func IsNotSupportedErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeNotSupported
 }

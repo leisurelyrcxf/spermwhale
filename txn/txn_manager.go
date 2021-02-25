@@ -13,28 +13,29 @@ import (
 )
 
 type TransactionManager struct {
+	types.TxnConfig
+
 	txns data_struct.ConcurrentMap
 
-	kv             types.KV
-	staleThreshold time.Duration
-	oracle         *physical.Oracle
-	store          *TransactionStore
-	asyncJobs      chan Job
-	workerNum      int
+	kv        types.KV
+	oracle    *physical.Oracle
+	store     *TransactionStore
+	asyncJobs chan Job
+	workerNum int
 }
 
 func NewTransactionManager(
 	kv types.KV,
-	staleThreshold time.Duration,
+	cfg types.TxnConfig,
 	workerNum int) *TransactionManager {
 	return (&TransactionManager{
 		txns: data_struct.NewConcurrentMap(32),
 
-		kv:             kv,
-		staleThreshold: staleThreshold,
-		oracle:         physical.NewOracle(),
-		asyncJobs:      make(chan Job, 1024),
-		workerNum:      workerNum,
+		kv:        kv,
+		TxnConfig: cfg,
+		oracle:    physical.NewOracle(),
+		asyncJobs: make(chan Job, 1024),
+		workerNum: workerNum,
 	}).createStore()
 }
 
@@ -78,15 +79,15 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id uint64) *Txn {
-	return NewTxn(id, m.kv, m.staleThreshold, m.oracle, m.store, m.asyncJobs)
+	return NewTxn(id, m.kv, m.StaleWriteThreshold, m.oracle, m.store, m.asyncJobs)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
 	m.store = &TransactionStore{
-		kv:             m.kv,
-		oracle:         m.oracle,
-		staleThreshold: m.staleThreshold,
-		asyncJobs:      m.asyncJobs,
+		kv:        m.kv,
+		oracle:    m.oracle,
+		cfg:       m.TxnConfig,
+		asyncJobs: m.asyncJobs,
 	}
 	return m
 }

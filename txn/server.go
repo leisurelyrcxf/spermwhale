@@ -80,12 +80,13 @@ type Server struct {
 
 func NewServer(
 	kv types.KV,
-	staleWriteThreshold time.Duration, workerNumber int,
+	cfg types.TxnConfig,
+	workerNumber int,
 	port int) *Server {
 	grpcServer := grpc.NewServer()
 
 	txnpb.RegisterTxnServer(grpcServer, &Stub{
-		m: NewTransactionManager(kv, staleWriteThreshold, workerNumber),
+		m: NewTransactionManager(kv, cfg, workerNumber),
 	})
 
 	return &Server{

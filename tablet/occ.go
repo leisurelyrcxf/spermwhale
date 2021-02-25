@@ -10,7 +10,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/data_struct"
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/sync2"
@@ -50,7 +49,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 
 // KV with concurrent control
 type OCCPhysical struct {
-	staleWriteThreshold, maxClockDrift time.Duration
+	types.TxnConfig
 
 	lm *sync2.LockManager
 
@@ -60,19 +59,18 @@ type OCCPhysical struct {
 	db mvcc.DB
 }
 
-func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *OCCPhysical {
+func NewKVCC(db mvcc.DB, cfg types.TxnConfig) *OCCPhysical {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
-	time.Sleep(consts.GetWaitTimestampCacheInvalidTimeout(staleWriteThr, maxClockDrift))
+	time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
 
 	return &OCCPhysical{
-		staleWriteThreshold: staleWriteThr,
-		maxClockDrift:       maxClockDrift,
-		lm:                  sync2.NewLockManager(),
-		oracle:              physical.NewOracle(),
-		tsCache:             NewTimestampCache(),
-		db:                  db,
+		TxnConfig: cfg,
+		lm:        sync2.NewLockManager(),
+		oracle:    physical.NewOracle(),
+		tsCache:   NewTimestampCache(),
+		db:        db,
 	}
 }
 
@@ -126,12 +124,12 @@ func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt
 
 	// cache may lost after restarted, so ignore too stale write
 	// TODO change to HLCTimestamp
-	if kv.oracle.IsTooStale(val.Version, kv.staleWriteThreshold) {
+	if kv.oracle.IsTooStale(val.Version, kv.StaleWriteThreshold) {
 		return errors.ErrStaleWrite
 	}
 	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
 	if val.Version < maxReadVersion {
-		return errors.ErrVersionConflict
+		return errors.ErrTransactionConflict
 	}
 	// TODO check clock uncertainty and verify if this is the same transaction
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control

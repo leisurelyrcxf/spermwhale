@@ -8,7 +8,3 @@ const (
 
 	DefaultTxnManagerWorkerNumber = 12
 )
-
-func GetWaitTimestampCacheInvalidTimeout(staleWriteThr, maxClockDrift time.Duration) time.Duration {
-	return staleWriteThr*2 + maxClockDrift*2
-}

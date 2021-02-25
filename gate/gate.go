@@ -6,8 +6,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -56,15 +54,15 @@ func NewGate(store *models.Store) (*Gate, error) {
 	return g, nil
 }
 
-func (g *Gate) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
+func (g *Gate) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	s, err := g.route(key)
 	if err != nil {
 		return types.EmptyValue, err
 	}
-	return s.Get(ctx, key, version)
+	return s.Get(ctx, key, opt)
 }
 
-func (g *Gate) Set(ctx context.Context, key, val string, opt types.WriteOption) error {
+func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
 	s, err := g.route(key)
 	if err != nil {
 		return err
@@ -76,7 +74,7 @@ func (g *Gate) Close() (err error) {
 	for _, s := range g.shards {
 		err = errors.Wrap(err, s.Close())
 	}
-	return
+	return err
 }
 
 func (g *Gate) route(key string) (*Shard, error) {
@@ -84,7 +82,7 @@ func (g *Gate) route(key string) (*Shard, error) {
 	defer g.shardsRW.RUnlock()
 
 	if !g.shardsReady {
-		return nil, consts.ErrShardsNotReady
+		return nil, errors.ErrShardsNotReady
 	}
 	var id = Hash([]byte(key)) % len(g.shards)
 	if g.shards[id] == nil {
@@ -95,8 +93,15 @@ func (g *Gate) route(key string) (*Shard, error) {
 
 func (g *Gate) watchShards() error {
 	watchFuture, err := g.store.Client().WatchOnce(g.store.GroupDir())
-	if err != nil {
+	if err != nil && !errors.IsNotSupportedErr(err) {
 		return err
+	}
+
+	if errors.IsNotSupportedErr(err) {
+		if g.shardsReady {
+			return nil
+		}
+		return errors.Annotatef(errors.ErrShardsNotReady, "reason: %v", err)
 	}
 
 	go func() {
