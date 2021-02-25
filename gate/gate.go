@@ -59,7 +59,7 @@ func NewGate(store *models.Store) (*Gate, error) {
 func (g *Gate) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
 	s, err := g.route(key)
 	if err != nil {
-		return types.Value{}, err
+		return types.EmptyValue, err
 	}
 	return s.Get(ctx, key, version)
 }

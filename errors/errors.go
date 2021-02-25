@@ -19,7 +19,6 @@ var (
 		Code: consts.ErrCodeShardsNotReady,
 		Msg:  "shards not ready",
 	}
-
 	ErrKeyNotExist = &Error{
 		Code: consts.ErrCodeKeyNotExists,
 		Msg:  "key not exist",
@@ -35,5 +34,9 @@ var (
 	ErrInvalidRequest = &Error{
 		Code: consts.ErrCodeInvalidRequest,
 		Msg:  "invalid request",
+	}
+	ErrVersionNotExistsNeedsRollback = &Error{
+		Code: consts.ErrCodeVersionNotExistsNeedsRollback,
+		Msg:  "key or version not exists needs rollback",
 	}
 )

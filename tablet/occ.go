@@ -6,8 +6,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/golang/glog"
-
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -50,7 +48,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 
 // KV with concurrent control
 type OCCPhysical struct {
-	staleWriteThr, maxClockDrift time.Duration
+	staleWriteThreshold, maxClockDrift time.Duration
 
 	lm *sync2.LockManager
 
@@ -67,18 +65,34 @@ func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *OCCPhysica
 	time.Sleep(consts.GetWaitTimestampCacheInvalidTimeout(staleWriteThr, maxClockDrift))
 
 	return &OCCPhysical{
-		staleWriteThr: staleWriteThr,
-		maxClockDrift: maxClockDrift,
-		lm:            sync2.NewLockManager(),
-		oracle:        physical.NewOracle(),
-		tsCache:       NewTimestampCache(),
-		db:            db,
+		staleWriteThreshold: staleWriteThr,
+		maxClockDrift:       maxClockDrift,
+		lm:                  sync2.NewLockManager(),
+		oracle:              physical.NewOracle(),
+		tsCache:             NewTimestampCache(),
+		db:                  db,
 	}
 }
 
 func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
-	if opt.ExactVersion {
-		return kv.db.Get(ctx, key, opt)
+	if opt.NotUpdateTimestampCache {
+		val, err := kv.db.Get(ctx, key, opt)
+		if !opt.ExactVersion {
+			return val, err
+		}
+
+		// opt.ExactVersion is true, which means is doing txn state checking.
+		if !errors.IsKeyOrVersionNotExistsErr(err) {
+			return val, err
+		}
+
+		// either failed or not yet finished
+		maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
+		if opt.Version < maxReadVersion {
+			// version not written and won't be written, txn should rollback
+			return val, errors.ErrVersionNotExistsNeedsRollback
+		}
+		return val, err
 	}
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
@@ -103,11 +117,7 @@ func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt
 
 	// cache may lost after restarted, so ignore too stale write
 	// TODO change to HLCTimestamp
-	currentTS, err := kv.oracle.FetchTimestamp(ctx)
-	if err != nil {
-		glog.Fatalf("failed to fetch timestamp: %v", err)
-	}
-	if val.Version < currentTS && currentTS-val.Version > uint64(kv.staleWriteThr) {
+	if kv.oracle.IsTooStale(val.Version, kv.staleWriteThreshold) {
 		return errors.ErrStaleWrite
 	}
 	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)

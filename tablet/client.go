@@ -38,16 +38,16 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		Opt: commonpb.ToPBReadOption(opt),
 	})
 	if err != nil {
-		return types.Value{}, err
+		return types.EmptyValue, err
 	}
 	if resp == nil {
-		return types.Value{}, NilGetResponse
+		return types.EmptyValue, NilGetResponse
 	}
 	if resp.Err != nil {
-		return types.Value{}, resp.Err.Error()
+		return types.EmptyValue, resp.Err.Error()
 	}
 	if resp.V == nil {
-		return types.Value{}, NilGetResponse
+		return types.EmptyValue, NilGetResponse
 	}
 	return resp.V.Value(), nil
 }

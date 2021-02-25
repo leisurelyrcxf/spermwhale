@@ -30,3 +30,8 @@ func (o *Oracle) MustFetchTimestamp() uint64 {
 	}
 	return ts
 }
+
+func (o *Oracle) IsTooStale(ts uint64, stalePeriod time.Duration) bool {
+	currentTS := o.MustFetchTimestamp()
+	return ts < currentTS && currentTS-ts > uint64(stalePeriod)
+}

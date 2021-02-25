@@ -11,12 +11,19 @@ type Value struct {
 	V []byte
 }
 
-func NewValue(val []byte, version uint64, writeIntent bool) Value {
+var EmptyValue = Value{}
+
+func NewValue(val []byte, version uint64) Value {
 	return Value{
 		V: val,
 		Meta: Meta{
-			WriteIntent: writeIntent,
+			WriteIntent: true,
 			Version:     version,
 		},
 	}
+}
+
+func (v Value) SetNoWriteIntent() Value {
+	v.WriteIntent = false
+	return v
 }

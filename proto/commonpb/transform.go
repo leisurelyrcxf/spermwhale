@@ -64,21 +64,24 @@ func (x *ValueMeta) Meta() types.Meta {
 
 func ToPBReadOption(o types.ReadOption) *ReadOption {
 	return &ReadOption{
-		Version:          o.Version,
-		ExactReadVersion: o.ExactVersion,
+		Version:                 o.Version,
+		ExactReadVersion:        o.ExactVersion,
+		NotUpdateTimestampCache: o.NotUpdateTimestampCache,
 	}
 }
 
 func (x *ReadOption) ReadOption() types.ReadOption {
 	if x == nil {
 		return types.ReadOption{
-			Version:      math.MaxUint64,
-			ExactVersion: false,
+			Version:                 math.MaxUint64,
+			ExactVersion:            false,
+			NotUpdateTimestampCache: false,
 		}
 	}
 	return types.ReadOption{
-		Version:      x.Version,
-		ExactVersion: x.ExactReadVersion,
+		Version:                 x.Version,
+		ExactVersion:            x.ExactReadVersion,
+		NotUpdateTimestampCache: x.NotUpdateTimestampCache,
 	}
 }
 

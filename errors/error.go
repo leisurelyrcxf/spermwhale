@@ -32,3 +32,19 @@ func IsKeyNotExistsErr(e error) bool {
 	}
 	return ve.Code == consts.ErrCodeKeyNotExists
 }
+
+func IsKeyOrVersionNotExistsErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeKeyNotExists || ve.Code == consts.ErrCodeVersionNotExists || ve.Code == consts.ErrCodeVersionNotExistsNeedsRollback
+}
+
+func IsNeedsRollbackErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeVersionNotExistsNeedsRollback
+}

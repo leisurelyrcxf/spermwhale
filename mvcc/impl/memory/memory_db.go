@@ -31,7 +31,7 @@ func NewVersionedValues() *VersionedValues {
 func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	val, ok := vvs.ConcurrentTreeMap.Get(version)
 	if !ok {
-		return types.Value{}, errors.Annotatef(errors.ErrVersionNotExists, "version: %d", version)
+		return types.EmptyValue, errors.Annotatef(errors.ErrVersionNotExists, "version: %d", version)
 	}
 	return val.(types.Value), nil
 }
@@ -44,7 +44,7 @@ func (vvs *VersionedValues) Max() (types.Value, error) {
 	// Key is revered sorted, thus min is actually max version..
 	key, dbVal := vvs.ConcurrentTreeMap.Min()
 	if key == nil {
-		return types.Value{}, errors.ErrVersionNotExists
+		return types.EmptyValue, errors.ErrVersionNotExists
 	}
 	return dbVal.(types.Value), nil
 }
@@ -53,7 +53,7 @@ func (vvs *VersionedValues) Min() (types.Value, error) {
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := vvs.ConcurrentTreeMap.Max()
 	if key == nil {
-		return types.Value{}, errors.ErrVersionNotExists
+		return types.EmptyValue, errors.ErrVersionNotExists
 	}
 	return dbVal.(types.Value), nil
 }
@@ -63,7 +63,7 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, erro
 		return key.(uint64) <= upperVersion
 	})
 	if version == nil {
-		return types.Value{}, errors.Annotatef(errors.ErrVersionNotExists, "upperVersion: %d", upperVersion)
+		return types.EmptyValue, errors.Annotatef(errors.ErrVersionNotExists, "upperVersion: %d", upperVersion)
 	}
 	return dbVal.(types.Value), nil
 }
@@ -81,7 +81,7 @@ func NewDB() *DB {
 func (db *DB) Get(_ context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	vvs, err := db.getVersionedValues(key)
 	if err != nil {
-		return types.Value{}, err
+		return types.EmptyValue, err
 	}
 	if opt.ExactVersion {
 		return vvs.Get(opt.Version)

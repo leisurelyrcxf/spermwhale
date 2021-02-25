@@ -26,7 +26,7 @@ func newServer(assert *testifyassert.Assertions, port int) (server *Server) {
 }
 
 func newReadOption(version uint64) types.ReadOption {
-	return types.NewReadOption(version, false)
+	return types.NewReadOption(version)
 }
 
 func TestKV_Get(t *testing.T) {
@@ -54,10 +54,10 @@ func TestKV_Get(t *testing.T) {
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1, true), types.WriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.WriteOption{})) {
 		return
 	}
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2, false), types.WriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.WriteOption{})) {
 		return
 	}
 
@@ -78,7 +78,7 @@ func TestKV_Get(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(false, vv.WriteIntent)
+		assert.Equal(true, vv.WriteIntent)
 	}
 
 	{
@@ -88,7 +88,7 @@ func TestKV_Get(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(false, vv.WriteIntent)
+		assert.Equal(true, vv.WriteIntent)
 	}
 }
 
@@ -117,10 +117,10 @@ func TestKV_Get2(t *testing.T) {
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2, false), types.WriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.WriteOption{})) {
 		return
 	}
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1, true), types.WriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.WriteOption{})) {
 		return
 	}
 
@@ -141,7 +141,7 @@ func TestKV_Get2(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(false, vv.WriteIntent)
+		assert.Equal(true, vv.WriteIntent)
 	}
 
 	{
@@ -151,10 +151,10 @@ func TestKV_Get2(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(false, vv.WriteIntent)
+		assert.Equal(true, vv.WriteIntent)
 	}
 
-	err = client.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10, true), types.WriteOption{})
+	err = client.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.WriteOption{})
 	assert.Error(err)
 	assert.Contains(err.Error(), errors.ErrVersionConflict.Msg)
 }
