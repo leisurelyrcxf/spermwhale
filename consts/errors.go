@@ -15,10 +15,13 @@ const (
 )
 
 var (
-	ErrTxnConflict        = errors.Errorf("transaction conflict")
-	ErrShardNotExists     = errors.Errorf("shard not exists")
-	ErrMsgVersionConflict = "version conflict"
-	ErrStaleWrite         = &types.Error{
+	ErrTxnConflict     = errors.Errorf("transaction conflict")
+	ErrShardNotExists  = errors.Errorf("shard not exists")
+	ErrVersionConflict = &types.Error{
+		Code: ErrCodeVersionConflict,
+		Msg:  "version conflict",
+	}
+	ErrStaleWrite = &types.Error{
 		Code: ErrCodeStaleWrite,
 		Msg:  "stale write",
 	}

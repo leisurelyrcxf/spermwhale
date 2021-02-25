@@ -6,12 +6,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/types"
+	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
+
 	"github.com/leisurelyrcxf/spermwhale/utils/network"
 
 	"github.com/leisurelyrcxf/spermwhale/models"
 
-	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 
 	"github.com/golang/glog"
@@ -24,12 +24,6 @@ type Stub struct {
 	tabletpb.UnimplementedKVServer
 
 	kvcc *KVCCPhysical
-}
-
-func NewStub(db mvcc.DB) *Stub {
-	return &Stub{
-		kvcc: NewKVCC(db),
-	}
 }
 
 func (kv *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
@@ -54,10 +48,7 @@ func (kv *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.Ge
 }
 
 func (kv *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
-	err := kv.kvcc.Set(ctx, req.Key, req.Value.Val, types.WriteOption{
-		Meta:             req.Value.Meta.Meta(),
-		ClearWriteIntent: req.Opt.ClearWriteIntent,
-	})
+	err := kv.kvcc.Set(ctx, req.Key, req.Value.Value(), req.Opt.WriteOption())
 	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
 }
 
@@ -70,10 +61,12 @@ type Server struct {
 	Done       chan struct{}
 }
 
-func NewServer(gid int, port int, store *models.Store) *Server {
+func NewServer(staleWriteThr, maxClockDrift time.Duration, gid int, port int, store *models.Store) *Server {
 	grpcServer := grpc.NewServer()
 	db := memory.NewDB()
-	tabletpb.RegisterKVServer(grpcServer, NewStub(db))
+	tabletpb.RegisterKVServer(grpcServer, &Stub{
+		kvcc: NewKVCC(db, staleWriteThr, maxClockDrift),
+	})
 
 	return &Server{
 		gid:   gid,
@@ -111,7 +104,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) online() error {
-	localAddr, err := network.GetLocalAddr(s.store.Client().AddrList())
+	localAddr, err := network.GetLocalAddr(s.targetAddr())
 	if err != nil {
 		return err
 	}
@@ -121,6 +114,13 @@ func (s *Server) online() error {
 			ServerAddr: localAddr,
 		},
 	)
+}
+
+func (s *Server) targetAddr() string {
+	if _, isFsClient := s.store.Client().(*fsclient.Client); isFsClient {
+		return "8.8.8.8:53"
+	}
+	return s.store.Client().AddrList()
 }
 
 func (s *Server) Stop() {

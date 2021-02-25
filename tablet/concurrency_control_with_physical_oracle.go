@@ -48,6 +48,8 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 
 // KV with concurrent control
 type KVCCPhysical struct {
+	staleWriteThr, maxClockDrift time.Duration
+
 	lm *sync2.LockManager
 
 	oracle  *physical.Oracle
@@ -56,17 +58,19 @@ type KVCCPhysical struct {
 	db mvcc.DB
 }
 
-func NewKVCC(db mvcc.DB) *KVCCPhysical {
+func NewKVCC(db mvcc.DB, staleWriteThr, maxClockDrift time.Duration) *KVCCPhysical {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
-	time.Sleep(consts.WaitTimestampCacheInvalidTimeout)
+	time.Sleep(consts.GetWaitTimestampCacheInvalidTimeout(staleWriteThr, maxClockDrift))
 
 	return &KVCCPhysical{
-		lm:      sync2.NewLockManager(),
-		oracle:  physical.NewOracle(),
-		tsCache: NewTimestampCache(),
-		db:      db,
+		staleWriteThr: staleWriteThr,
+		maxClockDrift: maxClockDrift,
+		lm:            sync2.NewLockManager(),
+		oracle:        physical.NewOracle(),
+		tsCache:       NewTimestampCache(),
+		db:            db,
 	}
 }
 
@@ -81,7 +85,7 @@ func (kv *KVCCPhysical) Get(ctx context.Context, key string, version uint64) (ty
 	return kv.db.Get(ctx, key, version)
 }
 
-func (kv *KVCCPhysical) Set(ctx context.Context, key string, val string, opt types.WriteOption) error {
+func (kv *KVCCPhysical) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
 	if opt.ClearWriteIntent {
 		return kv.db.Set(ctx, key, val, opt)
 	}
@@ -98,16 +102,14 @@ func (kv *KVCCPhysical) Set(ctx context.Context, key string, val string, opt typ
 	if err != nil {
 		glog.Fatalf("failed to fetch timestamp: %v", err)
 	}
-	if opt.Version < currentTS && currentTS-opt.Version > uint64(consts.TooStaleWriteThreshold) {
+	if val.Version < currentTS && currentTS-val.Version > uint64(kv.staleWriteThr) {
 		return consts.ErrStaleWrite
 	}
-	maxVersion := kv.tsCache.GetMaxReadVersion(key)
-	if opt.Version < maxVersion {
-		return &types.Error{
-			Code: consts.ErrCodeVersionConflict,
-			Msg:  consts.ErrMsgVersionConflict,
-		}
+	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
+	if val.Version < maxReadVersion {
+		return consts.ErrVersionConflict
 	}
+	// TODO check clock uncertainty and verify if this is the same transaction
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	return kv.db.Set(ctx, key, val, opt)
 }

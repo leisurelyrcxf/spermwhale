@@ -3,7 +3,6 @@ package txn
 import (
 	"context"
 	"fmt"
-	"math"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -20,10 +19,10 @@ type TransactionStore struct {
 	kv types.KV
 }
 
-func (s *TransactionStore) GetTxn(ctx context.Context, id uint64) (*Txn, error) {
-	val, err := s.kv.Get(ctx, txnKey(id), math.MaxUint64)
+func (s *TransactionStore) GetTxn(ctx context.Context, id uint64, getterTxnVersion uint64) (*Txn, error) {
+	val, err := s.kv.Get(ctx, txnKey(id), getterTxnVersion)
 	if err != nil {
-		return nil, errr
+		return nil, err
 	}
-	val.V
+	return TxnDecode(val.V)
 }

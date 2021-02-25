@@ -38,8 +38,8 @@ func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	return val.(types.Value), nil
 }
 
-func (vvs *VersionedValues) Put(dbValue string, meta types.Meta) {
-	vvs.ConcurrentTreeMap.Put(meta.Version, types.NewValue(dbValue, meta.Version, meta.WriteIntent))
+func (vvs *VersionedValues) Put(val types.Value) {
+	vvs.ConcurrentTreeMap.Put(val.Version, val)
 }
 
 func (vvs *VersionedValues) Max() (types.Value, error) {
@@ -88,23 +88,23 @@ func (db *DB) Get(_ context.Context, key string, upperVersion uint64) (types.Val
 	return vvs.FindMaxBelow(upperVersion)
 }
 
-func (db *DB) Set(_ context.Context, key string, val string, opt types.WriteOption) error {
+func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.WriteOption) error {
 	if opt.ClearWriteIntent {
 		vvs, err := db.getVersionedValues(key)
 		if err != nil {
 			return errors.Annotatef(err, "key: %s", key)
 		}
-		vv, err := vvs.Get(opt.Version)
+		vv, err := vvs.Get(val.Version)
 		if err != nil {
 			return errors.Annotatef(err, "key: %s", key)
 		}
 		vv.Meta.WriteIntent = false
-		vvs.Put(vv.V, vv.Meta)
+		vvs.Put(vv)
 		return nil
 	}
 	db.values.GetLazy(key, func() interface{} {
 		return NewVersionedValues()
-	}).(*VersionedValues).Put(val, opt.Meta)
+	}).(*VersionedValues).Put(val)
 	return nil
 }
 

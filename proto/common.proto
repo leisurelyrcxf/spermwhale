@@ -16,7 +16,7 @@ message ValueMeta {
 
 message Value {
     ValueMeta Meta = 1;
-    string val = 2;
+    bytes val = 2;
 }
 
 message WriteOption {
