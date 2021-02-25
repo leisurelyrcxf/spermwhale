@@ -48,3 +48,12 @@ type KV interface {
 	Set(ctx context.Context, key string, val Value, opt WriteOption) error
 	Close() error
 }
+
+type Txn interface {
+	Begin(ctx context.Context) (uint64, error)
+	Get(ctx context.Context, key string, txnID uint64) (Value, error)
+	Set(ctx context.Context, key string, val []byte, txnID uint64) error
+	Commit(ctx context.Context, txnID uint64) error
+	Rollback(ctx context.Context, txnID uint64) error
+	Close() error
+}

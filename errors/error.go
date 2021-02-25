@@ -11,8 +11,8 @@ type Error struct {
 	Msg  string
 }
 
-func NewError(code int, msg string) Error {
-	return Error{
+func NewError(code int, msg string) *Error {
+	return &Error{
 		Code: code,
 		Msg:  msg,
 	}
@@ -40,4 +40,12 @@ func IsNeedsRollbackErr(e error) bool {
 		return false
 	}
 	return ve.Code == consts.ErrCodeVersionNotExistsNeedsRollback
+}
+
+func IsRetryableErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeVersionConflict
 }

@@ -10,6 +10,8 @@ const (
 	ErrCodeTransactionNotFound           = 12
 	ErrCodeTransactionStateCorrupted     = 13
 	ErrCodeVersionNotExistsNeedsRollback = 15
+	ErrCodeNilResponse                   = 55
+	ErrCodeTxnRetriedTooManyTimes        = 100
 	ErrCodeNotSupported                  = 111
 	ErrCodeInvalidRequest                = 222
 	ErrCodeUnknown                       = 1111

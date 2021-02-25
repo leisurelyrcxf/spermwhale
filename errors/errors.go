@@ -51,4 +51,12 @@ var (
 		Code: consts.ErrCodeTransactionStateCorrupted,
 		Msg:  "transaction state corrupted",
 	}
+	ErrNilResponse = &Error{
+		Code: consts.ErrCodeNilResponse,
+		Msg:  "response is nil",
+	}
+	ErrTxnRetriedTooManyTimes = &Error{
+		Code: consts.ErrCodeTxnRetriedTooManyTimes,
+		Msg:  "transaction retried too many times",
+	}
 )

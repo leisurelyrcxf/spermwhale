@@ -2,18 +2,14 @@ package tablet
 
 import (
 	"context"
-	"fmt"
+
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
-)
-
-var (
-	NilGetResponse = fmt.Errorf("nil get response")
-	NilSetResponse = fmt.Errorf("nil set response")
 )
 
 type Client struct {
@@ -41,13 +37,13 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		return types.EmptyValue, err
 	}
 	if resp == nil {
-		return types.EmptyValue, NilGetResponse
+		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp == nil")
 	}
 	if resp.Err != nil {
 		return types.EmptyValue, resp.Err.Error()
 	}
 	if resp.V == nil {
-		return types.EmptyValue, NilGetResponse
+		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp.V == nil")
 	}
 	return resp.V.Value(), nil
 }
@@ -62,7 +58,7 @@ func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types
 		return err
 	}
 	if resp == nil {
-		return NilSetResponse
+		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::Set resp == nil")
 	}
 	return resp.Err.Error()
 }

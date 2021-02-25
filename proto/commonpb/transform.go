@@ -1,13 +1,10 @@
 package commonpb
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
@@ -31,7 +28,7 @@ func (x *Error) Error() error {
 	if x == nil {
 		return nil
 	}
-	return fmt.Errorf("%v, error_code: %d", x.Msg, x.Code)
+	return errors.NewError(int(x.Code), x.Msg)
 }
 
 func ToPBValue(v types.Value) *Value {
@@ -92,16 +89,6 @@ func ToPBWriteOption(o types.WriteOption) *WriteOption {
 	}
 }
 
-func (x *WriteOption) Validate() error {
-	if x == nil {
-		return nil
-	}
-	if x.ClearWriteIntent && x.RemoveVersion {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.ClearWriteIntent && x.RemoveVersion")
-	}
-	return nil
-}
-
 func (x *WriteOption) WriteOption() types.WriteOption {
 	if x == nil {
 		return types.WriteOption{
@@ -113,4 +100,14 @@ func (x *WriteOption) WriteOption() types.WriteOption {
 		ClearWriteIntent: x.ClearWriteIntent,
 		RemoveVersion:    x.RemoveVersion,
 	}
+}
+
+func (x *WriteOption) Validate() error {
+	if x == nil {
+		return nil
+	}
+	if x.ClearWriteIntent && x.RemoveVersion {
+		return errors.Annotatef(errors.ErrInvalidRequest, "x.ClearWriteIntent && x.RemoveVersion")
+	}
+	return nil
 }
