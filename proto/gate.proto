@@ -6,10 +6,18 @@ import "common.proto";
 
 option go_package = "proto/gatepb";
 
+message BeginRequest {
+
+}
+
+message BeginResponse {
+    uint64 txn_id = 1;
+    Error err = 2;
+}
+
 message GetRequest {
     string key = 1;
-    uint64 version = 2;
-    uint64 txn_id = 3;
+    uint64 txn_id = 2;
 }
 
 message GetResponse {
@@ -19,21 +27,12 @@ message GetResponse {
 
 message SetRequest {
     string key = 1;
-    Value value = 2;
+    bytes value = 2;
     uint64 txn_id = 3;
 }
 
 message SetResponse {
     Error err = 1;
-}
-
-message BeginRequest {
-
-}
-
-message BeginResponse {
-    uint64 txn_id = 1;
-    Error err = 2;
 }
 
 message RollbackRequest {
@@ -51,7 +50,6 @@ message CommitRequest {
 message CommitResponse {
     Error err = 1;
 }
-
 
 service Txn {
     rpc Begin(BeginRequest) returns (BeginResponse) {}

@@ -87,7 +87,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 		// committed value
 		return vv, nil
 	}
-	writeTxn, err := txn.store.GetTxn(ctx, vv.Version, key)
+	writeTxn, err := txn.store.LoadTransactionRecord(ctx, vv.Version, key)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTxnConflict, "reason: %v", err)
 	}

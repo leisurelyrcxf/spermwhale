@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -78,10 +80,12 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	if opt.NotUpdateTimestampCache {
 		val, err := kv.db.Get(ctx, key, opt)
 		if !opt.ExactVersion {
-			// only used by TransactionStore::GetTxn
+			// only used by TransactionStore::LoadTransactionRecord
 			return val, err
 		}
-
+		if err == nil {
+			assert.Must(val.Version == opt.Version)
+		}
 		// opt.ExactVersion is true, doing txn state checking for all written keys.
 		if !errors.IsNotExistsErr(err) {
 			return val, err
@@ -102,7 +106,11 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	defer kv.lm.RUnlock(key)
 
 	kv.tsCache.UpdateMaxReadVersion(key, opt.Version)
-	return kv.db.Get(ctx, key, opt)
+	val, err := kv.db.Get(ctx, key, opt)
+	if err == nil {
+		assert.Must(val.Version <= opt.Version)
+	}
+	return val, err
 }
 
 func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {

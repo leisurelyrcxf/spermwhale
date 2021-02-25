@@ -18,7 +18,8 @@ type TransactionStore struct {
 	asyncJobs      chan<- Job
 }
 
-func (s *TransactionStore) GetTxn(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
+func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
+	// TODO maybe get from txn manager first?
 	readOpt := types.NewReadOption(math.MaxUint64)
 	isTooStale := s.oracle.IsTooStale(txnID, s.staleThreshold)
 	if !isTooStale {

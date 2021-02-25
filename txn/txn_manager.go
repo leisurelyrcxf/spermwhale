@@ -25,8 +25,11 @@ type TransactionManager struct {
 
 func NewTransactionManager(
 	kv types.KV,
-	staleThreshold time.Duration, workerNum int) *TransactionManager {
+	staleThreshold time.Duration,
+	workerNum int) *TransactionManager {
 	return (&TransactionManager{
+		txns: data_struct.NewConcurrentMap(32),
+
 		kv:             kv,
 		staleThreshold: staleThreshold,
 		oracle:         physical.NewOracle(),
@@ -63,10 +66,6 @@ func (m *TransactionManager) BeginTxn(_ context.Context) (*Txn, error) {
 	return txn, nil
 }
 
-func (m *TransactionManager) newTxn(id uint64) *Txn {
-	return NewTxn(id, m.kv, m.staleThreshold, m.oracle, m.store, m.asyncJobs)
-}
-
 func (m *TransactionManager) GetTxn(id uint64) (*Txn, error) {
 	if txnVal, ok := m.txns.Get(TransactionKey(id)); ok {
 		return txnVal.(*Txn), nil
@@ -76,6 +75,10 @@ func (m *TransactionManager) GetTxn(id uint64) (*Txn, error) {
 
 func (m *TransactionManager) Close() error {
 	return m.kv.Close()
+}
+
+func (m *TransactionManager) newTxn(id uint64) *Txn {
+	return NewTxn(id, m.kv, m.staleThreshold, m.oracle, m.store, m.asyncJobs)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
