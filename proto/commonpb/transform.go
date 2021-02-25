@@ -40,3 +40,10 @@ func (x *Value) ToValue() types.Value {
 		},
 	}
 }
+
+func (x *ValueMeta) Meta() types.Meta {
+	return types.Meta{
+		WriteIntent: x.WriteIntent,
+		Version:     x.Version,
+	}
+}

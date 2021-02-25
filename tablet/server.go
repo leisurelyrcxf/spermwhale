@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils/network"
 
 	"github.com/leisurelyrcxf/spermwhale/models"
@@ -53,7 +54,10 @@ func (kv *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.Ge
 }
 
 func (kv *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
-	err := kv.kvcc.Set(ctx, req.Key, req.Value.Val, req.Value.Meta.Version, req.Value.Meta.WriteIntent)
+	err := kv.kvcc.Set(ctx, req.Key, req.Value.Val, types.WriteOption{
+		Meta:             req.Value.Meta.Meta(),
+		ClearWriteIntent: req.Opt.ClearWriteIntent,
+	})
 	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
 }
 

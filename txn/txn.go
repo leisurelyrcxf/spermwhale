@@ -3,6 +3,8 @@ package txn
 import (
 	"context"
 
+	"google.golang.org/appengine/log"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
@@ -22,11 +24,11 @@ type Txn struct {
 	ID uint64
 	kv types.KV
 
-	tm    *TransactionManager
-	state State
+	txnStore Store
+	state    State
 }
 
-func NewTransaction(id uint64, kv types.KV) *Txn {
+func NewTxn(id uint64, kv types.KV) *Txn {
 	return &Txn{
 		ID: id,
 		kv: kv,
@@ -43,15 +45,18 @@ func (txn *Txn) Get(ctx context.Context, key string) (string, error) {
 		return "", err
 	}
 	assert.Must(vv.Version <= txn.ID)
-	if !vv.M.WriteIntent {
+	if !vv.Meta.WriteIntent {
 		// committed value
 		return vv.V, nil
 	}
-	writeTxn, err := txn.tm.GetTxn(vv.Version)
+	writeTxn, err := txn.txnStore.GetTxn(ctx, vv.Version)
 	if err != nil {
 		return "", err
 	}
 	if writeTxn.IsCommitted() {
+		if err := txn.kv.Set(ctx, key, ""); err != nil {
+			log.Warningf("clear write intent failed: '%v'", err)
+		}
 		return vv.V, nil
 	}
 	return "", consts.ErrTxnConflict

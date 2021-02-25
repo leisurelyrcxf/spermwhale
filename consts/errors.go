@@ -6,10 +6,12 @@ import (
 )
 
 const (
-	ErrCodeVersionConflict = 1
-	ErrCodeStaleWrite      = 3
-	ErrCodeShardsNotReady  = 5
-	ErrCodeUnknown         = 1111
+	ErrCodeVersionConflict  = 1
+	ErrKeyNotExists         = 2
+	ErrCodeStaleWrite       = 3
+	ErrCodeShardsNotReady   = 5
+	ErrCodeVersionNotExists = 10
+	ErrCodeUnknown          = 1111
 )
 
 var (
@@ -23,5 +25,14 @@ var (
 	ErrShardsNotReady = &types.Error{
 		Code: ErrCodeShardsNotReady,
 		Msg:  "shards not ready",
+	}
+
+	ErrKeyNotExist = &types.Error{
+		Code: ErrKeyNotExists,
+		Msg:  "key not exist",
+	}
+	ErrVersionNotExists = &types.Error{
+		Code: ErrCodeVersionNotExists,
+		Msg:  "version not exist",
 	}
 )

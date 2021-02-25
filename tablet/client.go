@@ -52,15 +52,18 @@ func (c *Client) Get(ctx context.Context, key string, version uint64) (types.Val
 	return resp.V.ToValue(), nil
 }
 
-func (c *Client) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
+func (c *Client) Set(ctx context.Context, key, val string, opt types.WriteOption) error {
 	resp, err := c.kv.Set(ctx, &tabletpb.SetRequest{
 		Key: key,
 		Value: &commonpb.Value{
 			Meta: &commonpb.ValueMeta{
-				WriteIntent: writeIntent,
-				Version:     version,
+				WriteIntent: opt.WriteIntent,
+				Version:     opt.Version,
 			},
 			Val: val,
+		},
+		Opt: &commonpb.WriteOption{
+			ClearWriteIntent: opt.ClearWriteIntent,
 		},
 	})
 	if err != nil {

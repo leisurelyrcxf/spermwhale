@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/leisurelyrcxf/spermwhale/utils/trace"
 )
 
@@ -97,5 +99,11 @@ func Wrap(err, other error) error {
 }
 
 func Annotatef(err error, format string, args ...interface{}) error {
+	if ve, ok := err.(*types.Error); ok {
+		return &types.Error{
+			Code: ve.Code,
+			Msg:  ve.Msg + ", " + fmt.Sprintf(format, args...),
+		}
+	}
 	return New(err.Error() + ", " + fmt.Sprintf(format, args...))
 }

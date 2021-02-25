@@ -19,6 +19,7 @@ message GetResponse {
 message SetRequest {
     string key = 1;
     Value value = 2;
+    WriteOption opt = 3;
 }
 
 message SetResponse {

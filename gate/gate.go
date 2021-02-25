@@ -63,12 +63,12 @@ func (g *Gate) Get(ctx context.Context, key string, version uint64) (types.Value
 	return s.Get(ctx, key, version)
 }
 
-func (g *Gate) Set(ctx context.Context, key, val string, version uint64, writeIntent bool) error {
+func (g *Gate) Set(ctx context.Context, key, val string, opt types.WriteOption) error {
 	s, err := g.route(key)
 	if err != nil {
 		return err
 	}
-	return s.Set(ctx, key, val, version, writeIntent)
+	return s.Set(ctx, key, val, opt)
 }
 
 func (g *Gate) Close() (err error) {

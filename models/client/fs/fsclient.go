@@ -27,7 +27,7 @@ var (
 )
 
 type Client struct {
-	AddrList string
+	addrList string
 	sync.Mutex
 
 	RootDir  string
@@ -45,7 +45,7 @@ func New(dir string) (*Client, error) {
 		return nil, errors.Trace(err)
 	}
 	return &Client{
-		AddrList: dir,
+		addrList: dir,
 		RootDir:  fullpath,
 		DataDir:  filepath.Join(fullpath, "data"),
 		TempDir:  filepath.Join(fullpath, "temp"),
@@ -54,7 +54,7 @@ func New(dir string) (*Client, error) {
 }
 
 func (c *Client) AddrList() string {
-	return c.AddrList()
+	return c.addrList
 }
 
 func (c *Client) realpath(path string) string {

@@ -70,7 +70,7 @@ func NewKVCC(db mvcc.DB) *KVCCPhysical {
 	}
 }
 
-func (kv *KVCCPhysical) Get(_ context.Context, key string, version uint64) (types.Value, error) {
+func (kv *KVCCPhysical) Get(ctx context.Context, key string, version uint64) (types.Value, error) {
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
@@ -78,10 +78,14 @@ func (kv *KVCCPhysical) Get(_ context.Context, key string, version uint64) (type
 	defer kv.lm.RUnlock(key)
 
 	kv.tsCache.UpdateMaxReadVersion(key, version)
-	return kv.db.Get(key, version)
+	return kv.db.Get(ctx, key, version)
 }
 
-func (kv *KVCCPhysical) Set(ctx context.Context, key string, val string, version uint64, writeIntent bool) error {
+func (kv *KVCCPhysical) Set(ctx context.Context, key string, val string, opt types.WriteOption) error {
+	if opt.ClearWriteIntent {
+		return kv.db.Set(ctx, key, val, opt)
+	}
+
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
@@ -94,17 +98,16 @@ func (kv *KVCCPhysical) Set(ctx context.Context, key string, val string, version
 	if err != nil {
 		glog.Fatalf("failed to fetch timestamp: %v", err)
 	}
-	if version < currentTS && currentTS-version > uint64(consts.TooStaleWriteThreshold) {
+	if opt.Version < currentTS && currentTS-opt.Version > uint64(consts.TooStaleWriteThreshold) {
 		return consts.ErrStaleWrite
 	}
 	maxVersion := kv.tsCache.GetMaxReadVersion(key)
-	if version < maxVersion {
+	if opt.Version < maxVersion {
 		return &types.Error{
 			Code: consts.ErrCodeVersionConflict,
 			Msg:  consts.ErrMsgVersionConflict,
 		}
 	}
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
-	kv.db.Set(key, val, version, writeIntent)
-	return nil
+	return kv.db.Set(ctx, key, val, opt)
 }
