@@ -67,7 +67,7 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 			return err
 		}
 		rand.Seed(time.Now().UnixNano())
-		time.Sleep(time.Millisecond * rand.Intn(10))
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(10)))
 	}
 	return errors.ErrTxnRetriedTooManyTimes
 }

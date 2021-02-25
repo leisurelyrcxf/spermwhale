@@ -41,7 +41,7 @@ func (c *Client) Begin(ctx context.Context) (uint64, error) {
 }
 
 func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value, error) {
-	resp, err := c.c.Get(ctx, &txnpb.GetRequest{
+	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
 		TxnId: txnID,
 	})
@@ -61,7 +61,7 @@ func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value
 }
 
 func (c *Client) Set(ctx context.Context, key string, val []byte, txnID uint64) error {
-	resp, err := c.c.Set(ctx, &txnpb.SetRequest{
+	resp, err := c.c.Set(ctx, &txnpb.TxnSetRequest{
 		Key:   key,
 		Value: val,
 		TxnId: txnID,

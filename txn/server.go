@@ -29,26 +29,26 @@ func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.Begin
 	}, nil
 }
 
-func (s *Stub) Get(ctx context.Context, req *txnpb.GetRequest) (*txnpb.GetResponse, error) {
+func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGetResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &txnpb.GetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnGetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
 	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
-		return &txnpb.GetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnGetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &txnpb.GetResponse{
+	return &txnpb.TxnGetResponse{
 		V: commonpb.ToPBValue(val),
 	}, nil
 }
 
-func (s *Stub) Set(ctx context.Context, req *txnpb.SetRequest) (*txnpb.SetResponse, error) {
+func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSetResponse, error) {
 	txn, err := s.m.GetTxn(req.TxnId)
 	if err != nil {
-		return &txnpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnSetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
-	return &txnpb.SetResponse{Err: commonpb.ToPBError(
+	return &txnpb.TxnSetResponse{Err: commonpb.ToPBError(
 		txn.Set(ctx, req.Key, req.Value)),
 	}, nil
 }

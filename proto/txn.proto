@@ -15,23 +15,23 @@ message BeginResponse {
     Error err = 2;
 }
 
-message GetRequest {
+message TxnGetRequest {
     string key = 1;
     uint64 txn_id = 2;
 }
 
-message GetResponse {
+message TxnGetResponse {
     Value v = 1;
     Error err = 2;
 }
 
-message SetRequest {
+message TxnSetRequest {
     string key = 1;
     bytes value = 2;
     uint64 txn_id = 3;
 }
 
-message SetResponse {
+message TxnSetResponse {
     Error err = 1;
 }
 
@@ -53,8 +53,8 @@ message CommitResponse {
 
 service Txn {
     rpc Begin(BeginRequest) returns (BeginResponse) {}
-    rpc Get(GetRequest) returns (GetResponse) {}
-    rpc Set(SetRequest) returns (SetResponse) {}
+    rpc Get(TxnGetRequest) returns (TxnGetResponse) {}
+    rpc Set(TxnSetRequest) returns (TxnSetResponse) {}
     rpc Rollback(RollbackRequest) returns (RollbackResponse) {}
     rpc Commit(CommitRequest) returns (CommitResponse) {}
 }
