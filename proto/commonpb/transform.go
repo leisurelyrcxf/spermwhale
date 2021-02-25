@@ -3,16 +3,24 @@ package commonpb
 import (
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-func ToPBError(e *types.Error) *Error {
+func ToPBError(e error) *Error {
 	if e == nil {
 		return nil
 	}
+	if e, ok := e.(*types.Error); ok {
+		return &Error{
+			Code: int32(e.Code),
+			Msg:  e.Msg,
+		}
+	}
 	return &Error{
-		Code: int32(e.Code),
-		Msg:  e.Msg,
+		Code: consts.ErrCodeUnknown,
+		Msg:  e.Error(),
 	}
 }
 

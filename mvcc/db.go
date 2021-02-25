@@ -1,6 +1,15 @@
 package mvcc
 
-import "github.com/leisurelyrcxf/spermwhale/types"
+import (
+	"fmt"
+
+	"github.com/leisurelyrcxf/spermwhale/types"
+)
+
+var (
+	ErrKeyNotExist     = fmt.Errorf("key not exist")
+	ErrVersionTooStale = fmt.Errorf("version too stale")
+)
 
 type DB interface {
 	Get(key string, upperVersion uint64) (types.Value, error)

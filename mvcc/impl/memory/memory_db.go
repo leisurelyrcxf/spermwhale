@@ -1,16 +1,10 @@
 package memory
 
 import (
-	"fmt"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/data_struct"
+	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/types"
-)
-
-var (
-	ErrKeyNotExist     = fmt.Errorf("key not exist")
-	ErrVersionTooStale = fmt.Errorf("version too stale")
 )
 
 type VersionedValues struct {
@@ -37,7 +31,7 @@ func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	if ok {
 		return val.(types.Value), nil
 	}
-	return types.Value{}, ErrVersionTooStale
+	return types.Value{}, mvcc.ErrVersionTooStale
 }
 
 func (vvs *VersionedValues) Put(dbValue string, version uint64, writeIntent bool) {
@@ -48,7 +42,7 @@ func (vvs *VersionedValues) Max() (types.Value, error) {
 	// Key is revered sorted, thus min is actually max version..
 	key, dbVal := vvs.ConcurrentTreeMap.Min()
 	if key == nil {
-		return types.Value{}, ErrVersionTooStale
+		return types.Value{}, mvcc.ErrVersionTooStale
 	}
 	return dbVal.(types.Value), nil
 }
@@ -57,7 +51,7 @@ func (vvs *VersionedValues) Min() (types.Value, error) {
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := vvs.ConcurrentTreeMap.Max()
 	if key == nil {
-		return types.Value{}, ErrVersionTooStale
+		return types.Value{}, mvcc.ErrVersionTooStale
 	}
 	return dbVal.(types.Value), nil
 }
@@ -67,7 +61,7 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, erro
 		return key.(uint64) <= upperVersion
 	})
 	if version == nil {
-		return types.Value{}, ErrVersionTooStale
+		return types.Value{}, mvcc.ErrVersionTooStale
 	}
 	return dbVal.(types.Value), nil
 }
@@ -99,7 +93,7 @@ func (db *DB) Set(key string, val string, version uint64, writeIntent bool) {
 func (db *DB) getValues(key string) (*VersionedValues, error) {
 	val, ok := db.values.Get(key)
 	if !ok {
-		return nil, ErrKeyNotExist
+		return nil, mvcc.ErrKeyNotExist
 	}
 	return val.(*VersionedValues), nil
 }

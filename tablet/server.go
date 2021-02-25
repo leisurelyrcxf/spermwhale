@@ -1,15 +1,56 @@
 package tablet
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/mvcc"
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"google.golang.org/grpc"
 )
+
+type Stub struct {
+	tabletpb.UnimplementedKVServer
+	kvcc *KVCCPhysical
+}
+
+func NewStub(db mvcc.DB) *Stub {
+	return &Stub{
+		kvcc: NewKVCC(db),
+	}
+}
+
+func (kv *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
+	vv, err := kv.kvcc.Get(ctx, req.Key, req.Version)
+	if err != nil {
+		return &tabletpb.GetResponse{
+			Err: &commonpb.Error{
+				Code: -1,
+				Msg:  err.Error(),
+			},
+		}, nil
+	}
+	return &tabletpb.GetResponse{
+		V: &commonpb.Value{
+			Meta: &commonpb.ValueMeta{
+				WriteIntent: vv.WriteIntent,
+				Version:     vv.Version,
+			},
+			Val: vv.V,
+		},
+	}, nil
+}
+
+func (kv *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
+	err := kv.kvcc.Set(ctx, req.Key, req.Value.Val, req.Value.Meta.Version, req.Value.Meta.WriteIntent)
+	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+}
 
 type Server struct {
 	grpcServer *grpc.Server
@@ -21,7 +62,7 @@ type Server struct {
 func NewServer(port int) *Server {
 	grpcServer := grpc.NewServer()
 	db := memory.NewDB()
-	tabletpb.RegisterKVServer(grpcServer, NewKV(db))
+	tabletpb.RegisterKVServer(grpcServer, NewStub(db))
 
 	return &Server{
 		grpcServer: grpcServer,

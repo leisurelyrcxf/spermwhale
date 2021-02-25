@@ -17,18 +17,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-type OracleProxy struct {
+type Stub struct {
 	oraclepb.UnimplementedOracleServer
 
 	delegate oracle.Oracle
 }
 
-func (o *OracleProxy) Fetch(ctx context.Context, _ *oraclepb.FetchRequest) (*oraclepb.FetchResponse, error) {
+func (o *Stub) Fetch(ctx context.Context, _ *oraclepb.FetchRequest) (*oraclepb.FetchResponse, error) {
 	ts, err := o.delegate.FetchTimestamp(ctx)
 	if err != nil {
 		return &oraclepb.FetchResponse{
 			Err: &commonpb.Error{
-				Code: consts.ErrCodeOther,
+				Code: consts.ErrCodeUnknown,
 				Msg:  err.Error(),
 			},
 		}, nil
@@ -38,7 +38,7 @@ func (o *OracleProxy) Fetch(ctx context.Context, _ *oraclepb.FetchRequest) (*ora
 
 type Server struct {
 	grpcServer *grpc.Server
-	oracle     *OracleProxy
+	oracle     *Stub
 
 	port int
 	Done chan struct{}
@@ -47,7 +47,7 @@ type Server struct {
 func NewServer(port int, oracle oracle.Oracle) *Server {
 	s := &Server{
 		grpcServer: grpc.NewServer(),
-		oracle: &OracleProxy{
+		oracle: &Stub{
 			delegate: oracle,
 		},
 		port: port,
