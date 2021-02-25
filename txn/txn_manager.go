@@ -79,7 +79,7 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id uint64) *Txn {
-	return NewTxn(id, m.kv, m.StaleWriteThreshold, m.oracle, m.store, m.asyncJobs)
+	return NewTxn(id, m.kv, m.TxnConfig, m.oracle, m.store, m.asyncJobs)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {

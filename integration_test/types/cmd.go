@@ -44,7 +44,7 @@ type Command struct {
 	mutex sync.Mutex
 }
 
-func NewCommand(cmdString string, port int, workDir, desc string) *Command {
+func NewCommand(cmdString string, ports []int, workDir, desc string) *Command {
 	args := strings.Split(cmdString, "")
 	cmd := exec.Command(args[0], args[1:]...) // nolint:gosec
 	cmd.Dir = workDir
@@ -53,7 +53,7 @@ func NewCommand(cmdString string, port int, workDir, desc string) *Command {
 		desc:      desc,
 		started:   make(chan struct{}),
 		stopped:   make(chan struct{}),
-		WaitPorts: []int{port},
+		WaitPorts: ports,
 	}
 }
 
@@ -262,7 +262,7 @@ func (cmd *Command) Kill() error {
 			}
 			return killErr
 		}); err != nil && cmd.Status() == StatusRunning {
-			glog.Warningf("[Container][Stop] failed to stop command %s, err: '%v'", cmd.FullName(), killErr)
+			glog.Warningf("[Command][Stop] failed to stop command %s, err: '%v'", cmd.FullName(), killErr)
 			return err
 		}
 	}
@@ -272,6 +272,7 @@ func (cmd *Command) Kill() error {
 
 	select {
 	case <-ctx.Done():
+		glog.Warningf("[Command][Stop] wait command %s exited failed: '%v'", cmd.FullName(), ctx.Err())
 		return errors.Wrap(consts.ErrFailedToStopContainer, ctx.Err())
 	case <-cmd.stopped:
 		return nil

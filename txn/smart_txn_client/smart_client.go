@@ -43,17 +43,19 @@ type SmartClient struct {
 	delegate types.Txn
 }
 
-func (c *SmartClient) BeginTransaction(ctx context.Context) (*Txn, error) {
-	txnID, err := c.delegate.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return NewTxn(txnID), nil
+func NewSmartClient(delegate types.Txn) *SmartClient {
+	return &SmartClient{delegate: delegate}
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn *Txn) error) error {
 	for i := 0; i < 100; i++ {
-		txn, err := c.BeginTransaction(ctx)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			break
+		}
+		txn, err := c.beginTransaction(ctx)
 		if err != nil {
 			return err
 		}
@@ -68,4 +70,16 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 		time.Sleep(time.Millisecond * rand.Intn(10))
 	}
 	return errors.ErrTxnRetriedTooManyTimes
+}
+
+func (c *SmartClient) Close() error {
+	return c.delegate.Close()
+}
+
+func (c *SmartClient) beginTransaction(ctx context.Context) (*Txn, error) {
+	txnID, err := c.delegate.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewTxn(txnID), nil
 }

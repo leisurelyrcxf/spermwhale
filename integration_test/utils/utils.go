@@ -318,3 +318,9 @@ func BinaryExistsInPath(processName string) bool {
 	glog.Infof("[BinaryExistsInPath] found binary %s in path", path)
 	return true
 }
+
+func NewBool(b bool) *bool {
+	pb := new(bool)
+	*pb = b
+	return pb
+}

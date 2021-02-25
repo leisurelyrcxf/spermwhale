@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 
+	"github.com/leisurelyrcxf/spermwhale/tablet"
+
 	"github.com/leisurelyrcxf/spermwhale/cmd/common"
 
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/tablet"
 )
 
 func main() {

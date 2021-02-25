@@ -39,7 +39,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		assert.Must(len(txn.WrittenKeys) > 0)
 		assert.Must(txn.State == StateStaging)
 		txn.kv = s.kv
-		txn.staleThreshold = s.cfg.StaleWriteThreshold
+		txn.cfg = s.cfg
 		txn.oracle = s.oracle
 		txn.store = s
 		txn.asyncJobs = s.asyncJobs

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/models"
 	"github.com/leisurelyrcxf/spermwhale/models/client"
@@ -20,7 +22,10 @@ func newServer(assert *testifyassert.Assertions, port int) (server *Server) {
 	if !assert.NoError(err) {
 		return nil
 	}
-	return NewServer(time.Second, time.Nanosecond, 1, port, models.NewStore(cli, "test_cluster"))
+	return NewServer(port, types.TxnConfig{
+		StaleWriteThreshold: time.Second,
+		MaxClockDrift:       time.Nanosecond,
+	}, 1, models.NewStore(cli, "test_cluster"))
 }
 
 func newReadOption(version uint64) types.ReadOption {
@@ -36,7 +41,7 @@ func TestKV_Get(t *testing.T) {
 	defer server.Stop()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
-	client, err := NewClient(serverAddr)
+	client, err := kv.NewClient(serverAddr)
 	if !assert.NoError(err) {
 		return
 	}
@@ -99,7 +104,7 @@ func TestKV_Get2(t *testing.T) {
 	defer server.Stop()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
-	client, err := NewClient(serverAddr)
+	client, err := kv.NewClient(serverAddr)
 	if !assert.NoError(err) {
 		return
 	}

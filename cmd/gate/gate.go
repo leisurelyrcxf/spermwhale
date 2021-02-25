@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/leisurelyrcxf/spermwhale/gate"
@@ -13,7 +15,8 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 9999, "port")
+	txnPort := flag.Int("port-txn", 9999, "txn port")
+	kvPort := flag.Int("port-kv", 10001, "kv port ")
 	workerNum := flag.Int("txn-worker-num", consts.DefaultTxnManagerWorkerNumber, "txn manager worker number")
 	common.RegisterStoreFlags()
 	common.RegisterTxnConfigFlags()
@@ -25,9 +28,18 @@ func main() {
 		glog.Fatalf("can't create gate: %v", err)
 	}
 	cfg := common.NewTxnConfig()
-	server := txn.NewServer(gAte, cfg, *workerNum, *port)
-	if err := server.Start(); err != nil {
-		glog.Fatalf("failed to start: %v", err)
+	txnServer := txn.NewServer(gAte, cfg, *workerNum, *txnPort)
+	if err := txnServer.Start(); err != nil {
+		glog.Fatalf("failed to start txn server: %v", err)
 	}
-	<-server.Done
+	kvServer := kv.NewServer(*kvPort, gAte, true)
+	if err := kvServer.Start(); err != nil {
+		glog.Fatalf("failed to start kv server: %v", err)
+	}
+	select {
+	case <-txnServer.Done:
+		return
+	case <-kvServer.Done:
+		return
+	}
 }

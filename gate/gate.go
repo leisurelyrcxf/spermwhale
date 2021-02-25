@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/golang/glog"
@@ -12,18 +14,17 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/models"
 
-	"github.com/leisurelyrcxf/spermwhale/tablet"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
 type Shard struct {
-	*tablet.Client
+	*kv.Client
 
 	id int
 }
 
 func NewShard(g *models.Group) (*Shard, error) {
-	cli, err := tablet.NewClient(g.ServerAddr)
+	cli, err := kv.NewClient(g.ServerAddr)
 	if err != nil {
 		return nil, err
 	}

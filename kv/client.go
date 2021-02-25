@@ -1,4 +1,4 @@
-package tablet
+package kv
 
 import (
 	"context"

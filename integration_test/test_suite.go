@@ -8,6 +8,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+	"github.com/leisurelyrcxf/spermwhale/txn"
+
+	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
+
 	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
 
 	testifyassert "github.com/stretchr/testify/assert"
@@ -37,6 +42,9 @@ const (
 )
 
 type TestSuite struct {
+	TxnClient *smart_txn_client.SmartClient
+	KVClient  *kv.Client
+
 	testifyassert.Assertions
 	exiting  sync2.AtomicBool
 	commands []*types.Command
@@ -47,29 +55,52 @@ func NewTestSuite(t *testing.T) *TestSuite {
 	if err := chkTestPrerequisite(); !assert.NoError(err) {
 		return nil
 	}
-	return &TestSuite{
+	ts := &TestSuite{
 		Assertions: *testifyassert.New(t),
 	}
+	b := ts.CreateCluster()
+	if !assert.True(b) {
+		ts.CloseWithResult(&b)
+		return nil
+	}
+	return ts
 }
 
 func (t *TestSuite) CreateCluster() (b bool) {
-	if !t.True(t.StartProcess("sptablet --", 30000, "", nil)) {
+	const (
+		kvPort  = 9999
+		txnPort = 10001
+	)
+
+	if !t.True(t.StartProcess("sptablet --", []int{30000}, "", nil)) {
 		return
 	}
-	if !t.True(t.StartProcess("sptablet --", 40000, "", nil)) {
+	if !t.True(t.StartProcess("sptablet --", []int{40000}, "", nil)) {
 		return
 	}
-	if !t.True(t.StartProcess("spgate --", 10001, "", nil)) {
+	if !t.True(t.StartProcess("spgate --", []int{kvPort, txnPort}, "", nil)) {
 		return
 	}
+
+	kvClient, err := kv.NewClient(fmt.Sprintf("localhost:%d", kvPort))
+	if !t.NoError(err) {
+		return
+	}
+	t.KVClient = kvClient
+
+	txnClient, err := txn.NewClient(fmt.Sprintf("localhost:%d", txnPort))
+	if !t.NoError(err) {
+		return
+	}
+	t.TxnClient = smart_txn_client.NewSmartClient(txnClient)
 	return true
 }
 
-func (t *TestSuite) StartProcess(cmdString string, port int, desc string, onStop func()) bool {
+func (t *TestSuite) StartProcess(cmdString string, ports []int, desc string, onStop func()) bool {
 	if onStop == nil {
 		onStop = func() {}
 	}
-	cmd := types.NewCommand(cmdString, port, testconsts.DefaultWorkDir, desc)
+	cmd := types.NewCommand(cmdString, ports, testconsts.DefaultWorkDir, desc)
 	err := cmd.StartProcess(onStop)
 	if !t.NoError(err) {
 		return false
@@ -83,13 +114,20 @@ func (t *TestSuite) Exit() {
 	t.exiting.Set(true)
 
 	go func() {
-		t.close()
+		t.CloseWithResult(utils.NewBool(true))
 		os.Exit(1)
 	}()
 }
 
-func (t *TestSuite) close() {
-
+func (t *TestSuite) CloseWithResult(res *bool) {
+	var err error
+	if *res {
+		for _, cmd := range t.commands {
+			err = errors.Wrap(err, cmd.Kill())
+		}
+	}
+	err = errors.Wrap(err, t.TxnClient.Close())
+	t.NoError(err)
 }
 
 var binaries = []string{spermBinaryGate, spermBinaryTablet}
