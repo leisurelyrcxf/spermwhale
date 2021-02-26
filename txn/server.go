@@ -81,12 +81,12 @@ type Server struct {
 func NewServer(
 	kv types.KV,
 	cfg types.TxnConfig,
-	workerNumber int,
+	clearWorkerNumber, ioWorkerNumber int,
 	port int) *Server {
 	grpcServer := grpc.NewServer()
 
 	txnpb.RegisterTxnServer(grpcServer, &Stub{
-		m: NewTransactionManager(kv, cfg, workerNumber),
+		m: NewTransactionManager(kv, cfg, clearWorkerNumber, ioWorkerNumber),
 	})
 
 	return &Server{

@@ -51,7 +51,7 @@ type Txn struct {
 	kv            types.KV          `json:"-"`
 	oracle        *physical.Oracle  `json:"-"`
 	store         *TransactionStore `json:"-"`
-	asyncJobs     chan<- Job        `json:"-"`
+	s             *Scheduler        `json:"-"`
 
 	sync.Mutex `json:"-"`
 }
@@ -60,7 +60,7 @@ func NewTxn(
 	id uint64,
 	kv types.KV, cfg types.TxnConfig,
 	oracle *physical.Oracle, store *TransactionStore,
-	asyncJobs chan<- Job) *Txn {
+	s *Scheduler) *Txn {
 	return &Txn{
 		ID:    id,
 		State: StateUncommitted,
@@ -70,7 +70,7 @@ func NewTxn(
 		kv:            kv,
 		oracle:        oracle,
 		store:         store,
-		asyncJobs:     asyncJobs,
+		s:             s,
 	}
 }
 
@@ -296,9 +296,12 @@ func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
 		glog.V(11).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 	}
 
-	txn.asyncJobs <- func(ctx context.Context) error {
-		return txn.clearCommitted(ctx)
-	}
+	txn.s.ScheduleClearJob(
+		types.NewTask(
+			fmt.Sprintf("clear-%s-write-intents", txn.Key()),
+			func(ctx context.Context) (interface{}, error) {
+				return nil, txn.clearCommitted(ctx)
+			}))
 }
 
 func (txn *Txn) clearCommitted(ctx context.Context) (err error) {

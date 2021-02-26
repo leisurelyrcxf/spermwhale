@@ -77,7 +77,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnConfig, 10)
+	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
 
@@ -149,7 +149,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnConfig, 10)
+	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
 
@@ -243,7 +243,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnConfig, 10)
+	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
 
@@ -410,7 +410,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, cfg, 10)
+	tm := NewTransactionManager(gAte, cfg, 20, 30)
 	sc := smart_txn_client.NewSmartClient(tm)
 	if err := sc.SetInt(ctx, "k1", initialValue); !assert.NoError(err) {
 		return
@@ -502,7 +502,7 @@ func testDistributedTxnConsistency(t *testing.T, round int, staleWriteThreshold 
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, cfg, 10)
+	tm := NewTransactionManager(gAte, cfg, 20, 30)
 	sc := smart_txn_client.NewSmartClient(tm)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
@@ -652,7 +652,7 @@ func testDistributedTxnConsistency2(t *testing.T, round int, staleWriteThreshold
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, cfg, 10)
+	tm := NewTransactionManager(gAte, cfg, 20, 30)
 	sc := smart_txn_client.NewSmartClient(tm)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
@@ -810,7 +810,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, cfg, 10)
+	tm := NewTransactionManager(gAte, cfg, 20, 30)
 	sc := smart_txn_client.NewSmartClient(tm)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return

@@ -13,10 +13,10 @@ import (
 )
 
 type TransactionStore struct {
-	kv        types.KV
-	oracle    *physical.Oracle
-	cfg       types.TxnConfig
-	asyncJobs chan<- Job
+	kv     types.KV
+	oracle *physical.Oracle
+	cfg    types.TxnConfig
+	s      *Scheduler
 }
 
 func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
@@ -45,7 +45,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		txn.cfg = s.cfg
 		txn.oracle = s.oracle
 		txn.store = s
-		txn.asyncJobs = s.asyncJobs
+		txn.s = s.s
 		return txn, nil
 	}
 
@@ -59,7 +59,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		glog.Errorf("[CheckCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
 		return nil, keyErr
 	}
-	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.asyncJobs)
+	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.s)
 	if errors.IsNotExistsErr(keyErr) {
 		// case 1
 		txn.State = StateRollbacked
