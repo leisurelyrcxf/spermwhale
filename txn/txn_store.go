@@ -26,13 +26,13 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	if !isTooStale {
 		readOpt = readOpt.SetNotUpdateTimestampCache()
 	}
-	txnRecordData, err := s.kv.Get(ctx, TransactionKey(txnID), readOpt)
-	if err != nil && !errors.IsNotExistsErr(err) {
-		glog.Errorf("[LoadTransactionRecord] kv.Get txnRecordData returns unexpected error: %v", err)
-		return nil, err
+	txnRecordData, recordErr := s.kv.Get(ctx, TransactionKey(txnID), readOpt)
+	if recordErr != nil && !errors.IsNotExistsErr(recordErr) {
+		glog.Errorf("[LoadTransactionRecord] kv.Get txnRecordData returns unexpected error: %v", recordErr)
+		return nil, recordErr
 	}
 
-	if err == nil {
+	if recordErr == nil {
 		assert.Must(txnRecordData.Meta.Version == txnID)
 		txn, err := DecodeTxn(txnRecordData.V)
 		if err != nil {
@@ -49,39 +49,38 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		return txn, nil
 	}
 
-	assert.Must(errors.IsNotExistsErr(err))
-	if !isTooStale {
-		return nil, err
-	}
-
-	assert.Must(!readOpt.NotUpdateTimestampCache)
-	// since we've updated timestamp cache of txn record,
+	assert.Must(errors.IsNotExistsErr(recordErr))
 	// thus will be 3 cases:
-	// 1. transaction has rollbacked
-	// 2. transaction has committed
-	// 3. transaction not commit yet and guaranteed commit won't
-	// succeed in the future (because it needs to write transaction
-	// record with intent), hence safe to rollback.
-	vv, err := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID).SetExactVersion())
-	if err != nil && !errors.IsNotExistsErr(err) {
-		glog.Errorf("[CheckCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, err)
-		return nil, err
+	// 1. transaction has been rollbacked, conflictedKey must be gone
+	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
+	// 3. transaction neither committed nor rollbacked
+	vv, keyErr := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID).SetExactVersion())
+	if keyErr != nil && !errors.IsNotExistsErr(keyErr) {
+		glog.Errorf("[CheckCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
+		return nil, keyErr
 	}
 	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.asyncJobs)
-	if errors.IsNotExistsErr(err) {
+	if errors.IsNotExistsErr(keyErr) {
 		// case 1
 		txn.State = StateRollbacked
 		return txn, nil
 	}
-	assert.Must(err == nil)
+	assert.Must(keyErr == nil)
 	if !vv.WriteIntent {
 		// case 2
 		txn.State = StateCommitted
 		return txn, nil
 	}
 	// case 3
+	if !isTooStale {
+		return nil, recordErr
+	}
+	assert.Must(!readOpt.NotUpdateTimestampCache)
+	// since we've updated timestamp cache of txn record (in case isTooStale is true),
+	// guaranteed commit won't succeed in the future (because it needs to write transaction
+	// record with intent), hence safe to rollback.
 	txn.AddWrittenKey(conflictedKey)
 	txn.State = StateRollbacking
-	_ = txn.rollback(ctx, txn.ID, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
+	_ = txn.rollback(ctx, math.MaxUint64, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
 	return txn, nil
 }

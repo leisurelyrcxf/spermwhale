@@ -23,15 +23,16 @@ func NewSmartClient(tm types.TxnManager) *SmartClient {
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
 	err := c.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
-	})
+	}, nil, nil)
 	if err != nil {
 		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
 	}
 	return err
 }
 
-func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool)) error {
-	for i := 0; i < 100; i++ {
+func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
+	beforeCommit, beforeRollback func() error) error {
+	for i := 0; i < 1000; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -48,6 +49,11 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 
 		err, retry := f(ctx, tx)
 		if err == nil {
+			if beforeCommit != nil {
+				if err := beforeCommit(); err != nil {
+					return err
+				}
+			}
 			err := tx.Commit(ctx)
 			if err == nil {
 				return nil
@@ -58,6 +64,11 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 			rand.Seed(time.Now().UnixNano())
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
 			continue
+		}
+		if beforeRollback != nil {
+			if err := beforeRollback(); err != nil {
+				return err
+			}
 		}
 		_ = tx.Rollback(ctx)
 		if !retry || !errors.IsRetryableTransactionErr(err) {

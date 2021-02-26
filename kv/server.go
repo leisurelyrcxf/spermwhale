@@ -50,7 +50,8 @@ func (stub *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.
 }
 
 type Server struct {
-	port        int
+	Port int
+
 	grpcServer  *grpc.Server
 	beforeStart func() error
 
@@ -63,7 +64,7 @@ func NewServer(port int, kv types.KV, outerService bool) Server {
 	tabletpb.RegisterKVServer(grpcServer, &Stub{kv: kv, outerService: outerService})
 
 	return Server{
-		port:       port,
+		Port:       port,
 		grpcServer: grpcServer,
 
 		Done: make(chan struct{}),
@@ -82,7 +83,7 @@ func (s *Server) Start() error {
 		}
 	}
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
 	if err != nil {
 		glog.Errorf("failed to listen: %v", err)
 		return err

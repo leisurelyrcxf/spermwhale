@@ -15,4 +15,5 @@ const (
 	ErrCodeNotSupported                  = 111
 	ErrCodeInvalidRequest                = 222
 	ErrCodeUnknown                       = 1111
+	ErrCodeInject                        = 11111
 )

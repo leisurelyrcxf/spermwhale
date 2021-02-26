@@ -57,4 +57,8 @@ var (
 		Code: consts.ErrCodeTxnRetriedTooManyTimes,
 		Msg:  "transaction retried too many times",
 	}
+	ErrInject = &Error{
+		Code: consts.ErrCodeInject,
+		Msg:  "injected error",
+	}
 )

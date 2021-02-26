@@ -18,7 +18,7 @@ import (
 )
 
 type Shard struct {
-	*kv.Client
+	types.KV
 
 	id int
 }
@@ -29,8 +29,8 @@ func NewShard(g *models.Group) (*Shard, error) {
 		return nil, err
 	}
 	return &Shard{
-		Client: cli,
-		id:     g.Id,
+		KV: cli,
+		id: g.Id,
 	}, nil
 }
 
@@ -144,7 +144,7 @@ func (g *Gate) syncShard(group *models.Group) error {
 		return errors.Errorf("group.Id < 0")
 	}
 	if group.Id >= len(g.shards) {
-		for i := 0; i < group.Id-len(g.shards)+1; i++ {
+		for i, count := 0, group.Id-len(g.shards)+1; i < count; i++ {
 			g.shards = append(g.shards, nil)
 		}
 	}

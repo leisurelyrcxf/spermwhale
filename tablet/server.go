@@ -1,6 +1,8 @@
 package tablet
 
 import (
+	"fmt"
+
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/models"
 	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
@@ -29,15 +31,28 @@ func NewServer(port int, cfg types.TxnConfig, gid int, store *models.Store) *Ser
 	return s
 }
 
+func NewServerForTesting(port int, cfg types.TxnConfig, gid int, store *models.Store) *Server {
+	db := memory.NewDB()
+	s := &Server{
+		Server: kv.NewServer(port, NewKVCCForTesting(db, cfg), false),
+		gid:    gid,
+		store:  store,
+	}
+	s.Server.SetBeforeStart(func() error {
+		return s.online()
+	})
+	return s
+}
+
 func (s *Server) online() error {
-	localAddr, err := network.GetLocalAddr(s.targetAddr())
+	localIP, err := network.GetLocalIP(s.targetAddr())
 	if err != nil {
 		return err
 	}
 	return s.store.UpdateGroup(
 		&models.Group{
 			Id:         s.gid,
-			ServerAddr: localAddr,
+			ServerAddr: fmt.Sprintf("%s:%d", localIP, s.Port),
 		},
 	)
 }
