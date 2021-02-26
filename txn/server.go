@@ -20,12 +20,12 @@ type Stub struct {
 }
 
 func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.BeginResponse, error) {
-	txn, err := s.m.BeginTxn(ctx)
+	txn, err := s.m.BeginTransaction(ctx)
 	if err != nil {
 		return &txnpb.BeginResponse{Err: commonpb.ToPBError(err)}, nil
 	}
 	return &txnpb.BeginResponse{
-		TxnId: txn.ID,
+		TxnId: txn.(*Txn).ID,
 	}, nil
 }
 

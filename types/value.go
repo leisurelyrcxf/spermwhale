@@ -34,6 +34,10 @@ func (v Value) SetNoWriteIntent() Value {
 	return v
 }
 
+func (v Value) String() string {
+	return string(v.V)
+}
+
 func (v Value) Int() (int, error) {
 	x, err := strconv.ParseInt(string(v.V), 10, 64)
 	return int(x), err

@@ -57,7 +57,7 @@ func (m *TransactionManager) Start() {
 	}
 }
 
-func (m *TransactionManager) BeginTxn(_ context.Context) (*Txn, error) {
+func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, error) {
 	id := m.oracle.MustFetchTimestamp()
 	if _, ok := m.txns.Get(TransactionKey(id)); ok {
 		return nil, errors.ErrTxnExists

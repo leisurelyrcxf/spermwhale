@@ -64,7 +64,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	// record with intent), hence safe to rollback.
 	vv, err := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID).SetExactVersion())
 	if err != nil && !errors.IsNotExistsErr(err) {
-		glog.Errorf("[checkCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, err)
+		glog.Errorf("[CheckCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, err)
 		return nil, err
 	}
 	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.asyncJobs)
@@ -80,7 +80,8 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		return txn, nil
 	}
 	// case 3
-	txn.addWrittenKey(conflictedKey)
-	_ = txn.Rollback(ctx)
+	txn.AddWrittenKey(conflictedKey)
+	txn.State = StateRollbacking
+	_ = txn.Rollback(ctx) // help rollback if original txn coordinator was gone
 	return txn, nil
 }

@@ -3,51 +3,28 @@ package smart_txn_client
 import (
 	"context"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-type Txn struct {
-	id       uint64
-	delegate types.Txn
-}
-
-func NewTxn(id uint64) *Txn {
-	return &Txn{id: id}
-}
-
-func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
-	return txn.delegate.Get(ctx, key, txn.id)
-}
-
-func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
-	return txn.delegate.Set(ctx, key, val, txn.id)
-}
-
-func (txn *Txn) Commit(ctx context.Context) error {
-	return txn.delegate.Commit(ctx, txn.id)
-}
-
-func (txn *Txn) Rollback(ctx context.Context) error {
-	return txn.delegate.Rollback(ctx, txn.id)
-}
-
-func (txn *Txn) Close() error {
-	return txn.delegate.Close()
-}
-
 type SmartClient struct {
-	delegate types.Txn
+	types.TxnManager
 }
 
-func NewSmartClient(delegate types.Txn) *SmartClient {
-	return &SmartClient{delegate: delegate}
+func NewSmartClient(tm types.TxnManager) *SmartClient {
+	return &SmartClient{TxnManager: tm}
 }
 
-func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn *Txn) error) error {
+func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
+	return c.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+		return f(ctx, txn), true
+	})
+}
+
+func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool)) error {
 	for i := 0; i < 100; i++ {
 		select {
 		case <-ctx.Done():
@@ -55,15 +32,21 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 		default:
 			break
 		}
-		txn, err := c.beginTransaction(ctx)
+		tx, err := c.TxnManager.BeginTransaction(ctx)
 		if err != nil {
 			return err
 		}
 
-		if err = f(ctx, txn); err == nil {
-			return nil
+		err, retry := f(ctx, tx)
+		if err == nil {
+			return tx.Commit(ctx)
+		}
+		if !retry {
+			_ = tx.Rollback(ctx)
+			return err
 		}
 		if !errors.IsRetryableErr(err) {
+			_ = tx.Rollback(ctx)
 			return err
 		}
 		rand.Seed(time.Now().UnixNano())
@@ -72,14 +55,39 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 	return errors.ErrTxnRetriedTooManyTimes
 }
 
-func (c *SmartClient) Close() error {
-	return c.delegate.Close()
+func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {
+	return c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+		return txn.Set(ctx, key, val)
+	})
 }
 
-func (c *SmartClient) beginTransaction(ctx context.Context) (*Txn, error) {
-	txnID, err := c.delegate.Begin(ctx)
-	if err != nil {
-		return nil, err
+func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ error) {
+	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
+		val, err = txn.Get(ctx, key)
+		return
+	}); err != nil {
+		return types.EmptyValue, err
 	}
-	return NewTxn(txnID), nil
+	return val, nil
+}
+
+func (c *SmartClient) SetInt(ctx context.Context, key string, intVal int) error {
+	return c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+		return txn.Set(ctx, key, []byte(strconv.Itoa(intVal)))
+	})
+}
+
+func (c *SmartClient) GetInt(ctx context.Context, key string) (int, error) {
+	var val types.Value
+	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
+		val, err = txn.Get(ctx, key)
+		return
+	}); err != nil {
+		return 0, err
+	}
+	return val.Int()
+}
+
+func (c *SmartClient) Close() error {
+	return c.TxnManager.Close()
 }

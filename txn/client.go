@@ -104,3 +104,52 @@ func (c *Client) Rollback(ctx context.Context, txnID uint64) error {
 func (c *Client) Close() error {
 	return c.conn.Close()
 }
+
+type ClientTxnManager struct {
+	c *Client
+}
+
+func NewClientTxnManager(c *Client) *ClientTxnManager {
+	return &ClientTxnManager{c: c}
+}
+
+func (m *ClientTxnManager) BeginTransaction(ctx context.Context) (types.Txn, error) {
+	txnID, err := m.c.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return NewClientTxn(txnID, m.c), nil
+}
+
+func (m *ClientTxnManager) Close() error {
+	return m.c.Close()
+}
+
+type ClientTxn struct {
+	id uint64
+	c  *Client
+}
+
+func NewClientTxn(id uint64, c *Client) *ClientTxn {
+	return &ClientTxn{id: id, c: c}
+}
+
+func (txn *ClientTxn) GetID() uint64 {
+	return txn.id
+}
+
+func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
+	return txn.c.Get(ctx, key, txn.id)
+}
+
+func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
+	return txn.c.Set(ctx, key, val, txn.id)
+}
+
+func (txn *ClientTxn) Commit(ctx context.Context) error {
+	return txn.c.Commit(ctx, txn.id)
+}
+
+func (txn *ClientTxn) Rollback(ctx context.Context) error {
+	return txn.c.Rollback(ctx, txn.id)
+}
