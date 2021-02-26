@@ -2,6 +2,8 @@ package txn
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -17,12 +19,15 @@ import (
 )
 
 var defaultTxnConfig = types.TxnConfig{
-	StaleWriteThreshold: time.Second,
+	StaleWriteThreshold: time.Millisecond * 500,
 	MaxClockDrift:       time.Millisecond,
 }
 
 func TestTxn(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+
+	for i := 0; i < 1; i++ {
 		if !testifyassert.True(t, testTxn(t, i)) {
 			t.Errorf("TestTxn failed @round %d", i)
 		}
@@ -43,7 +48,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 
 	const (
 		initialValue    = 101
-		goRoutineNumber = 10
+		goRoutineNumber = 1000
 		delta           = 6
 	)
 	err := sc.SetInt(ctx, "k1", initialValue)
@@ -58,7 +63,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 		go func() {
 			defer wg.Done()
 
-			if !assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+			assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 				val, err := txn.Get(ctx, "k1")
 				if err != nil {
 					return err
@@ -70,9 +75,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 				v1 += delta
 
 				return txn.Set(ctx, "k1", types.IntValue(v1).V)
-			})) {
-				return
-			}
+			}))
 		}()
 	}
 
@@ -81,6 +84,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 	if !assert.NoError(err) {
 		return
 	}
+	t.Logf("val: %d", val)
 	if !assert.Equal(goRoutineNumber*delta+initialValue, val) {
 		return
 	}

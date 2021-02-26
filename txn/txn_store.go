@@ -82,6 +82,6 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	// case 3
 	txn.AddWrittenKey(conflictedKey)
 	txn.State = StateRollbacking
-	_ = txn.Rollback(ctx) // help rollback if original txn coordinator was gone
+	_ = txn.rollback(ctx, txn.ID, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
 	return txn, nil
 }

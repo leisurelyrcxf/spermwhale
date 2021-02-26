@@ -41,16 +41,15 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		if err == nil {
 			return tx.Commit(ctx)
 		}
+		_ = tx.Rollback(ctx)
 		if !retry {
-			_ = tx.Rollback(ctx)
 			return err
 		}
 		if !errors.IsRetryableErr(err) {
-			_ = tx.Rollback(ctx)
 			return err
 		}
 		rand.Seed(time.Now().UnixNano())
-		time.Sleep(time.Millisecond * time.Duration(rand.Intn(10)))
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
 	}
 	return errors.ErrTxnRetriedTooManyTimes
 }

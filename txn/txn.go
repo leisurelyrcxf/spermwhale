@@ -149,7 +149,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 			assert.Must(errors.IsNotExistsErr(err))
 			if errors.IsNeedsRollbackErr(err) {
 				txn.State = StateRollbacking
-				_ = txn.rollback(ctx, callerTxn, true) // help rollback since original txn coordinator may have gone
+				_ = txn.rollback(ctx, callerTxn, true, "found non exist key during CheckCommitState") // help rollback since original txn coordinator may have gone
 			}
 			return false
 		}
@@ -158,7 +158,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 	case StateCommitted:
 		return true
 	case StateRollbacking:
-		_ = txn.rollback(ctx, callerTxn, false) // help rollback since original txn coordinator may have gone
+		_ = txn.rollback(ctx, callerTxn, false, fmt.Sprintf("found transaction in state '%s'", StateRollbacking)) // help rollback since original txn coordinator may have gone
 		return false
 	case StateRollbacked:
 		return false
@@ -210,13 +210,18 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 	txn.Lock()
 	defer txn.Unlock()
 
-	return txn.rollback(ctx, txn.ID, true)
+	return txn.rollback(ctx, txn.ID, true, "rollback by user")
 }
 
-func (txn *Txn) rollback(ctx context.Context, callerTxn uint64, createTxnRecordOnFailure bool) (err error) {
+func (txn *Txn) rollback(ctx context.Context, callerTxn uint64, createTxnRecordOnFailure bool, reason string) (err error) {
 	if callerTxn != txn.ID && !txn.isTooStale() {
 		return nil
 	}
+	var verbose glog.Level = 10
+	if callerTxn != txn.ID {
+		verbose = 5
+	}
+	glog.V(verbose).Infof("rollbacking txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 
 	if txn.State == StateRollbacked {
 		return nil
@@ -230,11 +235,11 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn uint64, createTxnRecordO
 
 	txn.State = StateRollbacking
 	for _, key := range txn.WrittenKeys {
-		if oneErr := txn.kv.Set(ctx, key,
+		if removeErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID).SetNoWriteIntent(),
-			types.NewWriteOption().SetRemoveVersion()); oneErr != nil {
-			glog.Warningf("rollback key %v failed: '%v'", key, oneErr)
-			err = errors.Wrap(err, oneErr)
+			types.NewWriteOption().SetRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
+			glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
+			err = errors.Wrap(err, removeErr)
 		}
 	}
 	if err != nil {
@@ -323,10 +328,11 @@ func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	err := txn.kv.Set(ctx, txn.Key(),
 		types.NewValue(nil, txn.ID).SetNoWriteIntent(),
 		types.NewWriteOption().SetRemoveVersion())
-	if err != nil {
+	if err != nil && !errors.IsNotExistsErr(err) {
 		glog.Warningf("clear transaction record failed: %v", err)
+		return err
 	}
-	return err
+	return nil
 }
 
 func (txn *Txn) isTooStale() bool {
