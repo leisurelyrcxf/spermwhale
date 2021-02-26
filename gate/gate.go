@@ -20,7 +20,7 @@ import (
 type Shard struct {
 	types.KV
 
-	id int
+	ID int
 }
 
 func NewShard(g *models.Group) (*Shard, error) {
@@ -30,7 +30,7 @@ func NewShard(g *models.Group) (*Shard, error) {
 	}
 	return &Shard{
 		KV: cli,
-		id: g.Id,
+		ID: g.Id,
 	}, nil
 }
 
@@ -56,7 +56,7 @@ func NewGate(store *models.Store) (*Gate, error) {
 }
 
 func (g *Gate) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
-	s, err := g.route(key)
+	s, err := g.Route(key)
 	if err != nil {
 		return types.EmptyValue, err
 	}
@@ -64,7 +64,7 @@ func (g *Gate) Get(ctx context.Context, key string, opt types.ReadOption) (types
 }
 
 func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
-	s, err := g.route(key)
+	s, err := g.Route(key)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (g *Gate) Close() (err error) {
 	return err
 }
 
-func (g *Gate) route(key string) (*Shard, error) {
+func (g *Gate) Route(key string) (*Shard, error) {
 	g.shardsRW.RLock()
 	defer g.shardsRW.RUnlock()
 
@@ -90,6 +90,12 @@ func (g *Gate) route(key string) (*Shard, error) {
 		glog.Fatalf("g.shards[%d] == nil", id)
 	}
 	return g.shards[id], nil
+}
+
+func (g *Gate) MustRoute(key string) *Shard {
+	s, err := g.Route(key)
+	assert.MustNoError(err)
+	return s
 }
 
 func (g *Gate) watchShards() error {
@@ -154,7 +160,7 @@ func (g *Gate) syncShard(group *models.Group) error {
 	if err != nil {
 		return err
 	}
-	g.shards[shard.id] = shard
+	g.shards[shard.ID] = shard
 	return nil
 }
 

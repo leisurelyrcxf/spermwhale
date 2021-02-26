@@ -16,4 +16,5 @@ const (
 	ErrCodeInvalidRequest                = 222
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
+	ErrCodeAssertFailed                  = 22222
 )
