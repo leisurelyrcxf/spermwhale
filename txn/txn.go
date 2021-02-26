@@ -45,11 +45,12 @@ type Txn struct {
 	WrittenKeys []string
 	State       State
 
-	cfg        types.TxnConfig   `json:"-"`
-	kv         types.KV          `json:"-"`
-	oracle     *physical.Oracle  `json:"-"`
-	store      *TransactionStore `json:"-"`
-	asyncJobs  chan<- Job        `json:"-"`
+	cfg       types.TxnConfig   `json:"-"`
+	kv        types.KV          `json:"-"`
+	oracle    *physical.Oracle  `json:"-"`
+	store     *TransactionStore `json:"-"`
+	asyncJobs chan<- Job        `json:"-"`
+
 	sync.Mutex `json:"-"`
 }
 
@@ -90,8 +91,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: %v", err)
 	}
-	if writeTxn.checkCommitState(ctx) {
-		writeTxn.onCommitted()
+	if writeTxn.checkCommitState(ctx, key) {
 		return vv, nil
 	}
 	return types.EmptyValue, errors.ErrTransactionConflict
@@ -131,7 +131,6 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID), types.WriteOption{})
 	if err != nil {
 		glog.Errorf("[Commit] write transaction record failed: %v, rollbacking...", err)
-		_ = txn.Rollback(ctx)
 		return err
 	}
 
@@ -144,8 +143,8 @@ func (txn *Txn) Rollback(ctx context.Context) (err error) {
 	txn.Lock()
 	defer txn.Unlock()
 
-	if txn.State != StateUncommitted && txn.State != StateStaging {
-		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v or %v, but got %v", StateUncommitted, StateStaging, txn.State)
+	if txn.State != StateUncommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
 	}
 
 	assert.Must(len(txn.WrittenKeys) > 0)
@@ -214,7 +213,7 @@ func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	return err
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context) (committed bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, conflictedKey string) (committed bool) {
 	switch txn.State {
 	case StateCommitted:
 		return true
@@ -223,7 +222,23 @@ func (txn *Txn) checkCommitState(ctx context.Context) (committed bool) {
 			glog.Fatalf("[checkCommitState] len(txn.WrittenKeys) == 0, txn: %v", txn)
 		}
 
-		for _, key := range txn.WrittenKeys {
+		conflictedKeyIndex := func() int {
+			for idx, key := range txn.WrittenKeys {
+				if key == conflictedKey {
+					return idx
+				}
+			}
+			return -1
+		}()
+		if conflictedKeyIndex == -1 {
+			glog.Fatalf("status corrupted, transaction record %v doesn't contain its key %s", txn, conflictedKey)
+			return false
+		}
+		writtenKeys := append(append(append(
+			make([]string, 0, len(txn.WrittenKeys)), txn.WrittenKeys[:conflictedKeyIndex]...),
+			txn.WrittenKeys[conflictedKeyIndex+1:]...),
+			conflictedKey)
+		for _, key := range writtenKeys {
 			vv, err := txn.kv.Get(ctx, key, types.NewReadOption(txn.ID).SetExactVersion())
 			if err != nil && !errors.IsNotExistsErr(err) {
 				glog.Errorf("[checkCommitState] kv.Get returns unexpected error: %v", err)
@@ -231,6 +246,9 @@ func (txn *Txn) checkCommitState(ctx context.Context) (committed bool) {
 			}
 			if err == nil {
 				assert.Must(vv.Version == txn.ID)
+				if !vv.WriteIntent {
+					return true
+				}
 				continue
 			}
 			assert.Must(errors.IsNotExistsErr(err))
@@ -239,6 +257,7 @@ func (txn *Txn) checkCommitState(ctx context.Context) (committed bool) {
 			}
 			return false
 		}
+		txn.onCommitted()
 		return true
 	default:
 		return false

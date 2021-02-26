@@ -1,5 +1,5 @@
 .idea/*
 *.swp
 vendor/*
-spermwhale_*
-
+sptablet
+spgate

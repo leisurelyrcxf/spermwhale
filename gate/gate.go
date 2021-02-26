@@ -85,7 +85,7 @@ func (g *Gate) route(key string) (*Shard, error) {
 	if !g.shardsReady {
 		return nil, errors.ErrShardsNotReady
 	}
-	var id = Hash([]byte(key)) % len(g.shards)
+	var id = int(Hash([]byte(key))) % len(g.shards)
 	if g.shards[id] == nil {
 		glog.Fatalf("g.shards[%d] == nil", id)
 	}
@@ -144,7 +144,7 @@ func (g *Gate) syncShard(group *models.Group) error {
 		return errors.Errorf("group.Id < 0")
 	}
 	if group.Id >= len(g.shards) {
-		for i := 0; i < group-len(g.shards)+1; i++ {
+		for i := 0; i < group.Id-len(g.shards)+1; i++ {
 			g.shards = append(g.shards, nil)
 		}
 	}

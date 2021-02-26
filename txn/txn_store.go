@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 
+	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -26,6 +28,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	}
 	txnRecordData, err := s.kv.Get(ctx, TransactionKey(txnID), readOpt)
 	if err != nil && !errors.IsNotExistsErr(err) {
+		glog.Errorf("[LoadTransactionRecord] kv.Get txnRecordData returns unexpected error: %v", err)
 		return nil, err
 	}
 
@@ -51,11 +54,32 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 		return nil, err
 	}
 
+	assert.Must(!readOpt.NotUpdateTimestampCache)
 	// since we've updated timestamp cache of txn record,
-	// thus transaction commit won't succeed in the future (
-	// because it needs to write transaction record with intent),
-	// hence safe to rollback.
+	// thus will be 3 cases:
+	// 1. transaction has rollbacked
+	// 2. transaction has committed
+	// 3. transaction not commit yet and guaranteed commit won't
+	// succeed in the future (because it needs to write transaction
+	// record with intent), hence safe to rollback.
+	vv, err := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID).SetExactVersion())
+	if err != nil && !errors.IsNotExistsErr(err) {
+		glog.Errorf("[checkCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, err)
+		return nil, err
+	}
 	txn := NewTxn(txnID, s.kv, s.cfg, s.oracle, s, s.asyncJobs)
+	if errors.IsNotExistsErr(err) {
+		// case 1
+		txn.State = StateRollbacked
+		return txn, nil
+	}
+	assert.Must(err == nil)
+	if !vv.WriteIntent {
+		// case 2
+		txn.State = StateCommitted
+		return txn, nil
+	}
+	// case 3
 	txn.addWrittenKey(conflictedKey)
 	_ = txn.Rollback(ctx)
 	return txn, nil

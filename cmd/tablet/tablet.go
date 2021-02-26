@@ -23,7 +23,7 @@ func main() {
 
 	store := common.NewStore()
 	cfg := common.NewTxnConfig()
-	server := tablet.NewServer(cfg, *gid, *port, store)
+	server := tablet.NewServer(*port, cfg, *gid, store)
 	if err := server.Start(); err != nil {
 		glog.Fatalf("failed to start: %v", err)
 	}
