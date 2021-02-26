@@ -1,46 +1,43 @@
 package sync2
 
 import (
-    "hash/crc32"
-    "sync"
+	"hash/crc32"
+	"sync"
 )
 
 type LockManager struct {
-    rwMutexes []sync.RWMutex
-    mutexes []sync.Mutex
+	rwMutexes []sync.RWMutex
 }
 
-const defaultSlotNum = 1024
+const defaultSlotNum = 256
 
 func NewLockManager() *LockManager {
-    lm := &LockManager{
-        rwMutexes: make([]sync.RWMutex, defaultSlotNum),
-        mutexes:   make([]sync.Mutex, defaultSlotNum),
-    }
-    return lm
+	lm := &LockManager{
+		rwMutexes: make([]sync.RWMutex, defaultSlotNum),
+	}
+	return lm
 }
 
 func (lm *LockManager) hash(key string) int {
-    return int(crc32.ChecksumIEEE([]byte(key))) % len(lm.rwMutexes)
+	return int(crc32.ChecksumIEEE([]byte(key))) % len(lm.rwMutexes)
 }
 
 func (lm *LockManager) Lock(key string) {
-    slotIdx := lm.hash(key)
-    lm.rwMutexes[slotIdx].Lock()
+	slotIdx := lm.hash(key)
+	lm.rwMutexes[slotIdx].Lock()
 }
 
 func (lm *LockManager) Unlock(key string) {
-    slotIdx := lm.hash(key)
-    lm.rwMutexes[slotIdx].Unlock()
+	slotIdx := lm.hash(key)
+	lm.rwMutexes[slotIdx].Unlock()
 }
 
 func (lm *LockManager) RLock(key string) {
-    slotIdx := lm.hash(key)
-    lm.rwMutexes[slotIdx].RLock()
+	slotIdx := lm.hash(key)
+	lm.rwMutexes[slotIdx].RLock()
 }
 
 func (lm *LockManager) RUnlock(key string) {
-    slotIdx := lm.hash(key)
-    lm.rwMutexes[slotIdx].RUnlock()
+	slotIdx := lm.hash(key)
+	lm.rwMutexes[slotIdx].RUnlock()
 }
-

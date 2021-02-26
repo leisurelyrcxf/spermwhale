@@ -60,10 +60,20 @@ type OCCPhysical struct {
 }
 
 func NewKVCC(db mvcc.DB, cfg types.TxnConfig) *OCCPhysical {
+	return newKVCC(db, cfg, false)
+}
+
+func NewKVCCForTesting(db mvcc.DB, cfg types.TxnConfig) *OCCPhysical {
+	return newKVCC(db, cfg, true)
+}
+
+func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *OCCPhysical {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
-	time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
+	if !testing {
+		time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
+	}
 
 	return &OCCPhysical{
 		TxnConfig: cfg,

@@ -47,7 +47,7 @@ func IsRetryableErr(e error) bool {
 	if !ok {
 		return false
 	}
-	return ve.Code == consts.ErrCodeTransactionConflict
+	return ve.Code == consts.ErrCodeTransactionConflict || ve.Code == consts.ErrCodeStaleWrite || ve.Code == consts.ErrCodeTransactionAlreadyExists
 }
 
 func IsNotSupportedErr(e error) bool {

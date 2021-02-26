@@ -74,7 +74,7 @@ type DB struct {
 
 func NewDB() *DB {
 	return &DB{
-		values: data_struct.NewConcurrentMap(1024),
+		values: data_struct.NewConcurrentMap(256),
 	}
 }
 

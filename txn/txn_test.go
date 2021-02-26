@@ -19,7 +19,7 @@ import (
 )
 
 var defaultTxnConfig = types.TxnConfig{
-	StaleWriteThreshold: time.Millisecond * 500,
+	StaleWriteThreshold: time.Millisecond * 10,
 	MaxClockDrift:       time.Millisecond,
 }
 
@@ -38,7 +38,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 	t.Logf("testTxn @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCC(db, defaultTxnConfig)
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig)
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
@@ -48,7 +48,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 
 	const (
 		initialValue    = 101
-		goRoutineNumber = 1000
+		goRoutineNumber = 1024
 		delta           = 6
 	)
 	err := sc.SetInt(ctx, "k1", initialValue)

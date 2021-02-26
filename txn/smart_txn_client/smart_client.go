@@ -34,6 +34,9 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		}
 		tx, err := c.TxnManager.BeginTransaction(ctx)
 		if err != nil {
+			if errors.IsRetryableErr(err) {
+				continue
+			}
 			return err
 		}
 

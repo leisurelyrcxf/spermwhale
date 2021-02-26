@@ -28,7 +28,7 @@ func NewTransactionManager(
 	kv types.KV,
 	cfg types.TxnConfig,
 	workerNum int) *TransactionManager {
-	return (&TransactionManager{
+	tm := (&TransactionManager{
 		txns: data_struct.NewConcurrentMap(32),
 
 		kv:        kv,
@@ -37,6 +37,8 @@ func NewTransactionManager(
 		asyncJobs: make(chan Job, 1024),
 		workerNum: workerNum,
 	}).createStore()
+	tm.Start()
+	return tm
 }
 
 func (m *TransactionManager) Start() {
