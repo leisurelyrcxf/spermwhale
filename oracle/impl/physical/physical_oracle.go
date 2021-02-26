@@ -3,12 +3,14 @@ package physical
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
 )
 
 type Oracle struct {
+	sync.Mutex
 }
 
 func NewOracle() *Oracle {
@@ -16,6 +18,9 @@ func NewOracle() *Oracle {
 }
 
 func (o *Oracle) FetchTimestamp(_ context.Context) (uint64, error) {
+	o.Lock()
+	defer o.Unlock()
+
 	i := time.Now().UnixNano()
 	if i < 0 {
 		return 0, fmt.Errorf("time.Now().UnixNano() < 0 ")

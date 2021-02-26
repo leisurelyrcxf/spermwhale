@@ -25,10 +25,11 @@ func TestTxn(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
-	for _, threshold := range []int{2, 5, 10, 100, 1000} {
-		for i := 0; i < 1; i++ {
+	for _, threshold := range []int{5, 10, 100, 1000} {
+		for i := 0; i < 100; i++ {
 			if !testifyassert.True(t, testTxn(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxn failed @round %d", i)
+				return
 			}
 		}
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/data_struct"
@@ -66,7 +68,10 @@ func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, err
 		return nil, errors.ErrTxnExists
 	}
 	txn := m.newTxn(id)
-	m.txns.Set(TransactionKey(id), txn)
+	m.txns.SetIf(TransactionKey(id), txn, func(prev interface{}, exist bool) bool {
+		assert.Must(!exist)
+		return !exist
+	})
 	return txn, nil
 }
 

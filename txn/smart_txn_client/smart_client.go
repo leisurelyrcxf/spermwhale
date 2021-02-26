@@ -49,7 +49,10 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		err, retry := f(ctx, tx)
 		if err == nil {
 			err := tx.Commit(ctx)
-			if err == nil || !retry || !errors.IsRetryableTransactionErr(err) {
+			if err == nil {
+				return nil
+			}
+			if !retry || !errors.IsRetryableTransactionErr(err) {
 				return err
 			}
 			rand.Seed(time.Now().UnixNano())

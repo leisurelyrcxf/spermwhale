@@ -200,7 +200,8 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	if err := txn.writeTxnRecord(ctx); err != nil {
 		if errors.IsRollbackableCommitErr(err) {
 			// write record must failed
-			_ = txn.Rollback(ctx)
+			txn.State = StateRollbacking
+			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", err))
 		}
 		return err
 	}
@@ -292,7 +293,7 @@ func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
 	}
 
 	if callerTxn != txn.ID {
-		glog.V(5).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
+		glog.V(11).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 	}
 
 	txn.asyncJobs <- func(ctx context.Context) error {
@@ -327,7 +328,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 	// thus implement the safe-rollback functionality
 	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID), types.WriteOption{})
 	if err != nil {
-		glog.Errorf("[writeTxnRecord] write transaction record failed: %v, rollbacking...", err)
+		glog.Errorf("[writeTxnRecord] write transaction record failed: %v", err)
 	}
 	return err
 }
