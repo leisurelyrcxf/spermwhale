@@ -10,16 +10,14 @@ import (
 
 	testifyassert "github.com/stretchr/testify/assert"
 
-	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
-
-	"github.com/leisurelyrcxf/spermwhale/types"
-
 	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/tablet"
+	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
+	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
 var defaultTxnConfig = types.TxnConfig{
-	StaleWriteThreshold: time.Millisecond * 10,
+	StaleWriteThreshold: time.Millisecond * 5,
 	MaxClockDrift:       time.Millisecond,
 }
 
@@ -27,18 +25,20 @@ func TestTxn(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
-	for i := 0; i < 1; i++ {
-		if !testifyassert.True(t, testTxn(t, i)) {
-			t.Errorf("TestTxn failed @round %d", i)
+	for _, threshold := range []int{2, 5, 10, 100, 1000} {
+		for i := 0; i < 1; i++ {
+			if !testifyassert.True(t, testTxn(t, i, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestTxn failed @round %d", i)
+			}
 		}
 	}
 }
 
-func testTxn(t *testing.T, round int) (b bool) {
+func testTxn(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxn @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig)
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
@@ -48,7 +48,7 @@ func testTxn(t *testing.T, round int) (b bool) {
 
 	const (
 		initialValue    = 101
-		goRoutineNumber = 1024
+		goRoutineNumber = 10000
 		delta           = 6
 	)
 	err := sc.SetInt(ctx, "k1", initialValue)

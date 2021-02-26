@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -19,9 +21,13 @@ func NewSmartClient(tm types.TxnManager) *SmartClient {
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
-	return c.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+	err := c.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
 	})
+	if err != nil {
+		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
+	}
+	return err
 }
 
 func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool)) error {
@@ -34,7 +40,7 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		}
 		tx, err := c.TxnManager.BeginTransaction(ctx)
 		if err != nil {
-			if errors.IsRetryableErr(err) {
+			if errors.IsRetryableTransactionManagerErr(err) {
 				continue
 			}
 			return err
@@ -42,13 +48,16 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 
 		err, retry := f(ctx, tx)
 		if err == nil {
-			return tx.Commit(ctx)
+			err := tx.Commit(ctx)
+			if err == nil || !retry || !errors.IsRetryableTransactionErr(err) {
+				return err
+			}
+			rand.Seed(time.Now().UnixNano())
+			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
+			continue
 		}
 		_ = tx.Rollback(ctx)
-		if !retry {
-			return err
-		}
-		if !errors.IsRetryableErr(err) {
+		if !retry || !errors.IsRetryableTransactionErr(err) {
 			return err
 		}
 		rand.Seed(time.Now().UnixNano())

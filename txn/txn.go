@@ -141,7 +141,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 			if err == nil {
 				assert.Must(vv.Version == txn.ID)
 				if !vv.WriteIntent {
-					txn.onCommitted(callerTxn) // help commit since original txn coordinator may have gone
+					txn.onCommitted(callerTxn, fmt.Sprintf("found committed during CheckCommitState: key '%s' committed", key)) // help commit since original txn coordinator may have gone
 					return true
 				}
 				continue
@@ -153,7 +153,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 			}
 			return false
 		}
-		txn.onCommitted(callerTxn) // help commit if original txn coordinator was gone
+		txn.onCommitted(callerTxn, "found committed during CheckCommitState: all keys exist") // help commit since original txn coordinator may have gone
 		return true
 	case StateCommitted:
 		return true
@@ -198,11 +198,14 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	txn.State = StateStaging
 	// TODO change to async
 	if err := txn.writeTxnRecord(ctx); err != nil {
+		if errors.IsRollbackableCommitErr(err) {
+			// write record must failed
+			_ = txn.Rollback(ctx)
+		}
 		return err
 	}
 
-	txn.onCommitted(txn.ID)
-	txn.State = StateCommitted
+	txn.onCommitted(txn.ID, "commit by user")
 	return nil
 }
 
@@ -282,9 +285,14 @@ func (txn *Txn) hasWritten(key string) bool {
 	return ok
 }
 
-func (txn *Txn) onCommitted(callerTxn uint64) {
+func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
+	txn.State = StateCommitted
 	if callerTxn != txn.ID && !txn.isTooStale() {
 		return
+	}
+
+	if callerTxn != txn.ID {
+		glog.V(5).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 	}
 
 	txn.asyncJobs <- func(ctx context.Context) error {

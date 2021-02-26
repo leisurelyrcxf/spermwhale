@@ -42,12 +42,28 @@ func IsNeedsRollbackErr(e error) bool {
 	return ve.Code == consts.ErrCodeVersionNotExistsNeedsRollback
 }
 
-func IsRetryableErr(e error) bool {
+func IsRetryableTransactionErr(e error) bool {
 	ve, ok := e.(*Error)
 	if !ok {
 		return false
 	}
-	return ve.Code == consts.ErrCodeTransactionConflict || ve.Code == consts.ErrCodeStaleWrite || ve.Code == consts.ErrCodeTransactionAlreadyExists
+	return ve.Code == consts.ErrCodeTransactionConflict || ve.Code == consts.ErrCodeStaleWrite
+}
+
+func IsRollbackableCommitErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeTransactionConflict || ve.Code == consts.ErrCodeStaleWrite
+}
+
+func IsRetryableTransactionManagerErr(e error) bool {
+	ve, ok := e.(*Error)
+	if !ok {
+		return false
+	}
+	return ve.Code == consts.ErrCodeTransactionAlreadyExists
 }
 
 func IsNotSupportedErr(e error) bool {

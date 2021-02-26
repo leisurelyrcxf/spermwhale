@@ -44,16 +44,17 @@ func NewTransactionManager(
 func (m *TransactionManager) Start() {
 	for i := 0; i < m.workerNum; i++ {
 		go func() {
-			job, ok := <-m.asyncJobs
-			if !ok {
-				return
-			}
+			for {
+				job, ok := <-m.asyncJobs
+				if !ok {
+					return
+				}
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-			defer cancel()
-
-			if err := job(ctx); err != nil {
-				glog.Errorf("async job failed: %v", err)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
+				if err := job(ctx); err != nil {
+					glog.Errorf("async job failed: %v", err)
+				}
+				cancel()
 			}
 		}()
 	}
