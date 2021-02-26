@@ -14,6 +14,9 @@ const (
 	ErrCodeTxnRetriedTooManyTimes        = 100
 	ErrCodeNotSupported                  = 111
 	ErrCodeInvalidRequest                = 222
+	ErrCodeCancelledDueToParentFailed    = 333
+	ErrCodeSchedulerClosed               = 444
+	ErrCodeErrFailedToWaitTask           = 555
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
 	ErrCodeAssertFailed                  = 22222

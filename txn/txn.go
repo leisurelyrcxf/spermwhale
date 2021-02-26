@@ -46,12 +46,12 @@ type Txn struct {
 	WrittenKeys []string
 	State       State
 
-	writtenKeyMap map[string]struct{}
-	cfg           types.TxnConfig   `json:"-"`
-	kv            types.KV          `json:"-"`
-	oracle        *physical.Oracle  `json:"-"`
-	store         *TransactionStore `json:"-"`
-	s             *Scheduler        `json:"-"`
+	writtenTasks map[string]*types.Task `json:"-"`
+	cfg          types.TxnConfig        `json:"-"`
+	kv           types.KV               `json:"-"`
+	oracle       *physical.Oracle       `json:"-"`
+	store        *TransactionStore      `json:"-"`
+	s            *Scheduler             `json:"-"`
 
 	sync.Mutex `json:"-"`
 }
@@ -65,12 +65,12 @@ func NewTxn(
 		ID:    id,
 		State: StateUncommitted,
 
-		writtenKeyMap: make(map[string]struct{}),
-		cfg:           cfg,
-		kv:            kv,
-		oracle:        oracle,
-		store:         store,
-		s:             s,
+		writtenTasks: make(map[string]*types.Task),
+		cfg:          cfg,
+		kv:           kv,
+		oracle:       oracle,
+		store:        store,
+		s:            s,
 	}
 }
 
@@ -167,7 +167,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 	}
 }
 
-func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
+func (txn *Txn) Set(_ context.Context, key string, val []byte) error {
 	txn.Lock()
 	defer txn.Unlock()
 
@@ -175,11 +175,19 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
 	}
 
-	txn.addWrittenKey(key)
-	err := txn.kv.Set(ctx, key, types.NewValue(val, txn.ID), types.WriteOption{})
-	if err != nil {
+	writeTask := types.NewTask(fmt.Sprintf("set-key-%s", key), func(ctx context.Context) (i interface{}, err error) {
+		return nil, txn.kv.Set(ctx, key, types.NewValue(val, txn.ID), types.WriteOption{})
+	})
+	if prevTask, ok := txn.writtenTasks[key]; ok {
+		prevTask.SetNext(writeTask)
+		return nil
+	}
+
+	if err := txn.s.ScheduleIOJob(writeTask); err != nil {
 		return err
 	}
+	txn.writtenTasks[key] = writeTask
+	txn.WrittenKeys = append(txn.WrittenKeys, key)
 	return nil
 }
 
@@ -197,13 +205,32 @@ func (txn *Txn) Commit(ctx context.Context) error {
 
 	txn.State = StateStaging
 	// TODO change to async
-	if err := txn.writeTxnRecord(ctx); err != nil {
-		if errors.IsRollbackableCommitErr(err) {
+
+	writeRecordTask := types.NewTask(fmt.Sprintf("write-txn-record-%s", txn.Key()), func(ctx context.Context) (i interface{}, err error) {
+		return nil, txn.writeTxnRecord(ctx)
+	})
+	if err := txn.s.ScheduleIOJob(writeRecordTask); err != nil {
+		return err
+	}
+	for _, keyTaskRoot := range txn.writtenTasks {
+		for keyTask := keyTaskRoot; keyTask != nil; keyTask = keyTask.GetNext() {
+			if _, keyErr := keyTask.WaitFinish(ctx); keyErr != nil {
+				if errors.IsRetryableTransactionErr(keyErr) {
+					// write record must failed
+					txn.State = StateRollbacking
+					_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", keyErr))
+				}
+				return keyErr
+			}
+		}
+	}
+	if _, recordErr := writeRecordTask.WaitFinish(ctx); recordErr != nil {
+		if errors.IsRollbackableCommitErr(recordErr) {
 			// write record must failed
 			txn.State = StateRollbacking
-			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", err))
+			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", recordErr))
 		}
-		return err
+		return recordErr
 	}
 
 	txn.onCommitted(txn.ID, "commit by user")
@@ -267,22 +294,8 @@ func (txn *Txn) Key() string {
 	return TransactionKey(txn.ID)
 }
 
-func (txn *Txn) AddWrittenKey(key string) {
-	txn.Lock()
-	defer txn.Unlock()
-
-	txn.addWrittenKey(key)
-}
-
-func (txn *Txn) addWrittenKey(key string) {
-	if txn.hasWritten(key) {
-		return
-	}
-	txn.WrittenKeys = append(txn.WrittenKeys, key)
-}
-
 func (txn *Txn) hasWritten(key string) bool {
-	_, ok := txn.writtenKeyMap[key]
+	_, ok := txn.writtenTasks[key]
 	return ok
 }
 
@@ -296,7 +309,7 @@ func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
 		glog.V(11).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 	}
 
-	txn.s.ScheduleClearJob(
+	_ = txn.s.ScheduleClearJob(
 		types.NewTask(
 			fmt.Sprintf("clear-%s-write-intents", txn.Key()),
 			func(ctx context.Context) (interface{}, error) {

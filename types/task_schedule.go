@@ -6,19 +6,22 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 )
 
 type Task struct {
 	Name string
 
-	Next *Task
+	next *Task
 
 	// output
-	Result interface{}
-	Error  error
+	result interface{}
+	err    error
 
 	f    func(context.Context) (interface{}, error)
 	done chan struct{}
+
+	sync.Mutex
 }
 
 func NewTask(name string, f func(context.Context) (interface{}, error)) *Task {
@@ -29,15 +32,56 @@ func NewTask(name string, f func(context.Context) (interface{}, error)) *Task {
 	}
 }
 
-func (t *Task) Run(ctx context.Context) error {
-	defer close(t.done)
+func (t *Task) GetNext() *Task {
+	t.Lock()
+	defer t.Unlock()
 
-	t.Result, t.Error = t.f(ctx)
-	return t.Error
+	return t.next
 }
 
-func (t *Task) Done() <-chan struct{} {
-	return t.done
+func (t *Task) SetNext(next *Task) {
+	t.Lock()
+	defer t.Unlock()
+
+	t.next = next
+}
+
+func (t *Task) WaitFinish(ctx context.Context) (interface{}, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errors.Annotatef(errors.ErrFailedToWaitTask, "detail: %v", ctx.Err().Error())
+	case <-t.done:
+		return t.result, t.err
+	}
+}
+
+func (t *Task) cancelNexts(reason error) {
+	t.Lock()
+	defer t.Unlock()
+
+	for ele := t.next; ele != nil; ele = ele.next {
+		ele.err = errors.Annotatef(reason, "detail: '%v'", errors.ErrCancelledDueToParentFailed.Msg)
+		close(ele.done)
+	}
+}
+
+func (t *Task) run(ctx context.Context) error {
+	if t.finished() {
+		return t.err
+	}
+	defer close(t.done)
+
+	t.result, t.err = t.f(ctx)
+	return t.err
+}
+
+func (t *Task) finished() bool {
+	select {
+	case <-t.done:
+		return true
+	default:
+		return false
+	}
 }
 
 type Scheduler interface {
@@ -61,20 +105,24 @@ func NewListScheduler(maxBufferedTask, workerNumber int) *ListScheduler {
 	return b
 }
 
-func (s *ListScheduler) Schedule(t *Task) {
+func (s *ListScheduler) Schedule(t *Task) error {
 	s.RLock()
 	defer s.RUnlock()
 
 	if s.closed {
-		return
+		return errors.ErrSchedulerClosed
 	}
 	s.tasks <- t
+	return nil
 }
 
 func (s *ListScheduler) Close() {
 	s.Lock()
 	defer s.Unlock()
 
+	if s.closed {
+		return
+	}
 	close(s.tasks)
 	s.closed = true
 }
@@ -89,11 +137,19 @@ func (s *ListScheduler) start() {
 				}
 
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
-				if err := task.Run(ctx); err != nil {
-					glog.Errorf("task %s failed: %v", task.Name, err)
+				if err := task.run(ctx); err != nil {
+					if !errors.IsRetryableTransactionErr(err) {
+						glog.Errorf("task %s failed: %v", task.Name, err)
+					}
+					cancel()
+					task.cancelNexts(err)
+					continue
 				}
-				if task.Next != nil {
-					s.Schedule(task.Next)
+				if next := task.GetNext(); next != nil {
+					if err := s.Schedule(next); err != nil {
+						next.err = err
+						close(next.done)
+					}
 				}
 				cancel()
 			}

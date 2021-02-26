@@ -65,4 +65,16 @@ var (
 		Code: consts.ErrCodeAssertFailed,
 		Msg:  "assert failed",
 	}
+	ErrCancelledDueToParentFailed = &Error{
+		Code: consts.ErrCodeCancelledDueToParentFailed,
+		Msg:  "cancelled due to parent failed",
+	}
+	ErrSchedulerClosed = &Error{
+		Code: consts.ErrCodeSchedulerClosed,
+		Msg:  "scheduler closed",
+	}
+	ErrFailedToWaitTask = &Error{
+		Code: consts.ErrCodeErrFailedToWaitTask,
+		Msg:  "failed to wait task",
+	}
 )

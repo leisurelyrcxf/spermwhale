@@ -79,7 +79,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	// since we've updated timestamp cache of txn record (in case isTooStale is true),
 	// guaranteed commit won't succeed in the future (because it needs to write transaction
 	// record with intent), hence safe to rollback.
-	txn.AddWrittenKey(conflictedKey)
+	txn.WrittenKeys = append(txn.WrittenKeys, conflictedKey)
 	txn.State = StateRollbacking
 	_ = txn.rollback(ctx, math.MaxUint64, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
 	return txn, nil

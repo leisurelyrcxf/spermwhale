@@ -18,12 +18,12 @@ type Scheduler struct {
 	ioJobScheduler    *types.ListScheduler
 }
 
-func (s *Scheduler) ScheduleClearJob(t *types.Task) {
-	s.clearJobScheduler.Schedule(t)
+func (s *Scheduler) ScheduleClearJob(t *types.Task) error {
+	return s.clearJobScheduler.Schedule(t)
 }
 
-func (s *Scheduler) ScheduleIOJob(t *types.Task) {
-	s.ioJobScheduler.Schedule(t)
+func (s *Scheduler) ScheduleIOJob(t *types.Task) error {
+	return s.ioJobScheduler.Schedule(t)
 }
 
 type TransactionManager struct {
