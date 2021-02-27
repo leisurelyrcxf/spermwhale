@@ -63,9 +63,9 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{1000, 100, 10, 5} {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 2; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestTxnLostUpdate failed @round %d", i)
+				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
 				return
 			}
 		}
@@ -73,7 +73,7 @@ func TestTxnLostUpdate(t *testing.T) {
 }
 
 func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnLostUpdate @round %d", round)
+	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))

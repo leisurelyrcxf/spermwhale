@@ -134,7 +134,7 @@ func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt
 	// cache may lost after restarted, so ignore too stale write
 	// TODO change to HLCTimestamp
 	if kv.oracle.IsTooStale(val.Version, kv.StaleWriteThreshold) {
-		return errors.ErrStaleWrite
+		return errors.Annotatef(errors.ErrStaleWrite, "age: %s", time.Duration(kv.oracle.MustFetchTimestamp()-val.Version))
 	}
 	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
 	if val.Version < maxReadVersion {

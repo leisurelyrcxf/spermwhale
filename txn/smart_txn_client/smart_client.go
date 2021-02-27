@@ -58,7 +58,10 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 			if err == nil {
 				return nil
 			}
-			if !retry || !errors.IsRetryableTransactionErr(err) {
+			if !retry {
+				return err
+			}
+			if !tx.GetState().IsAborted() && !errors.IsRetryableTransactionErr(err) {
 				return err
 			}
 			rand.Seed(time.Now().UnixNano())
@@ -70,7 +73,9 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 				return err
 			}
 		}
-		_ = tx.Rollback(ctx)
+		if !tx.GetState().IsAborted() {
+			_ = tx.Rollback(ctx)
+		}
 		if !retry || !errors.IsRetryableTransactionErr(err) {
 			return err
 		}

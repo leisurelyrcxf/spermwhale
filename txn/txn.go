@@ -327,7 +327,8 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		}
 
 		txn.cancelIOTasksAndWait()
-		record, recordExists, err := txn.store.loadTransactionRecordWithRetry(context.Background(), txn.ID, types.NewReadOption(math.MaxUint64), maxRetry)
+		ctx = context.Background()
+		record, recordExists, err := txn.store.loadTransactionRecordWithRetry(ctx, txn.ID, types.NewReadOption(math.MaxUint64), maxRetry)
 		if err != nil {
 			glog.Errorf("[Commit] can't get transaction record info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
 			return recordErr
@@ -338,7 +339,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			// 1. transaction has been rollbacked, conflictedKey must be gone
 			// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 			// 3. transaction neither committed nor rollbacked
-			val, keyExists, err := getKeyExactVersionWithRetry(context.Background(), txn.kv, txn.WrittenKeys[0], txn.ID.Version(), maxRetry)
+			val, keyExists, err := getKeyExactVersionWithRetry(ctx, txn.kv, txn.WrittenKeys[0], txn.ID.Version(), maxRetry)
 			if err != nil {
 				glog.Errorf("[Commit] can't get key info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
 				return recordErr

@@ -45,6 +45,10 @@ func (s TxnState) String() string {
 	return stateStrings[s]
 }
 
+func (s TxnState) IsAborted() bool {
+	return s == TxnStateRollbacking || s == TxnStateRollbacked
+}
+
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
