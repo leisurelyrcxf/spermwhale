@@ -26,7 +26,7 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Begin(ctx context.Context) (uint64, error) {
+func (c *Client) Begin(ctx context.Context) (types.TxnId, error) {
 	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{})
 	if err != nil {
 		return 0, err
@@ -37,13 +37,13 @@ func (c *Client) Begin(ctx context.Context) (uint64, error) {
 	if resp.Err != nil {
 		return 0, resp.Err.Error()
 	}
-	return resp.TxnId, nil
+	return types.TxnId(resp.TxnId), nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value, error) {
+func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, error) {
 	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
-		TxnId: txnID,
+		TxnId: uint64(txnID),
 	})
 	if err != nil {
 		return types.EmptyValue, err
@@ -60,11 +60,11 @@ func (c *Client) Get(ctx context.Context, key string, txnID uint64) (types.Value
 	return resp.V.Value(), nil
 }
 
-func (c *Client) Set(ctx context.Context, key string, val []byte, txnID uint64) error {
+func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.TxnId) error {
 	resp, err := c.c.Set(ctx, &txnpb.TxnSetRequest{
 		Key:   key,
 		Value: val,
-		TxnId: txnID,
+		TxnId: uint64(txnID),
 	})
 	if err != nil {
 		return err
@@ -75,9 +75,9 @@ func (c *Client) Set(ctx context.Context, key string, val []byte, txnID uint64) 
 	return resp.Err.Error()
 }
 
-func (c *Client) Commit(ctx context.Context, txnID uint64) error {
+func (c *Client) Commit(ctx context.Context, txnID types.TxnId) error {
 	resp, err := c.c.Commit(ctx, &txnpb.CommitRequest{
-		TxnId: txnID,
+		TxnId: uint64(txnID),
 	})
 	if err != nil {
 		return err
@@ -88,9 +88,9 @@ func (c *Client) Commit(ctx context.Context, txnID uint64) error {
 	return resp.Err.Error()
 }
 
-func (c *Client) Rollback(ctx context.Context, txnID uint64) error {
+func (c *Client) Rollback(ctx context.Context, txnID types.TxnId) error {
 	resp, err := c.c.Rollback(ctx, &txnpb.RollbackRequest{
-		TxnId: txnID,
+		TxnId: uint64(txnID),
 	})
 	if err != nil {
 		return err
@@ -126,15 +126,15 @@ func (m *ClientTxnManager) Close() error {
 }
 
 type ClientTxn struct {
-	id uint64
+	id types.TxnId
 	c  *Client
 }
 
-func NewClientTxn(id uint64, c *Client) *ClientTxn {
+func NewClientTxn(id types.TxnId, c *Client) *ClientTxn {
 	return &ClientTxn{id: id, c: c}
 }
 
-func (txn *ClientTxn) GetID() uint64 {
+func (txn *ClientTxn) GetId() types.TxnId {
 	return txn.id
 }
 

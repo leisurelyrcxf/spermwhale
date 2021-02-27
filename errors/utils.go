@@ -100,8 +100,15 @@ func Annotatef(err error, format string, args ...interface{}) error {
 	if ve, ok := err.(*Error); ok {
 		return &Error{
 			Code: ve.Code,
-			Msg:  ve.Msg + ", " + fmt.Sprintf(format, args...),
+			Msg:  trimMsg(ve.Msg) + ", " + fmt.Sprintf(format, args...),
 		}
 	}
-	return New(err.Error() + ", " + fmt.Sprintf(format, args...))
+	return New(trimMsg(err.Error()) + ", " + fmt.Sprintf(format, args...))
+}
+
+func trimMsg(msg string) string {
+	if len(msg) > 1024 {
+		msg = msg[:1024-256]
+	}
+	return msg
 }

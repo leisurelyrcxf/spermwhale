@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-
-	"github.com/leisurelyrcxf/spermwhale/utils"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -14,12 +13,13 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type State string
 
 const (
-	StateUnknown     = ""
+	StateInvalid     = "invalid"
 	StateUncommitted = "uncommitted"
 	StateStaging     = "staging"
 	StateCommitted   = "committed"
@@ -27,9 +27,14 @@ const (
 	StateRollbacked  = "rollbacked"
 )
 
+const (
+	defaultReadTimeout  = time.Second * 10
+	defaultClearTimeout = time.Second * 15
+)
+
 type Job func(ctx context.Context) error
 
-func TransactionKey(id uint64) string {
+func TransactionKey(id types.TxnId) string {
 	return fmt.Sprintf("txn_%d", id)
 }
 
@@ -42,22 +47,23 @@ func DecodeTxn(data []byte) (*Txn, error) {
 }
 
 type Txn struct {
-	ID          uint64
+	ID          types.TxnId
 	WrittenKeys []string
 	State       State
 
-	writtenTasks map[string]*types.Task `json:"-"`
-	cfg          types.TxnConfig        `json:"-"`
-	kv           types.KV               `json:"-"`
-	oracle       *physical.Oracle       `json:"-"`
-	store        *TransactionStore      `json:"-"`
-	s            *Scheduler             `json:"-"`
+	writeTasks     []*types.ListTask          `json:"-"`
+	lastWriteTasks map[string]*types.ListTask `json:"-"`
+	cfg            types.TxnConfig            `json:"-"`
+	kv             types.KV                   `json:"-"`
+	oracle         *physical.Oracle           `json:"-"`
+	store          *TransactionStore          `json:"-"`
+	s              *Scheduler                 `json:"-"`
 
 	sync.Mutex `json:"-"`
 }
 
 func NewTxn(
-	id uint64,
+	id types.TxnId,
 	kv types.KV, cfg types.TxnConfig,
 	oracle *physical.Oracle, store *TransactionStore,
 	s *Scheduler) *Txn {
@@ -65,17 +71,21 @@ func NewTxn(
 		ID:    id,
 		State: StateUncommitted,
 
-		writtenTasks: make(map[string]*types.Task),
-		cfg:          cfg,
-		kv:           kv,
-		oracle:       oracle,
-		store:        store,
-		s:            s,
+		lastWriteTasks: make(map[string]*types.ListTask),
+		cfg:            cfg,
+		kv:             kv,
+		oracle:         oracle,
+		store:          store,
+		s:              s,
 	}
 }
 
-func (txn *Txn) GetID() uint64 {
+func (txn *Txn) GetId() types.TxnId {
 	return txn.ID
+}
+
+func (txn *Txn) ioTaskIDOfKey(key string) string {
+	return fmt.Sprintf("%s-%s", txn.Key(), key)
 }
 
 func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
@@ -86,27 +96,40 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
 	}
 
-	vv, err := txn.kv.Get(ctx, key, types.NewReadOption(txn.ID))
-	if err != nil {
+	var (
+		vv  types.Value
+		err error
+	)
+	if lastWriteTask := txn.lastWriteTasks[key]; lastWriteTask != nil && !lastWriteTask.Finished() {
+		ctx, cancel := context.WithTimeout(ctx, defaultReadTimeout)
+		writeResult, writeErr := lastWriteTask.WaitFinish(ctx)
+		if writeErr != nil {
+			cancel()
+			return types.EmptyValue, errors.Annotatef(writeErr, "detail: read aborted due to previous write task failed")
+		}
+		cancel()
+		assert.Must(writeResult == types.DummyResult)
+	}
+	if vv, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version())); err != nil {
 		return types.EmptyValue, err
 	}
-	if vv.Version == txn.ID || !vv.Meta.WriteIntent {
+	if vv.Version == txn.ID.Version() || !vv.Meta.WriteIntent {
 		// committed value
 		return vv, nil
 	}
-	assert.Must(vv.Version < txn.ID)
-	writeTxn, err := txn.store.LoadTransactionRecord(ctx, vv.Version, key)
+	assert.Must(vv.Version < txn.ID.Version())
+	writeTxn, err := txn.store.LoadTransactionRecord(ctx, types.TxnId(vv.Version), key)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: %v", err)
 	}
-	assert.Must(writeTxn.ID == vv.Version)
+	assert.Must(writeTxn.ID.Version() == vv.Version)
 	if writeTxn.CheckCommitState(ctx, txn.ID, key) {
 		return vv, nil
 	}
 	return types.EmptyValue, errors.ErrTransactionConflict
 }
 
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflictedKey string) (committed bool) {
+func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn types.TxnId, conflictedKey string) (committed bool) {
 	txn.Lock()
 	defer txn.Unlock()
 
@@ -133,13 +156,13 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn uint64, conflict
 			txn.WrittenKeys[conflictedKeyIndex+1:]...),
 			conflictedKey)
 		for _, key := range writtenKeys {
-			vv, err := txn.kv.Get(ctx, key, types.NewReadOption(txn.ID).SetExactVersion())
+			vv, err := txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).SetExactVersion())
 			if err != nil && !errors.IsNotExistsErr(err) {
 				glog.Errorf("[CheckCommitState] kv.Get returns unexpected error: %v", err)
 				return false
 			}
 			if err == nil {
-				assert.Must(vv.Version == txn.ID)
+				assert.Must(vv.Version == txn.ID.Version())
 				if !vv.WriteIntent {
 					txn.onCommitted(callerTxn, fmt.Sprintf("found committed during CheckCommitState: key '%s' committed", key)) // help commit since original txn coordinator may have gone
 					return true
@@ -175,19 +198,22 @@ func (txn *Txn) Set(_ context.Context, key string, val []byte) error {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v, but got %v", StateUncommitted, txn.State)
 	}
 
-	writeTask := types.NewTask(fmt.Sprintf("set-key-%s", key), func(ctx context.Context) (i interface{}, err error) {
-		return nil, txn.kv.Set(ctx, key, types.NewValue(val, txn.ID), types.WriteOption{})
-	})
-	if prevTask, ok := txn.writtenTasks[key]; ok {
-		prevTask.SetNext(writeTask)
-		return nil
-	}
-
+	writeVal := types.NewValue(val, txn.ID.Version())
+	writeTask := types.NewListTaskNoResult(
+		txn.ioTaskIDOfKey(key),
+		fmt.Sprintf("set-key-%s", key),
+		txn.cfg.StaleWriteThreshold, func(ctx context.Context, _ interface{}) error {
+			return txn.kv.Set(ctx, key, writeVal, types.WriteOption{})
+		})
 	if err := txn.s.ScheduleIOJob(writeTask); err != nil {
+		txn.State = StateInvalid
 		return err
 	}
-	txn.writtenTasks[key] = writeTask
-	txn.WrittenKeys = append(txn.WrittenKeys, key)
+	if _, ok := txn.lastWriteTasks[key]; !ok {
+		txn.WrittenKeys = append(txn.WrittenKeys, key)
+	}
+	txn.writeTasks = append(txn.writeTasks, writeTask)
+	txn.lastWriteTasks[key] = writeTask
 	return nil
 }
 
@@ -204,24 +230,28 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	txn.State = StateStaging
-	// TODO change to async
-
-	writeRecordTask := types.NewTask(fmt.Sprintf("write-txn-record-%s", txn.Key()), func(ctx context.Context) (i interface{}, err error) {
-		return nil, txn.writeTxnRecord(ctx)
-	})
+	writeRecordTask := types.NewListTaskNoResult(
+		txn.Key(),
+		fmt.Sprintf("write-txn-record-%s", txn.Key()),
+		txn.cfg.StaleWriteThreshold, func(ctx context.Context, _ interface{}) error {
+			return txn.writeTxnRecord(ctx)
+		})
 	if err := txn.s.ScheduleIOJob(writeRecordTask); err != nil {
+		txn.cancelIOTasksAndWait(nil)
+		txn.State = StateInvalid
 		return err
 	}
-	for _, keyTaskRoot := range txn.writtenTasks {
-		for keyTask := keyTaskRoot; keyTask != nil; keyTask = keyTask.GetNext() {
-			if _, keyErr := keyTask.WaitFinish(ctx); keyErr != nil {
-				if errors.IsRetryableTransactionErr(keyErr) {
-					// write record must failed
-					txn.State = StateRollbacking
-					_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", keyErr))
-				}
-				return keyErr
+	for _, writeTask := range txn.writeTasks {
+		if _, keyErr := writeTask.WaitFinish(ctx); keyErr != nil {
+			if errors.IsRetryableTransactionErr(keyErr) {
+				// write record must failed
+				txn.State = StateRollbacking
+				_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write key %s returns rollbackable error: '%v'", writeTask.ID, keyErr))
+			} else {
+				txn.State = StateInvalid
 			}
+			txn.cancelIOTasksAndWait(writeRecordTask)
+			return keyErr
 		}
 	}
 	if _, recordErr := writeRecordTask.WaitFinish(ctx); recordErr != nil {
@@ -229,12 +259,30 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			// write record must failed
 			txn.State = StateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("commit() returns rollbackable error: '%v'", recordErr))
+		} else {
+			txn.State = StateInvalid
 		}
+		txn.cancelIOTasksAndWait(writeRecordTask)
 		return recordErr
 	}
 
 	txn.onCommitted(txn.ID, "commit by user")
 	return nil
+}
+
+func (txn *Txn) cancelIOTasksAndWait(txnRecordTask *types.ListTask) {
+	for _, writeTask := range txn.writeTasks {
+		writeTask.Cancel()
+	}
+	if txnRecordTask != nil {
+		txnRecordTask.Cancel()
+	}
+	for _, writeTask := range txn.writeTasks {
+		_, _ = writeTask.WaitFinish(context.Background())
+	}
+	if txnRecordTask != nil {
+		_, _ = txnRecordTask.WaitFinish(context.Background())
+	}
 }
 
 func (txn *Txn) Rollback(ctx context.Context) error {
@@ -244,7 +292,7 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 	return txn.rollback(ctx, txn.ID, true, "rollback by user")
 }
 
-func (txn *Txn) rollback(ctx context.Context, callerTxn uint64, createTxnRecordOnFailure bool, reason string) (err error) {
+func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string) (err error) {
 	if callerTxn != txn.ID && !txn.isTooStale() {
 		return nil
 	}
@@ -262,12 +310,10 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn uint64, createTxnRecordO
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %v or %v, but got %v", StateUncommitted, StateRollbacking, txn.State)
 	}
 
-	// assert.Must(len(txn.WrittenKeys) > 0)
-
 	txn.State = StateRollbacking
 	for _, key := range txn.WrittenKeys {
 		if removeErr := txn.kv.Set(ctx, key,
-			types.NewValue(nil, txn.ID).SetNoWriteIntent(),
+			types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
 			types.NewWriteOption().SetRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 			glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 			err = errors.Wrap(err, removeErr)
@@ -294,12 +340,7 @@ func (txn *Txn) Key() string {
 	return TransactionKey(txn.ID)
 }
 
-func (txn *Txn) hasWritten(key string) bool {
-	_, ok := txn.writtenTasks[key]
-	return ok
-}
-
-func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
+func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	txn.State = StateCommitted
 	if callerTxn != txn.ID && !txn.isTooStale() {
 		return
@@ -310,10 +351,11 @@ func (txn *Txn) onCommitted(callerTxn uint64, reason string) {
 	}
 
 	_ = txn.s.ScheduleClearJob(
-		types.NewTask(
+		types.NewTaskNoResult(
+			txn.Key(),
 			fmt.Sprintf("clear-%s-write-intents", txn.Key()),
-			func(ctx context.Context) (interface{}, error) {
-				return nil, txn.clearCommitted(ctx)
+			defaultClearTimeout, func(ctx context.Context) error {
+				return txn.clearCommitted(ctx)
 			}))
 }
 
@@ -327,9 +369,13 @@ func (txn *Txn) clearCommitted(ctx context.Context) (err error) {
 
 	for _, key := range txn.WrittenKeys {
 		if setErr := txn.kv.Set(ctx, key,
-			types.NewValue(nil, txn.ID).SetNoWriteIntent(),
+			types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
 			types.NewWriteOption().SetClearWriteIntent()); setErr != nil {
-			glog.Warningf("clear transaction key '%s' write intent failed: '%v'", key, setErr)
+			if errors.IsNotExistsErr(setErr) {
+				glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, setErr)
+			} else {
+				glog.Warningf("clear transaction key '%s' write intent failed: '%v'", key, setErr)
+			}
 			err = errors.Wrap(err, setErr)
 		}
 	}
@@ -342,7 +388,7 @@ func (txn *Txn) clearCommitted(ctx context.Context) (err error) {
 func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
-	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID), types.WriteOption{})
+	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID.Version()), types.WriteOption{})
 	if err != nil {
 		glog.Errorf("[writeTxnRecord] write transaction record failed: %v", err)
 	}
@@ -351,7 +397,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 
 func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	err := txn.kv.Set(ctx, txn.Key(),
-		types.NewValue(nil, txn.ID).SetNoWriteIntent(),
+		types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
 		types.NewWriteOption().SetRemoveVersion())
 	if err != nil && !errors.IsNotExistsErr(err) {
 		glog.Warningf("clear transaction record failed: %v", err)
@@ -361,5 +407,5 @@ func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 }
 
 func (txn *Txn) isTooStale() bool {
-	return txn.oracle.IsTooStale(txn.ID, txn.cfg.StaleWriteThreshold)
+	return txn.oracle.IsTooStale(txn.ID.Version(), txn.cfg.StaleWriteThreshold)
 }

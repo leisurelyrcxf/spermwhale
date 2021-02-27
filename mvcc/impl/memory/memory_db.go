@@ -4,18 +4,18 @@ import (
 	"context"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-	"github.com/leisurelyrcxf/spermwhale/data_struct"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
 type VersionedValues struct {
-	data_struct.ConcurrentTreeMap
+	concurrency.ConcurrentTreeMap
 }
 
 func NewVersionedValues() *VersionedValues {
 	return &VersionedValues{
-		ConcurrentTreeMap: *data_struct.NewConcurrentTreeMap(func(a, b interface{}) int {
+		ConcurrentTreeMap: *concurrency.NewConcurrentTreeMap(func(a, b interface{}) int {
 			av, bv := a.(uint64), b.(uint64)
 			if av > bv {
 				return -1
@@ -69,12 +69,12 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, erro
 }
 
 type DB struct {
-	values data_struct.ConcurrentMap
+	values concurrency.ConcurrentMap
 }
 
 func NewDB() *DB {
 	return &DB{
-		values: data_struct.NewConcurrentMap(256),
+		values: concurrency.NewConcurrentMap(256),
 	}
 }
 

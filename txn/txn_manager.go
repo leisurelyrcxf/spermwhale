@@ -4,32 +4,32 @@ import (
 	"context"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
-	"github.com/leisurelyrcxf/spermwhale/data_struct"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
+	scheduler "github.com/leisurelyrcxf/spermwhale/scheduler"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
 const MaxTaskBuffered = 1024
 
 type Scheduler struct {
-	clearJobScheduler *types.ListScheduler
-	ioJobScheduler    *types.ListScheduler
+	clearJobScheduler *scheduler.BasicScheduler
+	ioJobScheduler    *scheduler.ListScheduler
 }
 
 func (s *Scheduler) ScheduleClearJob(t *types.Task) error {
 	return s.clearJobScheduler.Schedule(t)
 }
 
-func (s *Scheduler) ScheduleIOJob(t *types.Task) error {
+func (s *Scheduler) ScheduleIOJob(t *types.ListTask) error {
 	return s.ioJobScheduler.Schedule(t)
 }
 
 type TransactionManager struct {
 	types.TxnConfig
 
-	txns data_struct.ConcurrentMap
+	txns concurrency.ConcurrentTxnMap
 
 	kv        types.KV
 	oracle    *physical.Oracle
@@ -44,7 +44,7 @@ func NewTransactionManager(
 	cfg types.TxnConfig,
 	clearWorkerNum, ioWorkerNum int) *TransactionManager {
 	tm := (&TransactionManager{
-		txns: data_struct.NewConcurrentMap(32),
+		txns: concurrency.NewConcurrentTxnMap(32),
 
 		kv:        kv,
 		TxnConfig: cfg,
@@ -52,38 +52,42 @@ func NewTransactionManager(
 		workerNum: clearWorkerNum,
 
 		s: &Scheduler{
-			clearJobScheduler: types.NewListScheduler(MaxTaskBuffered, clearWorkerNum),
-			ioJobScheduler:    types.NewListScheduler(MaxTaskBuffered, ioWorkerNum),
+			clearJobScheduler: scheduler.NewBasicScheduler(MaxTaskBuffered, clearWorkerNum),
+			ioJobScheduler:    scheduler.NewListScheduler(MaxTaskBuffered, ioWorkerNum),
 		},
 	}).createStore()
 	return tm
 }
 
 func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, error) {
-	id := m.oracle.MustFetchTimestamp()
-	if _, ok := m.txns.Get(TransactionKey(id)); ok {
+	txnID := types.TxnId(m.oracle.MustFetchTimestamp())
+	if _, ok := m.txns.Get(txnID); ok {
 		return nil, errors.ErrTxnExists
 	}
-	txn := m.newTxn(id)
-	m.txns.SetIf(TransactionKey(id), txn, func(prev interface{}, exist bool) bool {
+	txn := m.newTxn(txnID)
+	m.txns.SetIf(txnID, txn, func(prev interface{}, exist bool) bool {
 		assert.Must(!exist)
 		return !exist
 	})
 	return txn, nil
 }
 
-func (m *TransactionManager) GetTxn(id uint64) (*Txn, error) {
-	if txnVal, ok := m.txns.Get(TransactionKey(id)); ok {
+func (m *TransactionManager) GetTxn(txnID types.TxnId) (*Txn, error) {
+	if txnVal, ok := m.txns.Get(txnID); ok {
 		return txnVal.(*Txn), nil
 	}
 	return nil, errors.ErrTransactionNotFound
+}
+
+func (m *TransactionManager) removeTxn(txn *Txn) {
+	m.txns.Del(txn.ID)
 }
 
 func (m *TransactionManager) Close() error {
 	return m.kv.Close()
 }
 
-func (m *TransactionManager) newTxn(id uint64) *Txn {
+func (m *TransactionManager) newTxn(id types.TxnId) *Txn {
 	return NewTxn(id, m.kv, m.TxnConfig, m.oracle, m.store, m.s)
 }
 

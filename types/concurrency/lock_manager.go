@@ -1,10 +1,11 @@
-package sync2
+package concurrency
 
 import (
 	"hash/crc32"
 	"sync"
 )
 
+// Simplest row lock manager
 type LockManager struct {
 	rwMutexes []sync.RWMutex
 }

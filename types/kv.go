@@ -48,16 +48,3 @@ type KV interface {
 	Set(ctx context.Context, key string, val Value, opt WriteOption) error
 	Close() error
 }
-
-type TxnManager interface {
-	BeginTransaction(ctx context.Context) (Txn, error)
-	Close() error
-}
-
-type Txn interface {
-	GetID() uint64
-	Get(ctx context.Context, key string) (Value, error)
-	Set(ctx context.Context, key string, val []byte) error
-	Commit(ctx context.Context) error
-	Rollback(ctx context.Context) error
-}

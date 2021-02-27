@@ -25,12 +25,12 @@ func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.Begin
 		return &txnpb.BeginResponse{Err: commonpb.ToPBError(err)}, nil
 	}
 	return &txnpb.BeginResponse{
-		TxnId: txn.(*Txn).ID,
+		TxnId: txn.(*Txn).ID.Version(),
 	}, nil
 }
 
 func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGetResponse, error) {
-	txn, err := s.m.GetTxn(req.TxnId)
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.TxnGetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
@@ -44,7 +44,7 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 }
 
 func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSetResponse, error) {
-	txn, err := s.m.GetTxn(req.TxnId)
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.TxnSetResponse{Err: commonpb.ToPBError(err)}, nil
 	}
@@ -54,7 +54,7 @@ func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSet
 }
 
 func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb.RollbackResponse, error) {
-	txn, err := s.m.GetTxn(req.TxnId)
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.RollbackResponse{Err: commonpb.ToPBError(err)}, nil
 	}
@@ -63,7 +63,7 @@ func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb
 }
 
 func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.CommitResponse, error) {
-	txn, err := s.m.GetTxn(req.TxnId)
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.CommitResponse{Err: commonpb.ToPBError(err)}, nil
 	}

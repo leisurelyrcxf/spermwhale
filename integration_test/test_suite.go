@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/txn"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/integration_test/types"
 	"github.com/leisurelyrcxf/spermwhale/integration_test/utils"
-	"github.com/leisurelyrcxf/spermwhale/sync2"
 )
 
 var (
@@ -46,7 +47,7 @@ type TestSuite struct {
 	KVClient  *kv.Client
 
 	testifyassert.Assertions
-	exiting  sync2.AtomicBool
+	exiting  concurrency.AtomicBool
 	commands []*types.Command
 }
 

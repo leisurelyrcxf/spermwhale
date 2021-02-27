@@ -1,4 +1,4 @@
-package data_struct
+package concurrency
 
 import (
 	"sync"

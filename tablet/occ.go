@@ -10,19 +10,18 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
-	"github.com/leisurelyrcxf/spermwhale/data_struct"
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
-	"github.com/leisurelyrcxf/spermwhale/sync2"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
 type TimestampCache struct {
-	m data_struct.ConcurrentMap
+	m concurrency.ConcurrentMap
 }
 
 func NewTimestampCache() *TimestampCache {
 	return &TimestampCache{
-		m: data_struct.NewConcurrentMap(64),
+		m: concurrency.NewConcurrentMap(64),
 	}
 }
 
@@ -51,7 +50,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 type OCCPhysical struct {
 	types.TxnConfig
 
-	lm *sync2.LockManager
+	lm *concurrency.LockManager
 
 	oracle  *physical.Oracle
 	tsCache *TimestampCache
@@ -77,7 +76,7 @@ func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *OCCPhysical {
 
 	return &OCCPhysical{
 		TxnConfig: cfg,
-		lm:        sync2.NewLockManager(),
+		lm:        concurrency.NewLockManager(),
 		oracle:    physical.NewOracle(),
 		tsCache:   NewTimestampCache(),
 		db:        db,

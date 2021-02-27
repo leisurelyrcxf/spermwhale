@@ -19,10 +19,10 @@ type TransactionStore struct {
 	s      *Scheduler
 }
 
-func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint64, conflictedKey string) (*Txn, error) {
+func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID types.TxnId, conflictedKey string) (*Txn, error) {
 	// TODO maybe get from txn manager first?
 	readOpt := types.NewReadOption(math.MaxUint64)
-	isTooStale := s.oracle.IsTooStale(txnID, s.cfg.StaleWriteThreshold)
+	isTooStale := s.oracle.IsTooStale(txnID.Version(), s.cfg.StaleWriteThreshold)
 	if !isTooStale {
 		readOpt = readOpt.SetNotUpdateTimestampCache()
 	}
@@ -33,7 +33,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	}
 
 	if recordErr == nil {
-		assert.Must(txnRecordData.Meta.Version == txnID)
+		assert.Must(txnRecordData.Meta.Version == txnID.Version())
 		txn, err := DecodeTxn(txnRecordData.V)
 		if err != nil {
 			return nil, err
@@ -54,7 +54,7 @@ func (s *TransactionStore) LoadTransactionRecord(ctx context.Context, txnID uint
 	// 1. transaction has been rollbacked, conflictedKey must be gone
 	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 	// 3. transaction neither committed nor rollbacked
-	vv, keyErr := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID).SetExactVersion())
+	vv, keyErr := s.kv.Get(ctx, conflictedKey, types.NewReadOption(txnID.Version()).SetExactVersion())
 	if keyErr != nil && !errors.IsNotExistsErr(keyErr) {
 		glog.Errorf("[CheckCommitState] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
 		return nil, keyErr

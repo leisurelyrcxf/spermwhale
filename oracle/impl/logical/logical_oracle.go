@@ -6,11 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/models/client"
 	"github.com/leisurelyrcxf/spermwhale/models/client/common"
-	"github.com/leisurelyrcxf/spermwhale/sync2"
 )
 
 const (
@@ -20,8 +21,8 @@ const (
 )
 
 type Oracle struct {
-	counter   sync2.AtomicUint64
-	persisted sync2.AtomicUint64
+	counter   concurrency.AtomicUint64
+	persisted concurrency.AtomicUint64
 	cli       client.Client
 
 	allocInAdvance uint64
@@ -42,8 +43,8 @@ func NewOracle(allocInAdvance uint64, c client.Client) (*Oracle, error) {
 		next = persisted + 1
 	}
 	return &Oracle{
-		counter:   sync2.NewAtomicUint64(next),
-		persisted: sync2.NewAtomicUint64(next),
+		counter:   concurrency.NewAtomicUint64(next),
+		persisted: concurrency.NewAtomicUint64(next),
 		cli:       c,
 
 		allocInAdvance: allocInAdvance,
