@@ -1,6 +1,10 @@
 package types
 
-import "context"
+import (
+	"context"
+
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+)
 
 type ReadOption struct {
 	Version                 uint64
@@ -11,6 +15,22 @@ type ReadOption struct {
 func NewReadOption(version uint64) ReadOption {
 	return ReadOption{
 		Version: version,
+	}
+}
+
+func NewReadOptionFromPB(x *commonpb.ReadOption) ReadOption {
+	return ReadOption{
+		Version:                 x.Version,
+		ExactVersion:            x.ExactReadVersion,
+		NotUpdateTimestampCache: x.NotUpdateTimestampCache,
+	}
+}
+
+func (opt ReadOption) ToPB() *commonpb.ReadOption {
+	return &commonpb.ReadOption{
+		Version:                 opt.Version,
+		ExactReadVersion:        opt.ExactVersion,
+		NotUpdateTimestampCache: opt.NotUpdateTimestampCache,
 	}
 }
 
@@ -31,6 +51,20 @@ type WriteOption struct {
 
 func NewWriteOption() WriteOption {
 	return WriteOption{}
+}
+
+func NewWriteOptionFromPB(x *commonpb.WriteOption) WriteOption {
+	return WriteOption{
+		ClearWriteIntent: x.ClearWriteIntent,
+		RemoveVersion:    x.RemoveVersion,
+	}
+}
+
+func (opt *WriteOption) ToPB() *commonpb.WriteOption {
+	return &commonpb.WriteOption{
+		ClearWriteIntent: opt.ClearWriteIntent,
+		RemoveVersion:    opt.RemoveVersion,
+	}
 }
 
 func (opt WriteOption) SetClearWriteIntent() WriteOption {

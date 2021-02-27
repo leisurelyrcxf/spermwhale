@@ -11,7 +11,7 @@ import (
 )
 
 type Client struct {
-	c    txnpb.TxnClient
+	c    txnpb.TxnServiceClient
 	conn *grpc.ClientConn
 }
 
@@ -22,83 +22,102 @@ func NewClient(serverAddr string) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		c:    txnpb.NewTxnClient(conn),
+		c:    txnpb.NewTxnServiceClient(conn),
 	}, nil
 }
 
-func (c *Client) Begin(ctx context.Context) (types.TxnId, error) {
+func (c *Client) Begin(ctx context.Context) (TransactionInfo, error) {
 	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{})
 	if err != nil {
-		return 0, err
+		return TransactionInfo{}, err
 	}
 	if resp == nil {
-		return 0, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp == nil")
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp == nil")
 	}
 	if resp.Err != nil {
-		return 0, resp.Err.Error()
+		return TransactionInfo{}, errors.NewErrorFromPB(resp.Err)
 	}
-	return types.TxnId(resp.TxnId), nil
+	if resp.Txn == nil {
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp.Txn == nil")
+	}
+	return NewTransactionInfoFromPB(resp.Txn), nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, error) {
+func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, TransactionInfo, error) {
 	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return types.EmptyValue, err
+		return types.EmptyValue, TransactionInfo{}, err
 	}
 	if resp == nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
+		return types.EmptyValue, TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
 	}
+	if resp.Txn == nil {
+		return types.EmptyValue, TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "resp.Txn == nil")
+	}
+	txnInfo := NewTransactionInfoFromPB(resp.Txn)
 	if resp.Err != nil {
-		return types.EmptyValue, resp.Err.Error()
+		return types.EmptyValue, txnInfo, errors.NewErrorFromPB(resp.Err)
 	}
 	if resp.V == nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V == nil")
+		return types.EmptyValue, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V == nil")
 	}
-	return resp.V.Value(), nil
+	if resp.V.Meta == nil {
+		return types.EmptyValue, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V.Meta == nil")
+	}
+	return types.NewValueFromPB(resp.V), txnInfo, nil
 }
 
-func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.TxnId) error {
+func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.TxnId) (TransactionInfo, error) {
 	resp, err := c.c.Set(ctx, &txnpb.TxnSetRequest{
 		Key:   key,
 		Value: val,
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return err
+		return TransactionInfo{}, err
 	}
 	if resp == nil {
-		return errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp == nil")
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp == nil")
 	}
-	return resp.Err.Error()
+	if resp.Txn == nil {
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp.Txn == nil")
+	}
+	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
 
-func (c *Client) Commit(ctx context.Context, txnID types.TxnId) error {
+func (c *Client) Commit(ctx context.Context, txnID types.TxnId) (TransactionInfo, error) {
 	resp, err := c.c.Commit(ctx, &txnpb.CommitRequest{
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return err
+		return TransactionInfo{}, err
 	}
 	if resp == nil {
-		return errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp == nil")
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp == nil")
 	}
-	return resp.Err.Error()
+	if resp.Txn == nil {
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp.Txn == nil")
+	}
+	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
 
-func (c *Client) Rollback(ctx context.Context, txnID types.TxnId) error {
+func (c *Client) Rollback(ctx context.Context, txnID types.TxnId) (TransactionInfo, error) {
 	resp, err := c.c.Rollback(ctx, &txnpb.RollbackRequest{
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return err
+		return TransactionInfo{}, err
 	}
 	if resp == nil {
-		return errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp == nil")
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp == nil")
 	}
-	return resp.Err.Error()
+	if resp.Txn == nil {
+		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp.Txn == nil")
+	}
+	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
 
 func (c *Client) Close() error {
@@ -114,11 +133,14 @@ func NewClientTxnManager(c *Client) *ClientTxnManager {
 }
 
 func (m *ClientTxnManager) BeginTransaction(ctx context.Context) (types.Txn, error) {
-	txnID, err := m.c.Begin(ctx)
+	txnInfo, err := m.c.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return NewClientTxn(txnID, m.c), nil
+	return &ClientTxn{
+		TransactionInfo: txnInfo,
+		c:               m.c,
+	}, nil
 }
 
 func (m *ClientTxnManager) Close() error {
@@ -126,30 +148,39 @@ func (m *ClientTxnManager) Close() error {
 }
 
 type ClientTxn struct {
-	id types.TxnId
-	c  *Client
-}
+	TransactionInfo
 
-func NewClientTxn(id types.TxnId, c *Client) *ClientTxn {
-	return &ClientTxn{id: id, c: c}
-}
-
-func (txn *ClientTxn) GetId() types.TxnId {
-	return txn.id
+	c *Client
 }
 
 func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
-	return txn.c.Get(ctx, key, txn.id)
+	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID)
+	if txn.ID == txnInfo.ID {
+		txn.TransactionInfo = txnInfo
+	}
+	return val, err
 }
 
 func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
-	return txn.c.Set(ctx, key, val, txn.id)
+	txnInfo, err := txn.c.Set(ctx, key, val, txn.ID)
+	if txn.ID == txnInfo.ID {
+		txn.TransactionInfo = txnInfo
+	}
+	return err
 }
 
 func (txn *ClientTxn) Commit(ctx context.Context) error {
-	return txn.c.Commit(ctx, txn.id)
+	txnInfo, err := txn.c.Commit(ctx, txn.ID)
+	if txn.ID == txnInfo.ID {
+		txn.TransactionInfo = txnInfo
+	}
+	return err
 }
 
 func (txn *ClientTxn) Rollback(ctx context.Context) error {
-	return txn.c.Rollback(ctx, txn.id)
+	txnInfo, err := txn.c.Rollback(ctx, txn.ID)
+	if txn.ID == txnInfo.ID {
+		txn.TransactionInfo = txnInfo
+	}
+	return err
 }

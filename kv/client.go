@@ -5,8 +5,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
@@ -31,7 +29,7 @@ func NewClient(serverAddr string) (*Client, error) {
 func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	resp, err := c.kv.Get(ctx, &tabletpb.GetRequest{
 		Key: key,
-		Opt: commonpb.ToPBReadOption(opt),
+		Opt: opt.ToPB(),
 	})
 	if err != nil {
 		return types.EmptyValue, err
@@ -40,19 +38,19 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp == nil")
 	}
 	if resp.Err != nil {
-		return types.EmptyValue, resp.Err.Error()
+		return types.EmptyValue, errors.NewErrorFromPB(resp.Err)
 	}
 	if resp.V == nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp.V == nil")
 	}
-	return resp.V.Value(), nil
+	return types.NewValueFromPB(resp.V), nil
 }
 
 func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
 	resp, err := c.kv.Set(ctx, &tabletpb.SetRequest{
 		Key:   key,
-		Value: commonpb.ToPBValue(val),
-		Opt:   commonpb.ToPBWriteOption(opt),
+		Value: val.ToPB(),
+		Opt:   opt.ToPB(),
 	})
 	if err != nil {
 		return err
@@ -60,7 +58,7 @@ func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types
 	if resp == nil {
 		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::Set resp == nil")
 	}
-	return resp.Err.Error()
+	return errors.NewErrorFromPB(resp.Err)
 }
 
 func (c *Client) Close() error {

@@ -6,13 +6,26 @@ import "common.proto";
 
 option go_package = "proto/txnpb";
 
-message BeginRequest {
+enum TxnState {
+    StateInvalid     = 0;
+    StateUncommitted = 1;
+    StateStaging     = 2;
+    StateCommitted   = 3;
+    StateRollbacking = 4;
+    StateRollbacked  = 5;
+}
 
+message Txn {
+    uint64 id = 1;
+    TxnState state = 2;
+}
+
+message BeginRequest {
 }
 
 message BeginResponse {
-    uint64 txn_id = 1;
-    Error err = 2;
+    Error err = 1;
+    Txn txn = 2;
 }
 
 message TxnGetRequest {
@@ -21,8 +34,9 @@ message TxnGetRequest {
 }
 
 message TxnGetResponse {
-    Value v = 1;
-    Error err = 2;
+    Error err = 1;
+    Value v = 2;
+    Txn txn = 3;
 }
 
 message TxnSetRequest {
@@ -33,6 +47,7 @@ message TxnSetRequest {
 
 message TxnSetResponse {
     Error err = 1;
+    Txn txn = 2;
 }
 
 message RollbackRequest {
@@ -41,6 +56,7 @@ message RollbackRequest {
 
 message RollbackResponse {
     Error err = 1;
+    Txn txn = 2;
 }
 
 message CommitRequest {
@@ -49,9 +65,10 @@ message CommitRequest {
 
 message CommitResponse {
     Error err = 1;
+    Txn txn = 2;
 }
 
-service Txn {
+service TxnService {
     rpc Begin(BeginRequest) returns (BeginResponse) {}
     rpc Get(TxnGetRequest) returns (TxnGetResponse) {}
     rpc Set(TxnSetRequest) returns (TxnSetResponse) {}

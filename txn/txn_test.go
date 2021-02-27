@@ -132,7 +132,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 
 func TestTxnReadAfterWrite(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+	_ = flag.Set("v", fmt.Sprintf("%d", 0))
 
 	for _, threshold := range []int{1000, 100, 10, 5} {
 		for i := 0; i < 100; i++ {

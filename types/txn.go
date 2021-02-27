@@ -1,6 +1,10 @@
 package types
 
-import "context"
+import (
+	"context"
+
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
+)
 
 type TxnId uint64
 
@@ -13,8 +17,37 @@ type TxnManager interface {
 	Close() error
 }
 
+type TxnState int
+
+const (
+	TxnStateInvalid     TxnState = 0
+	TxnStateUncommitted TxnState = 1
+	TxnStateStaging     TxnState = 2
+	TxnStateCommitted   TxnState = 3
+	TxnStateRollbacking TxnState = 4
+	TxnStateRollbacked  TxnState = 5
+)
+
+var stateStrings = map[TxnState]string{
+	TxnStateInvalid:     "'invalid'",
+	TxnStateUncommitted: "'uncommitted'",
+	TxnStateStaging:     "'staging'",
+	TxnStateCommitted:   "'committed'",
+	TxnStateRollbacking: "'rollbacking'",
+	TxnStateRollbacked:  "'rollbacked'",
+}
+
+func (s TxnState) ToPB() txnpb.TxnState {
+	return txnpb.TxnState(s)
+}
+
+func (s TxnState) String() string {
+	return stateStrings[s]
+}
+
 type Txn interface {
 	GetId() TxnId
+	GetState() TxnState
 	Get(ctx context.Context, key string) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error

@@ -100,10 +100,10 @@ func Annotatef(err error, format string, args ...interface{}) error {
 	if ve, ok := err.(*Error); ok {
 		return &Error{
 			Code: ve.Code,
-			Msg:  trimMsg(ve.Msg) + ", " + fmt.Sprintf(format, args...),
+			Msg:  trimMsg(ve.Msg) + ": " + fmt.Sprintf(format, args...),
 		}
 	}
-	return New(trimMsg(err.Error()) + ", " + fmt.Sprintf(format, args...))
+	return errors.New(trimMsg(err.Error()) + ": " + fmt.Sprintf(format, args...))
 }
 
 func trimMsg(msg string) string {

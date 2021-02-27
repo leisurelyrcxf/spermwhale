@@ -26,8 +26,12 @@ func (s *Scheduler) ScheduleIOJob(t *types.ListTask) error {
 	return s.ioJobScheduler.Schedule(t)
 }
 
+func (s *Scheduler) GCIOJobs(ts []*types.ListTask) {
+	s.ioJobScheduler.GC(ts)
+}
+
 type TransactionManager struct {
-	types.TxnConfig
+	cfg types.TxnConfig
 
 	txns concurrency.ConcurrentTxnMap
 
@@ -47,7 +51,7 @@ func NewTransactionManager(
 		txns: concurrency.NewConcurrentTxnMap(32),
 
 		kv:        kv,
-		TxnConfig: cfg,
+		cfg:       cfg,
 		oracle:    physical.NewOracle(),
 		workerNum: clearWorkerNum,
 
@@ -79,7 +83,7 @@ func (m *TransactionManager) GetTxn(txnID types.TxnId) (*Txn, error) {
 	return nil, errors.ErrTransactionNotFound
 }
 
-func (m *TransactionManager) removeTxn(txn *Txn) {
+func (m *TransactionManager) RemoveTxn(txn *Txn) {
 	m.txns.Del(txn.ID)
 }
 
@@ -88,15 +92,27 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id types.TxnId) *Txn {
-	return NewTxn(id, m.kv, m.TxnConfig, m.oracle, m.store, m.s)
+	return NewTxn(id, m.kv, m.cfg, m.oracle, m.store, m, m.s)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
 	m.store = &TransactionStore{
 		kv:     m.kv,
 		oracle: m.oracle,
-		cfg:    m.TxnConfig,
-		s:      m.s,
+		cfg:    m.cfg,
+
+		txnInitializer: func(txn *Txn) {
+			txn.lastWriteTasks = make(map[string]*types.ListTask)
+			txn.cfg = m.cfg
+			txn.kv = m.kv
+			txn.oracle = m.oracle
+			txn.store = m.store
+			txn.s = m.s
+			txn.h = m
+		},
+		txnConstructor: func(txnId types.TxnId) *Txn {
+			return m.newTxn(txnId)
+		},
 	}
 	return m
 }

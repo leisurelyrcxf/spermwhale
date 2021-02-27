@@ -97,6 +97,18 @@ func (cmp *ConcurrentMap) RUnlock() {
 	}
 }
 
+func (cmp *ConcurrentMap) Lock() {
+	for i := 0; i < len(cmp.partitions); i++ {
+		cmp.partitions[i].mutex.Lock()
+	}
+}
+
+func (cmp *ConcurrentMap) Unlock() {
+	for i := len(cmp.partitions) - 1; i >= 0; i-- {
+		cmp.partitions[i].mutex.Unlock()
+	}
+}
+
 func (cmp *ConcurrentMap) MustGet(key string) interface{} {
 	val, ok := cmp.Get(key)
 	if !ok {
@@ -139,6 +151,14 @@ func (cmp *ConcurrentMap) ForEachStrict(cb func(string, interface{})) {
 		partition.forEachLocked(cb)
 	}
 	cmp.RUnlock()
+}
+
+func (cmp *ConcurrentMap) Clear() {
+	cmp.Lock()
+	for _, partition := range cmp.partitions {
+		partition.m = nil
+	}
+	cmp.Unlock()
 }
 
 func (cmp *ConcurrentMap) Size() (sz int) {

@@ -121,6 +121,7 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 }
 
 func (db *DB) Close() error {
+	db.values.Clear()
 	return nil
 }
 

@@ -30,6 +30,119 @@ const (
 // of the legacy proto package is being used.
 const _ = proto.ProtoPackageIsVersion4
 
+type TxnState int32
+
+const (
+	TxnState_StateInvalid     TxnState = 0
+	TxnState_StateUncommitted TxnState = 1
+	TxnState_StateStaging     TxnState = 2
+	TxnState_StateCommitted   TxnState = 3
+	TxnState_StateRollbacking TxnState = 4
+	TxnState_StateRollbacked  TxnState = 5
+)
+
+// Enum value maps for TxnState.
+var (
+	TxnState_name = map[int32]string{
+		0: "StateInvalid",
+		1: "StateUncommitted",
+		2: "StateStaging",
+		3: "StateCommitted",
+		4: "StateRollbacking",
+		5: "StateRollbacked",
+	}
+	TxnState_value = map[string]int32{
+		"StateInvalid":     0,
+		"StateUncommitted": 1,
+		"StateStaging":     2,
+		"StateCommitted":   3,
+		"StateRollbacking": 4,
+		"StateRollbacked":  5,
+	}
+)
+
+func (x TxnState) Enum() *TxnState {
+	p := new(TxnState)
+	*p = x
+	return p
+}
+
+func (x TxnState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TxnState) Descriptor() protoreflect.EnumDescriptor {
+	return file_txn_proto_enumTypes[0].Descriptor()
+}
+
+func (TxnState) Type() protoreflect.EnumType {
+	return &file_txn_proto_enumTypes[0]
+}
+
+func (x TxnState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TxnState.Descriptor instead.
+func (TxnState) EnumDescriptor() ([]byte, []int) {
+	return file_txn_proto_rawDescGZIP(), []int{0}
+}
+
+type Txn struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Id    uint64   `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	State TxnState `protobuf:"varint,2,opt,name=state,proto3,enum=proto.TxnState" json:"state,omitempty"`
+}
+
+func (x *Txn) Reset() {
+	*x = Txn{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_txn_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Txn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Txn) ProtoMessage() {}
+
+func (x *Txn) ProtoReflect() protoreflect.Message {
+	mi := &file_txn_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Txn.ProtoReflect.Descriptor instead.
+func (*Txn) Descriptor() ([]byte, []int) {
+	return file_txn_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Txn) GetId() uint64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
+func (x *Txn) GetState() TxnState {
+	if x != nil {
+		return x.State
+	}
+	return TxnState_StateInvalid
+}
+
 type BeginRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -39,7 +152,7 @@ type BeginRequest struct {
 func (x *BeginRequest) Reset() {
 	*x = BeginRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[0]
+		mi := &file_txn_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -52,7 +165,7 @@ func (x *BeginRequest) String() string {
 func (*BeginRequest) ProtoMessage() {}
 
 func (x *BeginRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[0]
+	mi := &file_txn_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -65,7 +178,7 @@ func (x *BeginRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginRequest.ProtoReflect.Descriptor instead.
 func (*BeginRequest) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{0}
+	return file_txn_proto_rawDescGZIP(), []int{1}
 }
 
 type BeginResponse struct {
@@ -73,14 +186,14 @@ type BeginResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	TxnId uint64          `protobuf:"varint,1,opt,name=txn_id,json=txnId,proto3" json:"txn_id,omitempty"`
-	Err   *commonpb.Error `protobuf:"bytes,2,opt,name=err,proto3" json:"err,omitempty"`
+	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+	Txn *Txn            `protobuf:"bytes,2,opt,name=txn,proto3" json:"txn,omitempty"`
 }
 
 func (x *BeginResponse) Reset() {
 	*x = BeginResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[1]
+		mi := &file_txn_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -93,7 +206,7 @@ func (x *BeginResponse) String() string {
 func (*BeginResponse) ProtoMessage() {}
 
 func (x *BeginResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[1]
+	mi := &file_txn_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -106,19 +219,19 @@ func (x *BeginResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginResponse.ProtoReflect.Descriptor instead.
 func (*BeginResponse) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *BeginResponse) GetTxnId() uint64 {
-	if x != nil {
-		return x.TxnId
-	}
-	return 0
+	return file_txn_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *BeginResponse) GetErr() *commonpb.Error {
 	if x != nil {
 		return x.Err
+	}
+	return nil
+}
+
+func (x *BeginResponse) GetTxn() *Txn {
+	if x != nil {
+		return x.Txn
 	}
 	return nil
 }
@@ -135,7 +248,7 @@ type TxnGetRequest struct {
 func (x *TxnGetRequest) Reset() {
 	*x = TxnGetRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[2]
+		mi := &file_txn_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -148,7 +261,7 @@ func (x *TxnGetRequest) String() string {
 func (*TxnGetRequest) ProtoMessage() {}
 
 func (x *TxnGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[2]
+	mi := &file_txn_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -161,7 +274,7 @@ func (x *TxnGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxnGetRequest.ProtoReflect.Descriptor instead.
 func (*TxnGetRequest) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{2}
+	return file_txn_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *TxnGetRequest) GetKey() string {
@@ -183,14 +296,15 @@ type TxnGetResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	V   *commonpb.Value `protobuf:"bytes,1,opt,name=v,proto3" json:"v,omitempty"`
-	Err *commonpb.Error `protobuf:"bytes,2,opt,name=err,proto3" json:"err,omitempty"`
+	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+	V   *commonpb.Value `protobuf:"bytes,2,opt,name=v,proto3" json:"v,omitempty"`
+	Txn *Txn            `protobuf:"bytes,3,opt,name=txn,proto3" json:"txn,omitempty"`
 }
 
 func (x *TxnGetResponse) Reset() {
 	*x = TxnGetResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[3]
+		mi := &file_txn_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -203,7 +317,7 @@ func (x *TxnGetResponse) String() string {
 func (*TxnGetResponse) ProtoMessage() {}
 
 func (x *TxnGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[3]
+	mi := &file_txn_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -216,7 +330,14 @@ func (x *TxnGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxnGetResponse.ProtoReflect.Descriptor instead.
 func (*TxnGetResponse) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{3}
+	return file_txn_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *TxnGetResponse) GetErr() *commonpb.Error {
+	if x != nil {
+		return x.Err
+	}
+	return nil
 }
 
 func (x *TxnGetResponse) GetV() *commonpb.Value {
@@ -226,9 +347,9 @@ func (x *TxnGetResponse) GetV() *commonpb.Value {
 	return nil
 }
 
-func (x *TxnGetResponse) GetErr() *commonpb.Error {
+func (x *TxnGetResponse) GetTxn() *Txn {
 	if x != nil {
-		return x.Err
+		return x.Txn
 	}
 	return nil
 }
@@ -246,7 +367,7 @@ type TxnSetRequest struct {
 func (x *TxnSetRequest) Reset() {
 	*x = TxnSetRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[4]
+		mi := &file_txn_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -259,7 +380,7 @@ func (x *TxnSetRequest) String() string {
 func (*TxnSetRequest) ProtoMessage() {}
 
 func (x *TxnSetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[4]
+	mi := &file_txn_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -272,7 +393,7 @@ func (x *TxnSetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxnSetRequest.ProtoReflect.Descriptor instead.
 func (*TxnSetRequest) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{4}
+	return file_txn_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TxnSetRequest) GetKey() string {
@@ -302,12 +423,13 @@ type TxnSetResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+	Txn *Txn            `protobuf:"bytes,2,opt,name=txn,proto3" json:"txn,omitempty"`
 }
 
 func (x *TxnSetResponse) Reset() {
 	*x = TxnSetResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[5]
+		mi := &file_txn_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -320,7 +442,7 @@ func (x *TxnSetResponse) String() string {
 func (*TxnSetResponse) ProtoMessage() {}
 
 func (x *TxnSetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[5]
+	mi := &file_txn_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,12 +455,19 @@ func (x *TxnSetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxnSetResponse.ProtoReflect.Descriptor instead.
 func (*TxnSetResponse) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{5}
+	return file_txn_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TxnSetResponse) GetErr() *commonpb.Error {
 	if x != nil {
 		return x.Err
+	}
+	return nil
+}
+
+func (x *TxnSetResponse) GetTxn() *Txn {
+	if x != nil {
+		return x.Txn
 	}
 	return nil
 }
@@ -354,7 +483,7 @@ type RollbackRequest struct {
 func (x *RollbackRequest) Reset() {
 	*x = RollbackRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[6]
+		mi := &file_txn_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -367,7 +496,7 @@ func (x *RollbackRequest) String() string {
 func (*RollbackRequest) ProtoMessage() {}
 
 func (x *RollbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[6]
+	mi := &file_txn_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +509,7 @@ func (x *RollbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackRequest.ProtoReflect.Descriptor instead.
 func (*RollbackRequest) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{6}
+	return file_txn_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RollbackRequest) GetTxnId() uint64 {
@@ -396,12 +525,13 @@ type RollbackResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+	Txn *Txn            `protobuf:"bytes,2,opt,name=txn,proto3" json:"txn,omitempty"`
 }
 
 func (x *RollbackResponse) Reset() {
 	*x = RollbackResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[7]
+		mi := &file_txn_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -414,7 +544,7 @@ func (x *RollbackResponse) String() string {
 func (*RollbackResponse) ProtoMessage() {}
 
 func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[7]
+	mi := &file_txn_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -427,12 +557,19 @@ func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackResponse.ProtoReflect.Descriptor instead.
 func (*RollbackResponse) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{7}
+	return file_txn_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RollbackResponse) GetErr() *commonpb.Error {
 	if x != nil {
 		return x.Err
+	}
+	return nil
+}
+
+func (x *RollbackResponse) GetTxn() *Txn {
+	if x != nil {
+		return x.Txn
 	}
 	return nil
 }
@@ -448,7 +585,7 @@ type CommitRequest struct {
 func (x *CommitRequest) Reset() {
 	*x = CommitRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[8]
+		mi := &file_txn_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -461,7 +598,7 @@ func (x *CommitRequest) String() string {
 func (*CommitRequest) ProtoMessage() {}
 
 func (x *CommitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[8]
+	mi := &file_txn_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +611,7 @@ func (x *CommitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitRequest.ProtoReflect.Descriptor instead.
 func (*CommitRequest) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{8}
+	return file_txn_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CommitRequest) GetTxnId() uint64 {
@@ -490,12 +627,13 @@ type CommitResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+	Txn *Txn            `protobuf:"bytes,2,opt,name=txn,proto3" json:"txn,omitempty"`
 }
 
 func (x *CommitResponse) Reset() {
 	*x = CommitResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_txn_proto_msgTypes[9]
+		mi := &file_txn_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -508,7 +646,7 @@ func (x *CommitResponse) String() string {
 func (*CommitResponse) ProtoMessage() {}
 
 func (x *CommitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_txn_proto_msgTypes[9]
+	mi := &file_txn_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +659,7 @@ func (x *CommitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitResponse.ProtoReflect.Descriptor instead.
 func (*CommitResponse) Descriptor() ([]byte, []int) {
-	return file_txn_proto_rawDescGZIP(), []int{9}
+	return file_txn_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CommitResponse) GetErr() *commonpb.Error {
@@ -531,65 +669,92 @@ func (x *CommitResponse) GetErr() *commonpb.Error {
 	return nil
 }
 
+func (x *CommitResponse) GetTxn() *Txn {
+	if x != nil {
+		return x.Txn
+	}
+	return nil
+}
+
 var File_txn_proto protoreflect.FileDescriptor
 
 var file_txn_proto_rawDesc = []byte{
 	0x0a, 0x09, 0x74, 0x78, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f,
 	0x74, 0x6f, 0x1a, 0x0c, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x22, 0x0e, 0x0a, 0x0c, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x22, 0x46, 0x0a, 0x0d, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x04, 0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72,
-	0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22, 0x38, 0x0a, 0x0d, 0x54, 0x78, 0x6e, 0x47,
-	0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x15, 0x0a, 0x06, 0x74,
-	0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x78, 0x6e,
-	0x49, 0x64, 0x22, 0x4c, 0x0a, 0x0e, 0x54, 0x78, 0x6e, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1a, 0x0a, 0x01, 0x76, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
-	0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x52, 0x01, 0x76,
-	0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72,
-	0x22, 0x4e, 0x0a, 0x0d, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03,
-	0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01,
-	0x28, 0x0c, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e,
-	0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64,
-	0x22, 0x30, 0x0a, 0x0e, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
-	0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65,
-	0x72, 0x72, 0x22, 0x28, 0x0a, 0x0f, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x22, 0x32, 0x0a, 0x10,
-	0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
-	0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72,
-	0x22, 0x26, 0x0a, 0x0d, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x04, 0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x22, 0x30, 0x0a, 0x0e, 0x43, 0x6f, 0x6d, 0x6d,
-	0x69, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72,
-	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x32, 0x9f, 0x02, 0x0a, 0x03, 0x54,
-	0x78, 0x6e, 0x12, 0x34, 0x0a, 0x05, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x12, 0x13, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x1a, 0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x34, 0x0a, 0x03, 0x47, 0x65, 0x74, 0x12,
-	0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x47, 0x65, 0x74, 0x52, 0x65,
+	0x22, 0x3c, 0x0a, 0x03, 0x54, 0x78, 0x6e, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x04, 0x52, 0x02, 0x69, 0x64, 0x12, 0x25, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x0f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54,
+	0x78, 0x6e, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x22, 0x0e,
+	0x0a, 0x0c, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x4d,
+	0x0a, 0x0d, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
+	0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x12,
+	0x1c, 0x0a, 0x03, 0x74, 0x78, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0a, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x52, 0x03, 0x74, 0x78, 0x6e, 0x22, 0x38, 0x0a,
+	0x0d, 0x54, 0x78, 0x6e, 0x47, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10,
+	0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79,
+	0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x22, 0x6a, 0x0a, 0x0e, 0x54, 0x78, 0x6e, 0x47, 0x65,
+	0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45,
+	0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x12, 0x1a, 0x0a, 0x01, 0x76, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x56, 0x61, 0x6c,
+	0x75, 0x65, 0x52, 0x01, 0x76, 0x12, 0x1c, 0x0a, 0x03, 0x74, 0x78, 0x6e, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x0a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x52, 0x03,
+	0x74, 0x78, 0x6e, 0x22, 0x4e, 0x0a, 0x0d, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x12, 0x15, 0x0a, 0x06,
+	0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x78,
+	0x6e, 0x49, 0x64, 0x22, 0x4e, 0x0a, 0x0e, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72,
+	0x52, 0x03, 0x65, 0x72, 0x72, 0x12, 0x1c, 0x0a, 0x03, 0x74, 0x78, 0x6e, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x0a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x52, 0x03,
+	0x74, 0x78, 0x6e, 0x22, 0x28, 0x0a, 0x0f, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x22, 0x50, 0x0a,
+	0x10, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72,
+	0x72, 0x12, 0x1c, 0x0a, 0x03, 0x74, 0x78, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0a,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x52, 0x03, 0x74, 0x78, 0x6e, 0x22,
+	0x26, 0x0a, 0x0d, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x15, 0x0a, 0x06, 0x74, 0x78, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x05, 0x74, 0x78, 0x6e, 0x49, 0x64, 0x22, 0x4e, 0x0a, 0x0e, 0x43, 0x6f, 0x6d, 0x6d, 0x69,
+	0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45,
+	0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x12, 0x1c, 0x0a, 0x03, 0x74, 0x78, 0x6e,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54,
+	0x78, 0x6e, 0x52, 0x03, 0x74, 0x78, 0x6e, 0x2a, 0x83, 0x01, 0x0a, 0x08, 0x54, 0x78, 0x6e, 0x53,
+	0x74, 0x61, 0x74, 0x65, 0x12, 0x10, 0x0a, 0x0c, 0x53, 0x74, 0x61, 0x74, 0x65, 0x49, 0x6e, 0x76,
+	0x61, 0x6c, 0x69, 0x64, 0x10, 0x00, 0x12, 0x14, 0x0a, 0x10, 0x53, 0x74, 0x61, 0x74, 0x65, 0x55,
+	0x6e, 0x63, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64, 0x10, 0x01, 0x12, 0x10, 0x0a, 0x0c,
+	0x53, 0x74, 0x61, 0x74, 0x65, 0x53, 0x74, 0x61, 0x67, 0x69, 0x6e, 0x67, 0x10, 0x02, 0x12, 0x12,
+	0x0a, 0x0e, 0x53, 0x74, 0x61, 0x74, 0x65, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x74, 0x65, 0x64,
+	0x10, 0x03, 0x12, 0x14, 0x0a, 0x10, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x6f, 0x6c, 0x6c, 0x62,
+	0x61, 0x63, 0x6b, 0x69, 0x6e, 0x67, 0x10, 0x04, 0x12, 0x13, 0x0a, 0x0f, 0x53, 0x74, 0x61, 0x74,
+	0x65, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x65, 0x64, 0x10, 0x05, 0x32, 0xa6, 0x02,
+	0x0a, 0x0a, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x12, 0x34, 0x0a, 0x05,
+	0x42, 0x65, 0x67, 0x69, 0x6e, 0x12, 0x13, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x42, 0x65,
+	0x67, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x14, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x42, 0x65, 0x67, 0x69, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x22, 0x00, 0x12, 0x34, 0x0a, 0x03, 0x47, 0x65, 0x74, 0x12, 0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x47, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x47, 0x65, 0x74, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x34, 0x0a, 0x03, 0x53, 0x65, 0x74, 0x12,
+	0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65,
 	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78,
-	0x6e, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x34,
-	0x0a, 0x03, 0x53, 0x65, 0x74, 0x12, 0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78,
-	0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x78, 0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x22, 0x00, 0x12, 0x3d, 0x0a, 0x08, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b,
-	0x12, 0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63,
-	0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x22, 0x00, 0x12, 0x37, 0x0a, 0x06, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x12, 0x14, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75,
-	0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6d, 0x6d,
-	0x69, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x0d, 0x5a, 0x0b,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x74, 0x78, 0x6e, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x6e, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x3d,
+	0x0a, 0x08, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x12, 0x16, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x17, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x6f, 0x6c, 0x6c, 0x62,
+	0x61, 0x63, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x37, 0x0a,
+	0x06, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x12, 0x14, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x15, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x0d, 0x5a, 0x0b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f,
+	0x74, 0x78, 0x6e, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -604,43 +769,52 @@ func file_txn_proto_rawDescGZIP() []byte {
 	return file_txn_proto_rawDescData
 }
 
-var file_txn_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_txn_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_txn_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_txn_proto_goTypes = []interface{}{
-	(*BeginRequest)(nil),     // 0: proto.BeginRequest
-	(*BeginResponse)(nil),    // 1: proto.BeginResponse
-	(*TxnGetRequest)(nil),    // 2: proto.TxnGetRequest
-	(*TxnGetResponse)(nil),   // 3: proto.TxnGetResponse
-	(*TxnSetRequest)(nil),    // 4: proto.TxnSetRequest
-	(*TxnSetResponse)(nil),   // 5: proto.TxnSetResponse
-	(*RollbackRequest)(nil),  // 6: proto.RollbackRequest
-	(*RollbackResponse)(nil), // 7: proto.RollbackResponse
-	(*CommitRequest)(nil),    // 8: proto.CommitRequest
-	(*CommitResponse)(nil),   // 9: proto.CommitResponse
-	(*commonpb.Error)(nil),   // 10: proto.Error
-	(*commonpb.Value)(nil),   // 11: proto.Value
+	(TxnState)(0),            // 0: proto.TxnState
+	(*Txn)(nil),              // 1: proto.Txn
+	(*BeginRequest)(nil),     // 2: proto.BeginRequest
+	(*BeginResponse)(nil),    // 3: proto.BeginResponse
+	(*TxnGetRequest)(nil),    // 4: proto.TxnGetRequest
+	(*TxnGetResponse)(nil),   // 5: proto.TxnGetResponse
+	(*TxnSetRequest)(nil),    // 6: proto.TxnSetRequest
+	(*TxnSetResponse)(nil),   // 7: proto.TxnSetResponse
+	(*RollbackRequest)(nil),  // 8: proto.RollbackRequest
+	(*RollbackResponse)(nil), // 9: proto.RollbackResponse
+	(*CommitRequest)(nil),    // 10: proto.CommitRequest
+	(*CommitResponse)(nil),   // 11: proto.CommitResponse
+	(*commonpb.Error)(nil),   // 12: proto.Error
+	(*commonpb.Value)(nil),   // 13: proto.Value
 }
 var file_txn_proto_depIdxs = []int32{
-	10, // 0: proto.BeginResponse.err:type_name -> proto.Error
-	11, // 1: proto.TxnGetResponse.v:type_name -> proto.Value
-	10, // 2: proto.TxnGetResponse.err:type_name -> proto.Error
-	10, // 3: proto.TxnSetResponse.err:type_name -> proto.Error
-	10, // 4: proto.RollbackResponse.err:type_name -> proto.Error
-	10, // 5: proto.CommitResponse.err:type_name -> proto.Error
-	0,  // 6: proto.Txn.Begin:input_type -> proto.BeginRequest
-	2,  // 7: proto.Txn.Get:input_type -> proto.TxnGetRequest
-	4,  // 8: proto.Txn.Set:input_type -> proto.TxnSetRequest
-	6,  // 9: proto.Txn.Rollback:input_type -> proto.RollbackRequest
-	8,  // 10: proto.Txn.Commit:input_type -> proto.CommitRequest
-	1,  // 11: proto.Txn.Begin:output_type -> proto.BeginResponse
-	3,  // 12: proto.Txn.Get:output_type -> proto.TxnGetResponse
-	5,  // 13: proto.Txn.Set:output_type -> proto.TxnSetResponse
-	7,  // 14: proto.Txn.Rollback:output_type -> proto.RollbackResponse
-	9,  // 15: proto.Txn.Commit:output_type -> proto.CommitResponse
-	11, // [11:16] is the sub-list for method output_type
-	6,  // [6:11] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	0,  // 0: proto.Txn.state:type_name -> proto.TxnState
+	12, // 1: proto.BeginResponse.err:type_name -> proto.Error
+	1,  // 2: proto.BeginResponse.txn:type_name -> proto.Txn
+	12, // 3: proto.TxnGetResponse.err:type_name -> proto.Error
+	13, // 4: proto.TxnGetResponse.v:type_name -> proto.Value
+	1,  // 5: proto.TxnGetResponse.txn:type_name -> proto.Txn
+	12, // 6: proto.TxnSetResponse.err:type_name -> proto.Error
+	1,  // 7: proto.TxnSetResponse.txn:type_name -> proto.Txn
+	12, // 8: proto.RollbackResponse.err:type_name -> proto.Error
+	1,  // 9: proto.RollbackResponse.txn:type_name -> proto.Txn
+	12, // 10: proto.CommitResponse.err:type_name -> proto.Error
+	1,  // 11: proto.CommitResponse.txn:type_name -> proto.Txn
+	2,  // 12: proto.TxnService.Begin:input_type -> proto.BeginRequest
+	4,  // 13: proto.TxnService.Get:input_type -> proto.TxnGetRequest
+	6,  // 14: proto.TxnService.Set:input_type -> proto.TxnSetRequest
+	8,  // 15: proto.TxnService.Rollback:input_type -> proto.RollbackRequest
+	10, // 16: proto.TxnService.Commit:input_type -> proto.CommitRequest
+	3,  // 17: proto.TxnService.Begin:output_type -> proto.BeginResponse
+	5,  // 18: proto.TxnService.Get:output_type -> proto.TxnGetResponse
+	7,  // 19: proto.TxnService.Set:output_type -> proto.TxnSetResponse
+	9,  // 20: proto.TxnService.Rollback:output_type -> proto.RollbackResponse
+	11, // 21: proto.TxnService.Commit:output_type -> proto.CommitResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_txn_proto_init() }
@@ -650,7 +824,7 @@ func file_txn_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_txn_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BeginRequest); i {
+			switch v := v.(*Txn); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -662,7 +836,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BeginResponse); i {
+			switch v := v.(*BeginRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -674,7 +848,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TxnGetRequest); i {
+			switch v := v.(*BeginResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -686,7 +860,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TxnGetResponse); i {
+			switch v := v.(*TxnGetRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -698,7 +872,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TxnSetRequest); i {
+			switch v := v.(*TxnGetResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -710,7 +884,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TxnSetResponse); i {
+			switch v := v.(*TxnSetRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -722,7 +896,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RollbackRequest); i {
+			switch v := v.(*TxnSetResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -734,7 +908,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RollbackResponse); i {
+			switch v := v.(*RollbackRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -746,7 +920,7 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CommitRequest); i {
+			switch v := v.(*RollbackResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -758,6 +932,18 @@ func file_txn_proto_init() {
 			}
 		}
 		file_txn_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CommitRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_txn_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*CommitResponse); i {
 			case 0:
 				return &v.state
@@ -775,13 +961,14 @@ func file_txn_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_txn_proto_rawDesc,
-			NumEnums:      0,
-			NumMessages:   10,
+			NumEnums:      1,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_txn_proto_goTypes,
 		DependencyIndexes: file_txn_proto_depIdxs,
+		EnumInfos:         file_txn_proto_enumTypes,
 		MessageInfos:      file_txn_proto_msgTypes,
 	}.Build()
 	File_txn_proto = out.File
@@ -798,10 +985,10 @@ var _ grpc.ClientConnInterface
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion6
 
-// TxnClient is the client API for Txn service.
+// TxnServiceClient is the client API for TxnService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
-type TxnClient interface {
+type TxnServiceClient interface {
 	Begin(ctx context.Context, in *BeginRequest, opts ...grpc.CallOption) (*BeginResponse, error)
 	Get(ctx context.Context, in *TxnGetRequest, opts ...grpc.CallOption) (*TxnGetResponse, error)
 	Set(ctx context.Context, in *TxnSetRequest, opts ...grpc.CallOption) (*TxnSetResponse, error)
@@ -809,61 +996,61 @@ type TxnClient interface {
 	Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error)
 }
 
-type txnClient struct {
+type txnServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewTxnClient(cc grpc.ClientConnInterface) TxnClient {
-	return &txnClient{cc}
+func NewTxnServiceClient(cc grpc.ClientConnInterface) TxnServiceClient {
+	return &txnServiceClient{cc}
 }
 
-func (c *txnClient) Begin(ctx context.Context, in *BeginRequest, opts ...grpc.CallOption) (*BeginResponse, error) {
+func (c *txnServiceClient) Begin(ctx context.Context, in *BeginRequest, opts ...grpc.CallOption) (*BeginResponse, error) {
 	out := new(BeginResponse)
-	err := c.cc.Invoke(ctx, "/proto.Txn/Begin", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.TxnService/Begin", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *txnClient) Get(ctx context.Context, in *TxnGetRequest, opts ...grpc.CallOption) (*TxnGetResponse, error) {
+func (c *txnServiceClient) Get(ctx context.Context, in *TxnGetRequest, opts ...grpc.CallOption) (*TxnGetResponse, error) {
 	out := new(TxnGetResponse)
-	err := c.cc.Invoke(ctx, "/proto.Txn/Get", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.TxnService/Get", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *txnClient) Set(ctx context.Context, in *TxnSetRequest, opts ...grpc.CallOption) (*TxnSetResponse, error) {
+func (c *txnServiceClient) Set(ctx context.Context, in *TxnSetRequest, opts ...grpc.CallOption) (*TxnSetResponse, error) {
 	out := new(TxnSetResponse)
-	err := c.cc.Invoke(ctx, "/proto.Txn/Set", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.TxnService/Set", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *txnClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
+func (c *txnServiceClient) Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
 	out := new(RollbackResponse)
-	err := c.cc.Invoke(ctx, "/proto.Txn/Rollback", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.TxnService/Rollback", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *txnClient) Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error) {
+func (c *txnServiceClient) Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error) {
 	out := new(CommitResponse)
-	err := c.cc.Invoke(ctx, "/proto.Txn/Commit", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/proto.TxnService/Commit", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// TxnServer is the server API for Txn service.
-type TxnServer interface {
+// TxnServiceServer is the server API for TxnService service.
+type TxnServiceServer interface {
 	Begin(context.Context, *BeginRequest) (*BeginResponse, error)
 	Get(context.Context, *TxnGetRequest) (*TxnGetResponse, error)
 	Set(context.Context, *TxnSetRequest) (*TxnSetResponse, error)
@@ -871,143 +1058,143 @@ type TxnServer interface {
 	Commit(context.Context, *CommitRequest) (*CommitResponse, error)
 }
 
-// UnimplementedTxnServer can be embedded to have forward compatible implementations.
-type UnimplementedTxnServer struct {
+// UnimplementedTxnServiceServer can be embedded to have forward compatible implementations.
+type UnimplementedTxnServiceServer struct {
 }
 
-func (*UnimplementedTxnServer) Begin(context.Context, *BeginRequest) (*BeginResponse, error) {
+func (*UnimplementedTxnServiceServer) Begin(context.Context, *BeginRequest) (*BeginResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Begin not implemented")
 }
-func (*UnimplementedTxnServer) Get(context.Context, *TxnGetRequest) (*TxnGetResponse, error) {
+func (*UnimplementedTxnServiceServer) Get(context.Context, *TxnGetRequest) (*TxnGetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
-func (*UnimplementedTxnServer) Set(context.Context, *TxnSetRequest) (*TxnSetResponse, error) {
+func (*UnimplementedTxnServiceServer) Set(context.Context, *TxnSetRequest) (*TxnSetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
 }
-func (*UnimplementedTxnServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
+func (*UnimplementedTxnServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Rollback not implemented")
 }
-func (*UnimplementedTxnServer) Commit(context.Context, *CommitRequest) (*CommitResponse, error) {
+func (*UnimplementedTxnServiceServer) Commit(context.Context, *CommitRequest) (*CommitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Commit not implemented")
 }
 
-func RegisterTxnServer(s *grpc.Server, srv TxnServer) {
-	s.RegisterService(&_Txn_serviceDesc, srv)
+func RegisterTxnServiceServer(s *grpc.Server, srv TxnServiceServer) {
+	s.RegisterService(&_TxnService_serviceDesc, srv)
 }
 
-func _Txn_Begin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _TxnService_Begin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BeginRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TxnServer).Begin(ctx, in)
+		return srv.(TxnServiceServer).Begin(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Txn/Begin",
+		FullMethod: "/proto.TxnService/Begin",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxnServer).Begin(ctx, req.(*BeginRequest))
+		return srv.(TxnServiceServer).Begin(ctx, req.(*BeginRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Txn_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _TxnService_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TxnGetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TxnServer).Get(ctx, in)
+		return srv.(TxnServiceServer).Get(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Txn/Get",
+		FullMethod: "/proto.TxnService/Get",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxnServer).Get(ctx, req.(*TxnGetRequest))
+		return srv.(TxnServiceServer).Get(ctx, req.(*TxnGetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Txn_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _TxnService_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TxnSetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TxnServer).Set(ctx, in)
+		return srv.(TxnServiceServer).Set(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Txn/Set",
+		FullMethod: "/proto.TxnService/Set",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxnServer).Set(ctx, req.(*TxnSetRequest))
+		return srv.(TxnServiceServer).Set(ctx, req.(*TxnSetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Txn_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _TxnService_Rollback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RollbackRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TxnServer).Rollback(ctx, in)
+		return srv.(TxnServiceServer).Rollback(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Txn/Rollback",
+		FullMethod: "/proto.TxnService/Rollback",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxnServer).Rollback(ctx, req.(*RollbackRequest))
+		return srv.(TxnServiceServer).Rollback(ctx, req.(*RollbackRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Txn_Commit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _TxnService_Commit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CommitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(TxnServer).Commit(ctx, in)
+		return srv.(TxnServiceServer).Commit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/proto.Txn/Commit",
+		FullMethod: "/proto.TxnService/Commit",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxnServer).Commit(ctx, req.(*CommitRequest))
+		return srv.(TxnServiceServer).Commit(ctx, req.(*CommitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-var _Txn_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "proto.Txn",
-	HandlerType: (*TxnServer)(nil),
+var _TxnService_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.TxnService",
+	HandlerType: (*TxnServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "Begin",
-			Handler:    _Txn_Begin_Handler,
+			Handler:    _TxnService_Begin_Handler,
 		},
 		{
 			MethodName: "Get",
-			Handler:    _Txn_Get_Handler,
+			Handler:    _TxnService_Get_Handler,
 		},
 		{
 			MethodName: "Set",
-			Handler:    _Txn_Set_Handler,
+			Handler:    _TxnService_Set_Handler,
 		},
 		{
 			MethodName: "Rollback",
-			Handler:    _Txn_Rollback_Handler,
+			Handler:    _TxnService_Rollback_Handler,
 		},
 		{
 			MethodName: "Commit",
-			Handler:    _Txn_Commit_Handler,
+			Handler:    _TxnService_Commit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

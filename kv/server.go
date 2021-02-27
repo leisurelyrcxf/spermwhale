@@ -10,8 +10,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
 	"google.golang.org/grpc"
@@ -23,30 +21,30 @@ type Stub struct {
 }
 
 func (stub *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
-	opt := req.Opt.ReadOption()
+	opt := types.NewReadOptionFromPB(req.Opt)
 	if stub.outerService {
 		opt.SetNotUpdateTimestampCache()
 	}
 	vv, err := stub.kv.Get(ctx, req.Key, opt)
 	if err != nil {
 		return &tabletpb.GetResponse{
-			Err: commonpb.ToPBError(err),
+			Err: errors.ToPBError(err),
 		}, nil
 	}
 	return &tabletpb.GetResponse{
-		V: commonpb.ToPBValue(vv),
+		V: vv.ToPB(),
 	}, nil
 }
 
 func (stub *Stub) Set(ctx context.Context, req *tabletpb.SetRequest) (*tabletpb.SetResponse, error) {
 	if stub.outerService {
-		return &tabletpb.SetResponse{Err: commonpb.ToPBError(errors.Annotatef(errors.ErrNotSupported, "outer kv service is readonly"))}, nil
+		return &tabletpb.SetResponse{Err: errors.ToPBError(errors.Annotatef(errors.ErrNotSupported, "outer kv service is readonly"))}, nil
 	}
 	if err := req.Validate(); err != nil {
-		return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &tabletpb.SetResponse{Err: errors.ToPBError(err)}, nil
 	}
-	err := stub.kv.Set(ctx, req.Key, req.Value.Value(), req.Opt.WriteOption())
-	return &tabletpb.SetResponse{Err: commonpb.ToPBError(err)}, nil
+	err := stub.kv.Set(ctx, req.Key, types.NewValueFromPB(req.Value), types.NewWriteOptionFromPB(req.Opt))
+	return &tabletpb.SetResponse{Err: errors.ToPBError(err)}, nil
 }
 
 type Server struct {

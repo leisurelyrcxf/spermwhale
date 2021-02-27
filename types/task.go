@@ -63,7 +63,7 @@ func (t *Task) genContext() *Task {
 func (t *Task) WaitFinish(ctx context.Context) (interface{}, error) {
 	select {
 	case <-ctx.Done():
-		return nil, errors.Annotatef(errors.ErrFailedToWaitTask, "detail: %v", ctx.Err().Error())
+		return nil, errors.Annotatef(errors.ErrFailedToWaitTask, ctx.Err().Error())
 	case <-t.done:
 		return t.result, t.err
 	}

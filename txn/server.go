@@ -6,11 +6,12 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"google.golang.org/grpc"
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -22,53 +23,62 @@ type Stub struct {
 func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.BeginResponse, error) {
 	txn, err := s.m.BeginTransaction(ctx)
 	if err != nil {
-		return &txnpb.BeginResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.BeginResponse{Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.BeginResponse{
-		TxnId: txn.(*Txn).ID.Version(),
+		Txn: txn.(*Txn).ToPB(),
 	}, nil
 }
 
 func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGetResponse, error) {
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
-		return &txnpb.TxnGetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnGetResponse{
+			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
-		return &txnpb.TxnGetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.TxnGetResponse{
-		V: commonpb.ToPBValue(val),
+		Txn: txn.ToPB(),
+		V:   val.ToPB(),
 	}, nil
 }
 
 func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSetResponse, error) {
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
-		return &txnpb.TxnSetResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.TxnSetResponse{
+			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
-	return &txnpb.TxnSetResponse{Err: commonpb.ToPBError(
-		txn.Set(ctx, req.Key, req.Value)),
+	return &txnpb.TxnSetResponse{
+		Txn: txn.ToPB(),
+		Err: errors.ToPBError(txn.Set(ctx, req.Key, req.Value)),
 	}, nil
 }
 
 func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb.RollbackResponse, error) {
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
-		return &txnpb.RollbackResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.RollbackResponse{
+			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
-	return &txnpb.RollbackResponse{Err: commonpb.ToPBError(
-		txn.Rollback(ctx))}, nil
+	return &txnpb.RollbackResponse{
+		Txn: txn.ToPB(),
+		Err: errors.ToPBError(txn.Rollback(ctx))}, nil
 }
 
 func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.CommitResponse, error) {
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
-		return &txnpb.CommitResponse{Err: commonpb.ToPBError(err)}, nil
+		return &txnpb.CommitResponse{
+			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
-	return &txnpb.CommitResponse{Err: commonpb.ToPBError(
-		txn.Commit(ctx))}, nil
+	return &txnpb.CommitResponse{
+		Txn: txn.ToPB(),
+		Err: errors.ToPBError(txn.Commit(ctx)),
+	}, nil
 }
 
 type Server struct {
@@ -85,7 +95,7 @@ func NewServer(
 	port int) *Server {
 	grpcServer := grpc.NewServer()
 
-	txnpb.RegisterTxnServer(grpcServer, &Stub{
+	txnpb.RegisterTxnServiceServer(grpcServer, &Stub{
 		m: NewTransactionManager(kv, cfg, clearWorkerNumber, ioWorkerNumber),
 	})
 
