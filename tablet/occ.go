@@ -87,7 +87,7 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	if opt.NotUpdateTimestampCache {
 		val, err := kv.db.Get(ctx, key, opt)
 		if !opt.ExactVersion {
-			// only used by TransactionStore::LoadTransactionRecord
+			// only used by TransactionStore::loadTransactionRecord
 			return val, err
 		}
 		if err == nil {

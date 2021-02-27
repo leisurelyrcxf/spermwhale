@@ -73,4 +73,8 @@ var (
 		Code: consts.ErrCodeFailedToWaitTask,
 		Msg:  "failed to wait task",
 	}
+	ErrEmptyKey = &Error{
+		Code: consts.ErrCodeEmptyKey,
+		Msg:  "key is empty",
+	}
 )
