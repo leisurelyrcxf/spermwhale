@@ -2,9 +2,10 @@ package physical
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
 )
@@ -21,11 +22,7 @@ func (o *Oracle) FetchTimestamp(_ context.Context) (uint64, error) {
 	o.Lock()
 	defer o.Unlock()
 
-	i := time.Now().UnixNano()
-	if i < 0 {
-		return 0, fmt.Errorf("time.Now().UnixNano() < 0 ")
-	}
-	return uint64(i), nil
+	return utils.GetLocalTimestamp(), nil
 }
 
 func (o *Oracle) MustFetchTimestamp() uint64 {

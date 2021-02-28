@@ -7,7 +7,7 @@ import (
 )
 
 func CheckTooStale(version uint64, staleWriteThreshold time.Duration) error {
-	currentTS := getLocalTimestamp()
+	currentTS := GetLocalTimestamp()
 	if version < currentTS && currentTS-version > uint64(staleWriteThreshold) {
 		return errors.Annotatef(errors.ErrStaleWrite,
 			"age(%s) > stale_thr(%s)", time.Duration(currentTS-version), staleWriteThreshold)
@@ -16,10 +16,10 @@ func CheckTooStale(version uint64, staleWriteThreshold time.Duration) error {
 }
 
 func IsTooStale(version uint64, staleWriteThreshold time.Duration) bool {
-	currentTS := getLocalTimestamp()
+	currentTS := GetLocalTimestamp()
 	return version < currentTS && currentTS-version > uint64(staleWriteThreshold)
 }
 
-func getLocalTimestamp() uint64 {
+func GetLocalTimestamp() uint64 {
 	return uint64(time.Now().UnixNano())
 }

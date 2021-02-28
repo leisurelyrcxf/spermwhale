@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/proto/oraclepb"
 	"google.golang.org/grpc"
 )
@@ -35,7 +37,7 @@ func (c *Client) FetchTimestamp(ctx context.Context) (uint64, error) {
 		return 0, NilFetchResponse
 	}
 	if resp.Err != nil {
-		return 0, resp.Err.Error()
+		return 0, errors.NewErrorFromPB(resp.Err)
 	}
 	return resp.Ts, nil
 }

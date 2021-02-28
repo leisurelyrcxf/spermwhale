@@ -5,8 +5,12 @@ package topo
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/topo/client/common"
 
 	"github.com/golang/glog"
 
@@ -29,6 +33,10 @@ func GroupDir(clusterName string) string {
 
 func GroupPath(clusterName string, gid int) string {
 	return filepath.Join(SpermwhaleDir, clusterName, "group", fmt.Sprintf("group-%04d", gid))
+}
+
+func OraclePath(clusterName string) string {
+	return filepath.Join(SpermwhaleDir, clusterName, "oracle")
 }
 
 type Store struct {
@@ -58,6 +66,10 @@ func (s *Store) GroupDir() string {
 
 func (s *Store) GroupPath(gid int) string {
 	return GroupPath(s.clusterName, gid)
+}
+
+func (s *Store) OraclePath() string {
+	return OraclePath(s.clusterName)
 }
 
 func (s *Store) Lock() (err error) {
@@ -118,6 +130,29 @@ func (s *Store) UpdateGroup(g *Group) error {
 
 func (s *Store) DeleteGroup(gid int) error {
 	return s.client.Delete(s.GroupPath(gid))
+}
+
+func (s *Store) UpdateTimestamp(ts uint64) error {
+	return s.client.Update(s.OraclePath(), []byte(strconv.FormatUint(ts, 10)))
+}
+
+func (s *Store) LoadTimestamp() (uint64, error) {
+	val, err := s.client.Read(s.OraclePath(), true)
+	if err != nil && err != common.ErrKeyNotExists {
+		return 0, err
+	}
+	if err == common.ErrKeyNotExists {
+		return math.MaxUint64, nil
+	}
+	persisted, err := strconv.ParseUint(string(val), 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return persisted, nil
+}
+
+func (s *Store) DeleteTimestamp() error {
+	return s.client.Delete(s.OraclePath())
 }
 
 func (s *Store) WithClusterLocked(f func() error) error {

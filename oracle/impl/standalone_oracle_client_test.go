@@ -3,11 +3,14 @@ package impl
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
-	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/topo"
 
 	"github.com/leisurelyrcxf/spermwhale/topo/client"
 
@@ -22,19 +25,17 @@ const rounds = 10
 
 func newOracle(assert *testifyassert.Assertions, port int, logicalOracle bool, clearDataForLogical bool) oracle.Oracle {
 	if logicalOracle {
-		if clearDataForLogical {
-			dataPath := filepath.Join("/tmp/data/", logical.OraclePath)
-			if exists(dataPath) {
-				if !assert.NoError(os.Remove(dataPath)) {
-					return nil
-				}
-			}
-		}
-		modelClient, err := client.NewClient("fs", "/tmp/", "", time.Minute)
+		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
 			return nil
 		}
-		o, err := logical.NewOracle(100, modelClient)
+		store := topo.NewStore(cli, "test_cluster")
+		if clearDataForLogical {
+			if !assert.NoError(store.DeleteTimestamp()) {
+				return nil
+			}
+		}
+		o, err := logical.NewOracle(100, store)
 		if !assert.NoError(err) {
 			return nil
 		}
@@ -96,48 +97,64 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 	assert := testifyassert.New(t)
 
 	const port = 9999
-	server := NewServer(port, newOracle(assert, port, logicalOracle, true))
-	assert.NoError(server.Start())
+	server1 := NewServer(port, newOracle(assert, port, logicalOracle, true))
+	assert.NoError(server1.Start())
 
 	var fetchWg sync.WaitGroup
-	const threadNum = 3
+	const threadNum = 100
 	var clientErrs [threadNum]error
 	var maxSeenTimestamps [threadNum]uint64
+	var timestamps [threadNum][]uint64
 	for i := 0; i < threadNum; i++ {
 		fetchWg.Add(1)
 
 		go func(i int) {
 			defer fetchWg.Done()
 
-			client, err := NewClient(fmt.Sprintf("localhost:%d", port))
+			cli, err := NewClient(fmt.Sprintf("localhost:%d", port))
 			if !assert.NoError(err) {
 				clientErrs[i] = err
 				return
 			}
-			defer client.Close()
+			defer cli.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 
 			for {
-				ts, err := client.FetchTimestamp(ctx)
+				ts, err := cli.FetchTimestamp(ctx)
 				if err != nil {
 					break
 				}
 				assert.Greater(ts, maxSeenTimestamps[i])
 				maxSeenTimestamps[i] = ts
+				timestamps[i] = append(timestamps[i], ts)
 			}
 		}(i)
 	}
 
-	time.Sleep(6 * time.Second)
-	server.Stop()
+	rand.Seed(time.Now().UnixNano())
+	time.Sleep(time.Duration(rand.Intn(3000))*time.Millisecond + time.Second*3)
+	server1.Stop()
 	fetchWg.Wait()
-	var maxSeenTS uint64
+	var (
+		maxSeenTS     uint64
+		allTimestamps []uint64
+	)
 	for i := 0; i < threadNum; i++ {
 		assert.NoError(clientErrs[i])
 		if maxSeenTimestamps[i] > maxSeenTS {
 			maxSeenTS = maxSeenTimestamps[i]
 		}
+		allTimestamps = append(allTimestamps, timestamps[i]...)
+	}
+	allTimestampsInts := make([]int, len(allTimestamps))
+	for i, v := range allTimestamps {
+		allTimestampsInts[i] = int(v)
+	}
+	sort.Ints(allTimestampsInts)
+	for i := 0; i < len(allTimestampsInts)-1; i++ {
+		assert.GreaterOrEqual(allTimestampsInts[i+1], allTimestampsInts[i])
+		assert.Greater(allTimestampsInts[i+1], allTimestampsInts[i])
 	}
 
 	{
@@ -145,14 +162,14 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 		assert.NoError(server2.Start())
 		defer server2.Stop()
 
-		client, clientErr := NewClient(fmt.Sprintf("localhost:%d", port))
+		cli, clientErr := NewClient(fmt.Sprintf("localhost:%d", port))
 		if !assert.NoError(clientErr) {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
-		newTS, err := client.FetchTimestamp(ctx)
+		newTS, err := cli.FetchTimestamp(ctx)
 		if !assert.NoError(err) {
 			return
 		}
