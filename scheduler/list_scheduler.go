@@ -1,6 +1,7 @@
 package types
 
 import (
+	"hash/crc32"
 	"sync"
 
 	"github.com/golang/glog"
@@ -153,4 +154,40 @@ func (s *ListScheduler) start() {
 			}
 		}()
 	}
+}
+
+type ConcurrentListScheduler struct {
+	partitions []*ListScheduler
+}
+
+func NewConcurrentListScheduler(partitionNum int, maxBuffered int, workerNumber int) *ConcurrentListScheduler {
+	s := &ConcurrentListScheduler{partitions: make([]*ListScheduler, partitionNum)}
+	for i := range s.partitions {
+		s.partitions[i] = NewListScheduler(maxBuffered, workerNumber)
+	}
+	return s
+}
+
+func (s *ConcurrentListScheduler) Schedule(t *types.ListTask) error {
+	return s.partition(t.ID).Schedule(t)
+}
+
+func (s *ConcurrentListScheduler) GC(tasks []*types.ListTask) {
+	taskKeys := make(map[string]struct{})
+	for _, t := range tasks {
+		taskKeys[t.ID] = struct{}{}
+	}
+	for key := range taskKeys {
+		s.partition(key).taskListMap.Del(key)
+	}
+}
+
+func (s *ConcurrentListScheduler) Close() {
+	for _, partition := range s.partitions {
+		partition.Close()
+	}
+}
+
+func (s *ConcurrentListScheduler) partition(taskID string) *ListScheduler {
+	return s.partitions[int(crc32.ChecksumIEEE([]byte(taskID)))%len(s.partitions)]
 }

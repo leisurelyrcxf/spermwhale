@@ -18,7 +18,7 @@ import (
 func TestListScheduler(t *testing.T) {
 	assert := testifyassert.New(t)
 
-	s := NewListScheduler(1024, 10)
+	s := NewConcurrentListScheduler(16, 1024, 2)
 	const (
 		taskNumberPerKey = 100000
 
@@ -46,8 +46,8 @@ func TestListScheduler(t *testing.T) {
 			})
 		}
 	}
-	init(key1Tasks, "key1", key1InitialValue, key1Delta)
-	init(key2Tasks, "key2", key2InitialValue, key2Delta)
+	init(key1Tasks, "k1", key1InitialValue, key1Delta)
+	init(key2Tasks, "k22", key2InitialValue, key2Delta)
 	init(key3Tasks, "key3", key3InitialValue, key3Delta)
 
 	schedule := func(tasks []*types.ListTask) {
