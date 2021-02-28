@@ -30,7 +30,10 @@ func main() {
 		glog.Fatalf("can't create gate: %v", err)
 	}
 	cfg := cmd.NewTxnConfig()
-	txnServer := txn.NewServer(gAte, cfg, *flagClearWorkerNum, *flagIOWorkerNum, *flagTxnPort)
+	txnServer, err := txn.NewServer(*flagTxnPort, gAte, cfg, *flagClearWorkerNum, *flagIOWorkerNum, store)
+	if err != nil {
+		glog.Fatalf("failed to new txn server: %v", err)
+	}
 	if err := txnServer.Start(); err != nil {
 		glog.Fatalf("failed to start txn server: %v", err)
 	}

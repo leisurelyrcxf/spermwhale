@@ -89,14 +89,15 @@ type Txn struct {
 
 	WrittenKeys []string
 
-	writeKeyTasks     []*types.ListTask          `json:"-"`
-	lastWriteKeyTasks map[string]*types.ListTask `json:"-"`
-	txnRecordTask     *types.ListTask            `json:"-"`
-	cfg               types.TxnConfig            `json:"-"`
-	kv                types.KV                   `json:"-"`
-	store             *TransactionStore          `json:"-"`
-	s                 *Scheduler                 `json:"-"`
-	h                 TransactionHolder          `json:"-"`
+	writeKeyTasks      []*types.ListTask          `json:"-"`
+	lastWriteKeyTasks  map[string]*types.ListTask `json:"-"`
+	txnRecordTask      *types.ListTask            `json:"-"`
+	allIOTasksFinished bool                       `json:"-"`
+	cfg                types.TxnConfig            `json:"-"`
+	kv                 types.KV                   `json:"-"`
+	store              *TransactionStore          `json:"-"`
+	s                  *Scheduler                 `json:"-"`
+	h                  TransactionHolder          `json:"-"`
 
 	sync.Mutex `json:"-"`
 }
@@ -477,6 +478,10 @@ func (txn *Txn) Key() string {
 }
 
 func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
+	if txn.allIOTasksFinished {
+		return
+	}
+
 	var (
 		ioTasks        = txn.getIOTasks()
 		cancelledTasks = make([]*types.ListTask, 0, len(ioTasks))
@@ -495,10 +500,11 @@ func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
 	for _, cancelledTask := range cancelledTasks {
 		cancelledTask.WaitFinish()
 	}
-	//for _, ioTask := range ioTasks { // TODO remove this in product
-	//	assert.Must(ioTask.Finished())
-	//}
+	for _, ioTask := range ioTasks { // TODO remove this in product
+		assert.Must(ioTask.Finished())
+	}
 	txn.s.GCIOJobs(ioTasks)
+	txn.allIOTasksFinished = true
 }
 
 func (txn *Txn) getIOTasks() []*types.ListTask {

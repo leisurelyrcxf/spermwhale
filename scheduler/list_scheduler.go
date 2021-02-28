@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"hash/crc32"
 	"sync"
 
@@ -150,7 +151,7 @@ func (s *ListScheduler) start() {
 				assert.Must(firstTask != nil)
 				for task := firstTask; ; {
 					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) {
+						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled {
 							glog.Errorf("task %s failed: %v", task.Name, err)
 						}
 					}

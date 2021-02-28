@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/topo"
+
 	"google.golang.org/grpc"
 
 	"github.com/golang/glog"
@@ -81,33 +83,37 @@ func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.Com
 }
 
 type Server struct {
-	kv         types.KV
+	Port int
+
+	tm         *TransactionManager
 	grpcServer *grpc.Server
-	port       int
 	Done       chan struct{}
 }
 
 func NewServer(
+	port int,
 	kv types.KV,
 	cfg types.TxnConfig,
 	clearWorkerNumber, ioWorkerNumber int,
-	port int) *Server {
+	store *topo.Store) (*Server, error) {
+	tm, err := NewTransactionManagerWithCluster(kv, cfg, clearWorkerNumber, ioWorkerNumber, store)
+	if err != nil {
+		return nil, err
+	}
 	grpcServer := grpc.NewServer()
-
-	txnpb.RegisterTxnServiceServer(grpcServer, &Stub{
-		m: NewTransactionManager(kv, cfg, clearWorkerNumber, ioWorkerNumber),
-	})
+	txnpb.RegisterTxnServiceServer(grpcServer, &Stub{m: tm})
 
 	return &Server{
-		kv:         kv,
+		Port: port,
+
+		tm:         tm,
 		grpcServer: grpcServer,
-		port:       port,
 		Done:       make(chan struct{}),
-	}
+	}, nil
 }
 
 func (s *Server) Start() error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
 	if err != nil {
 		glog.Errorf("failed to listen: %v", err)
 		return err
@@ -117,9 +123,9 @@ func (s *Server) Start() error {
 		defer close(s.Done)
 
 		if err := s.grpcServer.Serve(lis); err != nil {
-			glog.Errorf("tablet serve failed: %v", err)
+			glog.Errorf("txn server 0.0.0.0:%d serve failed: %v", s.Port, err)
 		} else {
-			glog.Infof("tablet server terminated successfully")
+			glog.Infof("txn server 0.0.0.0:%d terminated successfully", s.Port)
 		}
 	}()
 
@@ -127,8 +133,8 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) Stop() {
+func (s *Server) Close() error {
 	s.grpcServer.Stop()
-	_ = s.kv.Close()
 	<-s.Done
+	return s.tm.Close()
 }

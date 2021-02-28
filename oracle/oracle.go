@@ -6,4 +6,5 @@ import (
 
 type Oracle interface {
 	FetchTimestamp(ctx context.Context) (uint64, error)
+	Close() error
 }

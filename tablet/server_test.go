@@ -38,7 +38,7 @@ func TestKV_Get(t *testing.T) {
 	const port = 9999
 	server := newServer(assert, port)
 	assert.NoError(server.Start())
-	defer server.Stop()
+	defer server.Close()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
 	client, err := kv.NewClient(serverAddr)
@@ -101,7 +101,7 @@ func TestKV_Get2(t *testing.T) {
 	const port = 9999
 	server := newServer(assert, port)
 	assert.NoError(server.Start())
-	defer server.Stop()
+	defer server.Close()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
 	client, err := kv.NewClient(serverAddr)

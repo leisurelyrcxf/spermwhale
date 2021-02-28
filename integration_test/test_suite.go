@@ -89,11 +89,15 @@ func (t *TestSuite) CreateCluster() (b bool) {
 	}
 	t.KVClient = kvClient
 
-	txnClient, err := txn.NewClient(fmt.Sprintf("localhost:%d", txnPort))
+	cli, err := txn.NewClient(fmt.Sprintf("localhost:%d", txnPort))
 	if !t.NoError(err) {
 		return
 	}
-	t.TxnClient = smart_txn_client.NewSmartClient(txnClient)
+	txnClient := txn.NewClientTxnManager(cli)
+	if !t.NoError(err) {
+		return
+	}
+	t.TxnClient = smart_txn_client.NewSmartClient(txnClient, 0)
 	return true
 }
 

@@ -59,7 +59,7 @@ func testClientFetchTimestamp(t *testing.T, logicalOracle bool) (b bool) {
 	const port = 9999
 	server := newServer(assert, port, logicalOracle, true)
 	assert.NoError(server.Start())
-	defer server.Stop()
+	defer server.Close()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
 	cli, err := NewClient(serverAddr)
@@ -80,19 +80,19 @@ func testClientFetchTimestamp(t *testing.T, logicalOracle bool) (b bool) {
 	return assert.Equal(uint64(2), ts2)
 }
 
-func TestClient_FetchTimestampLogical(t *testing.T) {
-	if !testClientFetchTimestamp2(t, true) {
+func TestClient_FetchTimestampLogicalServer(t *testing.T) {
+	if !testClientFetchTimestampAgainstServer(t, true) {
 		return
 	}
 }
 
-func TestClient_FetchTimestampPhysical(t *testing.T) {
-	if !testClientFetchTimestamp2(t, false) {
+func TestClient_FetchTimestampPhysicalServer(t *testing.T) {
+	if !testClientFetchTimestampAgainstServer(t, false) {
 		return
 	}
 }
 
-func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
+func testClientFetchTimestampAgainstServer(t *testing.T, logicalOracle bool) (b bool) {
 	assert := testifyassert.New(t)
 
 	const port = 9999
@@ -136,7 +136,7 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 
 	rand.Seed(time.Now().UnixNano())
 	time.Sleep(time.Duration(rand.Intn(3000))*time.Millisecond + time.Second*3)
-	server1.Stop()
+	server1.Close()
 	fetchWg.Wait()
 	var (
 		maxSeenTS     uint64
@@ -162,7 +162,7 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 	{
 		server2 := newServer(assert, port, logicalOracle, false)
 		assert.NoError(server2.Start())
-		defer server2.Stop()
+		defer server2.Close()
 
 		cli, clientErr := NewClient(fmt.Sprintf("localhost:%d", port))
 		if !assert.NoError(clientErr) {

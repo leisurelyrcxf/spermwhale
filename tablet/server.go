@@ -3,6 +3,8 @@ package tablet
 import (
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/topo"
@@ -40,6 +42,10 @@ func NewServerForTesting(port int, cfg types.TxnConfig, gid int, store *topo.Sto
 		return s.online()
 	})
 	return s
+}
+
+func (s *Server) Close() error {
+	return errors.Wrap(s.store.Close(), s.Server.Close())
 }
 
 func (s *Server) online() error {

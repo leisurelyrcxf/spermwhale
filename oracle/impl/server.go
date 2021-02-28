@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/topo"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -39,22 +41,24 @@ func (o *Stub) Fetch(ctx context.Context, _ *oraclepb.FetchRequest) (*oraclepb.F
 }
 
 type Server struct {
+	Port int
+
 	grpcServer *grpc.Server
 	stub       *Stub
 	store      *topo.Store
 
-	port int
 	Done chan struct{}
 }
 
 func NewServer(port int, oracle oracle.Oracle, store *topo.Store) *Server {
 	s := &Server{
+		Port: port,
+
 		grpcServer: grpc.NewServer(),
 		stub: &Stub{
 			delegate: oracle,
 		},
 		store: store,
-		port:  port,
 		Done:  make(chan struct{}),
 	}
 	oraclepb.RegisterOracleServer(s.grpcServer, s.stub)
@@ -62,7 +66,7 @@ func NewServer(port int, oracle oracle.Oracle, store *topo.Store) *Server {
 }
 
 func (s *Server) Start() error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.Port))
 	if err != nil {
 		glog.Errorf("failed to listen: %v", err)
 		return err
@@ -77,9 +81,9 @@ func (s *Server) Start() error {
 		defer close(s.Done)
 
 		if err := s.grpcServer.Serve(lis); err != nil {
-			glog.Errorf("oracle serve failed: %v", err)
+			glog.Errorf("oracle server 0.0.0.0:%d serve failed: %v", s.Port, err)
 		} else {
-			glog.Infof("oracle server terminated successfully")
+			glog.Infof("oracle server 0.0.0.0:%d terminated successfully", s.Port)
 		}
 	}()
 
@@ -87,9 +91,10 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) Stop() {
+func (s *Server) Close() error {
 	s.grpcServer.Stop()
 	<-s.Done
+	return errors.Wrap(s.store.Close(), s.stub.delegate.Close())
 }
 
 func (s *Server) online() error {
@@ -99,7 +104,7 @@ func (s *Server) online() error {
 	}
 	return s.store.UpdateOracle(
 		&topo.Oracle{
-			ServerAddr: fmt.Sprintf("%s:%d", localIP, s.port),
+			ServerAddr: fmt.Sprintf("%s:%d", localIP, s.Port),
 		},
 	)
 }

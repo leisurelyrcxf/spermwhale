@@ -74,7 +74,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
-	sc := smart_txn_client.NewSmartClient(m)
+	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -146,7 +146,7 @@ func testTxnReadAfterWrite(t *testing.T, round int, staleWriteThreshold time.Dur
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
-	sc := smart_txn_client.NewSmartClient(m)
+	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -233,7 +233,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
-	sc := smart_txn_client.NewSmartClient(m)
+	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -327,7 +327,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
-	sc := smart_txn_client.NewSmartClient(m)
+	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -442,7 +442,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 		return
 	}
 	tm := NewTransactionManager(gAte, cfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm)
+	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, "k1", initialValue); !assert.NoError(err) {
 		return
 	}
@@ -534,7 +534,7 @@ func testDistributedTxnConsistency(t *testing.T, round int, staleWriteThreshold 
 		return
 	}
 	tm := NewTransactionManager(gAte, cfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm)
+	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}
@@ -684,7 +684,7 @@ func testDistributedTxnConsistency2(t *testing.T, round int, staleWriteThreshold
 		return
 	}
 	tm := NewTransactionManager(gAte, cfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm)
+	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}
@@ -842,7 +842,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 		return
 	}
 	tm := NewTransactionManager(gAte, cfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm)
+	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}
@@ -974,7 +974,7 @@ func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
 
 	for _, threshold := range []int{10000} {
 		for i := 0; i < 10; i++ {
-			if !testifyassert.True(t, testDistributedTxnConsistency2(t, i, time.Millisecond*time.Duration(threshold))) {
+			if !testifyassert.True(t, testDistributedTxnConsistencyIntegrate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnConsistencyIntegrate failed @round %d", i)
 				return
 			}
@@ -1001,19 +1001,19 @@ func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteT
 	var (
 		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
 	)
-	tms, stopper := createCluster(t, cfg)
+	tms, clientTMs, stopper := createCluster(t, cfg)
 	defer stopper()
 	if !assert.Len(tms, 2) {
 		return
 	}
 	//t.Logf("%v shard: %d, %v shard: %d", key1, gAte.MustRoute(key1).ID, key2, gAte.MustRoute(key2).ID)
-	gAte := tms[0].kv.(*gate.Gate)
+	gAte := tms[0].tm.kv.(*gate.Gate)
 	if !assert.NotEqual(gAte.MustRoute(key1).ID, gAte.MustRoute(key2).ID) {
 		return
 	}
-	tm1, tm2 := tms[0], tms[1]
-	sc1 := smart_txn_client.NewSmartClient(tm1)
-	sc2 := smart_txn_client.NewSmartClient(tm2)
+	tm1, tm2 := clientTMs[0], clientTMs[1]
+	sc1 := smart_txn_client.NewSmartClient(tm1, 10000)
+	sc2 := smart_txn_client.NewSmartClient(tm2, 10000)
 	if err := sc1.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}

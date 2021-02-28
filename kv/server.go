@@ -48,6 +48,7 @@ type Server struct {
 	Port int
 
 	grpcServer  *grpc.Server
+	kv          types.KV
 	beforeStart func() error
 
 	Done chan struct{}
@@ -61,6 +62,7 @@ func NewServer(port int, kv types.KV, outerService bool) Server {
 	return Server{
 		Port:       port,
 		grpcServer: grpcServer,
+		kv:         kv,
 
 		Done: make(chan struct{}),
 	}
@@ -88,9 +90,9 @@ func (s *Server) Start() error {
 		defer close(s.Done)
 
 		if err := s.grpcServer.Serve(lis); err != nil {
-			glog.Errorf("tablet serve failed: %v", err)
+			glog.Errorf("kv server 0.0.0.0:%d serve failed: %v", s.Port, err)
 		} else {
-			glog.Infof("tablet server terminated successfully")
+			glog.Infof("kv server 0.0.0.0:%d terminated successfully", s.Port)
 		}
 	}()
 
@@ -98,7 +100,8 @@ func (s *Server) Start() error {
 	return nil
 }
 
-func (s *Server) Stop() {
+func (s *Server) Close() error {
 	s.grpcServer.Stop()
 	<-s.Done
+	return s.kv.Close()
 }

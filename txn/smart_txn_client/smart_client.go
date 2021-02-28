@@ -12,12 +12,18 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
+const defaultMaxRetry = 1000
+
 type SmartClient struct {
 	types.TxnManager
+	maxRetry int
 }
 
-func NewSmartClient(tm types.TxnManager) *SmartClient {
-	return &SmartClient{TxnManager: tm}
+func NewSmartClient(tm types.TxnManager, maxRetry int) *SmartClient {
+	if maxRetry <= 0 {
+		maxRetry = defaultMaxRetry
+	}
+	return &SmartClient{TxnManager: tm, maxRetry: maxRetry}
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
@@ -32,7 +38,7 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 
 func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) error {
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < c.maxRetry; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -82,7 +88,7 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		rand.Seed(time.Now().UnixNano())
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
 	}
-	return errors.ErrTxnRetriedTooManyTimes
+	return errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }
 
 func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {

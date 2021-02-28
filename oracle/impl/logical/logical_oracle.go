@@ -50,6 +50,10 @@ func (o *Oracle) FetchTimestamp(_ context.Context) (uint64, error) {
 	}
 }
 
+func (o *Oracle) Close() error {
+	return o.store.Close()
+}
+
 func (o *Oracle) alloc(counter uint64) {
 	o.Lock()
 	defer o.Unlock()
