@@ -9,9 +9,9 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/kv"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/models"
-	"github.com/leisurelyrcxf/spermwhale/models/client"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
+	"github.com/leisurelyrcxf/spermwhale/topo"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	testifyassert "github.com/stretchr/testify/assert"
@@ -25,7 +25,7 @@ func newServer(assert *testifyassert.Assertions, port int) (server *Server) {
 	return NewServer(port, types.TxnConfig{
 		StaleWriteThreshold: time.Second,
 		MaxClockDrift:       time.Nanosecond,
-	}, 1, models.NewStore(cli, "test_cluster"))
+	}, 1, topo.NewStore(cli, "test_cluster"))
 }
 
 func newReadOption(version uint64) types.ReadOption {

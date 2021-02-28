@@ -16,7 +16,7 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client/common"
+	"github.com/leisurelyrcxf/spermwhale/topo/client/common"
 
 	"github.com/golang/glog"
 )

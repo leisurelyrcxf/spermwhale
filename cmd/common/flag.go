@@ -10,9 +10,9 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
+	"github.com/leisurelyrcxf/spermwhale/topo"
 )
 
 var (
@@ -43,9 +43,9 @@ func RegisterStoreFlags() {
 	ClusterName = flag.String("cluster-name", "spermwhale", "cluster name")
 }
 
-func NewStore() *models.Store {
+func NewStore() *topo.Store {
 	cli := NewClient()
-	return models.NewStore(cli, *ClusterName)
+	return topo.NewStore(cli, *ClusterName)
 }
 
 var (

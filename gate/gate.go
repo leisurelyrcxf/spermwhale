@@ -12,7 +12,7 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
+	"github.com/leisurelyrcxf/spermwhale/topo"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -23,7 +23,7 @@ type Shard struct {
 	ID int
 }
 
-func NewShard(g *models.Group) (*Shard, error) {
+func NewShard(g *topo.Group) (*Shard, error) {
 	cli, err := kv.NewClient(g.ServerAddr)
 	if err != nil {
 		return nil, err
@@ -41,10 +41,10 @@ type Gate struct {
 	shards      []*Shard
 	shardsRW    sync.RWMutex
 
-	store *models.Store
+	store *topo.Store
 }
 
-func NewGate(store *models.Store) (*Gate, error) {
+func NewGate(store *topo.Store) (*Gate, error) {
 	g := &Gate{store: store}
 	if err := g.syncShards(); err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (g *Gate) syncShards() error {
 	return nil
 }
 
-func (g *Gate) syncShard(group *models.Group) error {
+func (g *Gate) syncShard(group *topo.Group) error {
 	if group.Id < 0 {
 		return errors.Errorf("group.Id < 0")
 	}

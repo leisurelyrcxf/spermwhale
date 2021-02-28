@@ -1,7 +1,7 @@
 // Copyright 2016 CodisLabs. All Rights Reserved.
 // Licensed under the MIT (MIT-LICENSE.txt) license.
 
-package models
+package topo
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
 )
 
 const SpermwhaleDir = "/spermwhale"

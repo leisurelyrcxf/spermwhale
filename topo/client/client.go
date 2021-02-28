@@ -5,9 +5,9 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	fsclient "github.com/leisurelyrcxf/spermwhale/models/client/fs"
+	fsclient "github.com/leisurelyrcxf/spermwhale/topo/client/fs"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client/etcdclient"
+	"github.com/leisurelyrcxf/spermwhale/topo/client/etcdclient"
 )
 
 type Client interface {

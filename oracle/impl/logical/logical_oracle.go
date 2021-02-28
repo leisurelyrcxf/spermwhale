@@ -10,8 +10,8 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client"
-	"github.com/leisurelyrcxf/spermwhale/models/client/common"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
+	"github.com/leisurelyrcxf/spermwhale/topo/client/common"
 )
 
 const (

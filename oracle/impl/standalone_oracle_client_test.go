@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/models/client"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 

@@ -17,8 +17,8 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/gate"
 
-	"github.com/leisurelyrcxf/spermwhale/models"
-	"github.com/leisurelyrcxf/spermwhale/models/client"
+	"github.com/leisurelyrcxf/spermwhale/topo"
+	"github.com/leisurelyrcxf/spermwhale/topo/client"
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -62,7 +62,7 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
-	for _, threshold := range []int{10000} {
+	for _, threshold := range []int{10} {
 		for i := 0; i < 2; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -448,7 +448,7 @@ func createGate(t *testing.T, cfg types.TxnConfig) (g *gate.Gate, _ func()) {
 	if !assert.NoError(err) {
 		return nil, nil
 	}
-	if g, err = gate.NewGate(models.NewStore(cli, "test_cluster")); !assert.NoError(err) {
+	if g, err = gate.NewGate(topo.NewStore(cli, "test_cluster")); !assert.NoError(err) {
 		return nil, nil
 	}
 	return g, stopper
@@ -459,7 +459,7 @@ func createTabletServer(assert *testifyassert.Assertions, port, gid int, cfg typ
 	if !assert.NoError(err) {
 		return nil
 	}
-	return tablet.NewServerForTesting(port, cfg, gid, models.NewStore(cli, "test_cluster"))
+	return tablet.NewServerForTesting(port, cfg, gid, topo.NewStore(cli, "test_cluster"))
 }
 
 func TestDistributedTxnLostUpdate(t *testing.T) {
