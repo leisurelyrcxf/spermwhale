@@ -18,6 +18,24 @@ import (
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
+type TxnInfo struct {
+	ID                      uint64
+	State                   types.TxnState
+	ReadValues, WriteValues map[string]types.Value
+}
+
+type SortedTxnInfos []TxnInfo
+
+func (ss SortedTxnInfos) Len() int {
+	return len(ss)
+}
+func (ss SortedTxnInfos) Less(i, j int) bool {
+	return ss[i].ID < ss[j].ID
+}
+func (ss SortedTxnInfos) Swap(i, j int) {
+	ss[i], ss[j] = ss[j], ss[i]
+}
+
 func createGate(t *testing.T, cfg types.TxnConfig) (g *gate.Gate, _ func()) {
 	assert := testifyassert.New(t)
 

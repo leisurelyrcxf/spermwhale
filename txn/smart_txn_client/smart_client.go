@@ -38,10 +38,16 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 
 func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) error {
+	_, err := c.DoTransactionRaw(ctx, f, beforeCommit, beforeRollback)
+	return err
+}
+
+func (c *SmartClient) DoTransactionRaw(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
+	beforeCommit, beforeRollback func() error) (types.Txn, error) {
 	for i := 0; i < c.maxRetry; i++ {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 			break
 		}
@@ -50,25 +56,25 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue
 			}
-			return err
+			return nil, err
 		}
 
 		err, retry := f(ctx, tx)
 		if err == nil {
 			if beforeCommit != nil {
 				if err := beforeCommit(); err != nil {
-					return err
+					return tx, err
 				}
 			}
 			err := tx.Commit(ctx)
 			if err == nil {
-				return nil
+				return tx, nil
 			}
 			if !retry {
-				return err
+				return tx, err
 			}
 			if !tx.GetState().IsAborted() && !errors.IsRetryableTransactionErr(err) {
-				return err
+				return tx, err
 			}
 			rand.Seed(time.Now().UnixNano())
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
@@ -76,19 +82,19 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 		}
 		if beforeRollback != nil {
 			if err := beforeRollback(); err != nil {
-				return err
+				return tx, err
 			}
 		}
 		if !tx.GetState().IsAborted() {
 			_ = tx.Rollback(ctx)
 		}
 		if !retry || !errors.IsRetryableTransactionErr(err) {
-			return err
+			return tx, err
 		}
 		rand.Seed(time.Now().UnixNano())
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
 	}
-	return errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
+	return nil, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }
 
 func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {

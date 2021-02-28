@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -58,7 +59,7 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
-	for _, threshold := range []int{10} {
+	for _, threshold := range []int{10000} {
 		for i := 0; i < 2; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -90,27 +91,40 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 		return
 	}
 
+	txns := make([]TxnInfo, goRoutineNumber)
+
 	var wg sync.WaitGroup
 	for i := 0; i < goRoutineNumber; i++ {
 		wg.Add(1)
 
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 
-			assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+			var (
+				readValue, writeValue types.Value
+			)
+			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1")
 				if err != nil {
-					return err
+					return err, true
 				}
+				readValue = val
 				v1, err := val.Int()
 				if !assert.NoError(err) {
-					return err
+					return err, false
 				}
 				v1 += delta
-
-				return txn.Set(ctx, "k1", types.IntValue(v1).V)
-			}))
-		}()
+				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
+				return txn.Set(ctx, "k1", writeValue.V), true
+			}, nil, nil); assert.NoError(err) {
+				txns[i] = TxnInfo{
+					ID:          tx.GetId().Version(),
+					State:       tx.GetState(),
+					ReadValues:  map[string]types.Value{"k1": readValue},
+					WriteValues: map[string]types.Value{"k1": writeValue},
+				}
+			}
+		}(i)
 	}
 
 	wg.Wait()
@@ -121,6 +135,14 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	t.Logf("val: %d", val)
 	if !assert.Equal(goRoutineNumber*delta+initialValue, val) {
 		return
+	}
+
+	sort.Sort(SortedTxnInfos(txns))
+	for i := 1; i < len(txns); i++ {
+		prev, cur := txns[i-1], txns[i]
+		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
+			return
+		}
 	}
 
 	return true
