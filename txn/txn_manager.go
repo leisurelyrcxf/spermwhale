@@ -30,6 +30,11 @@ func (s *Scheduler) GCIOJobs(ts []*types.ListTask) {
 	s.ioJobScheduler.GC(ts)
 }
 
+func (s *Scheduler) Close() {
+	s.clearJobScheduler.Close()
+	s.ioJobScheduler.Close()
+}
+
 type TransactionManager struct {
 	cfg types.TxnConfig
 
@@ -88,24 +93,24 @@ func (m *TransactionManager) RemoveTxn(txn *Txn) {
 }
 
 func (m *TransactionManager) Close() error {
+	m.s.Close()
+	m.txns.Clear()
 	return m.kv.Close()
 }
 
 func (m *TransactionManager) newTxn(id types.TxnId) *Txn {
-	return NewTxn(id, m.kv, m.cfg, m.oracle, m.store, m, m.s)
+	return NewTxn(id, m.kv, m.cfg, m.store, m, m.s)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
 	m.store = &TransactionStore{
-		kv:     m.kv,
-		oracle: m.oracle,
-		cfg:    m.cfg,
+		kv:  m.kv,
+		cfg: m.cfg,
 
 		txnInitializer: func(txn *Txn) {
-			txn.lastWriteTasks = make(map[string]*types.ListTask)
+			txn.lastWriteKeyTasks = make(map[string]*types.ListTask)
 			txn.cfg = m.cfg
 			txn.kv = m.kv
-			txn.oracle = m.oracle
 			txn.store = m.store
 			txn.s = m.s
 			txn.h = m

@@ -3,6 +3,8 @@ package memory
 import (
 	"context"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -110,6 +112,15 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 		vvs, err := db.getVersionedValues(key)
 		if err != nil {
 			return errors.Annotatef(err, "key: %s", key)
+		}
+		prevVal, err := vvs.Get(val.Version)
+		if err != nil {
+			assert.Must(errors.GetErrorCode(err) == consts.ErrCodeVersionNotExists)
+			return nil
+		}
+		if !prevVal.WriteIntent {
+			assert.Must(false)
+			return errors.ErrCantRemoveCommittedValue
 		}
 		vvs.Remove(val.Version)
 		return nil

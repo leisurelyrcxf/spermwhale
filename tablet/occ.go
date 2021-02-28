@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
 	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -47,26 +47,25 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 }
 
 // KV with concurrent control
-type OCCPhysical struct {
+type KVCC struct {
 	types.TxnConfig
 
 	lm *concurrency.LockManager
 
-	oracle  *physical.Oracle
 	tsCache *TimestampCache
 
 	db mvcc.DB
 }
 
-func NewKVCC(db mvcc.DB, cfg types.TxnConfig) *OCCPhysical {
+func NewKVCC(db mvcc.DB, cfg types.TxnConfig) *KVCC {
 	return newKVCC(db, cfg, false)
 }
 
-func NewKVCCForTesting(db mvcc.DB, cfg types.TxnConfig) *OCCPhysical {
+func NewKVCCForTesting(db mvcc.DB, cfg types.TxnConfig) *KVCC {
 	return newKVCC(db, cfg, true)
 }
 
-func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *OCCPhysical {
+func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *KVCC {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
@@ -74,16 +73,15 @@ func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *OCCPhysical {
 		time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
 	}
 
-	return &OCCPhysical{
+	return &KVCC{
 		TxnConfig: cfg,
 		lm:        concurrency.NewLockManager(),
-		oracle:    physical.NewOracle(),
 		tsCache:   NewTimestampCache(),
 		db:        db,
 	}
 }
 
-func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
+func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
 	if opt.NotUpdateTimestampCache {
 		val, err := kv.db.Get(ctx, key, opt)
 		if !opt.ExactVersion {
@@ -113,6 +111,7 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	defer kv.lm.RUnlock(key)
 
 	kv.tsCache.UpdateMaxReadVersion(key, opt.Version)
+	//kv.lm.RUnlock(key) if put here performance will down for read-for-write txn, reason unknown.
 	val, err := kv.db.Get(ctx, key, opt)
 	if err == nil {
 		assert.Must(val.Version <= opt.Version)
@@ -120,9 +119,14 @@ func (kv *OCCPhysical) Get(ctx context.Context, key string, opt types.ReadOption
 	return val, err
 }
 
-func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
+func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
 	if !val.WriteIntent {
 		return kv.db.Set(ctx, key, val, opt)
+	}
+
+	// cache may lost after restarted, so ignore too stale write
+	if err := utils.CheckTooStale(val.Version, kv.StaleWriteThreshold); err != nil {
+		return err
 	}
 
 	// guarantee mutual exclusion with set,
@@ -131,20 +135,17 @@ func (kv *OCCPhysical) Set(ctx context.Context, key string, val types.Value, opt
 	kv.lm.Lock(key)
 	defer kv.lm.Unlock(key)
 
-	// cache may lost after restarted, so ignore too stale write
-	// TODO change to HLCTimestamp
-	if kv.oracle.IsTooStale(val.Version, kv.StaleWriteThreshold) {
-		return errors.Annotatef(errors.ErrStaleWrite, "age: %s", time.Duration(kv.oracle.MustFetchTimestamp()-val.Version))
-	}
 	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
 	if val.Version < maxReadVersion {
 		return errors.ErrTransactionConflict
 	}
+
 	// TODO check clock uncertainty and verify if this is the same transaction
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	return kv.db.Set(ctx, key, val, opt)
 }
 
-func (kv *OCCPhysical) Close() error {
+func (kv *KVCC) Close() error {
+	kv.tsCache.m.Clear()
 	return kv.db.Close()
 }

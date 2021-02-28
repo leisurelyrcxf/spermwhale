@@ -69,12 +69,20 @@ var (
 		Code: consts.ErrCodeSchedulerClosed,
 		Msg:  "scheduler closed",
 	}
-	ErrFailedToWaitTask = &Error{
-		Code: consts.ErrCodeFailedToWaitTask,
-		Msg:  "failed to wait task",
+	ErrReadFailedToWaitWriteTask = &Error{
+		Code: consts.ErrCodeReadFailedToWaitWriteTask,
+		Msg:  "read failed to wait previous write task",
 	}
 	ErrEmptyKey = &Error{
 		Code: consts.ErrCodeEmptyKey,
 		Msg:  "key is empty",
+	}
+	ErrDontUseThisBeforeTaskFinished = &Error{
+		Code: consts.ErrCodeDontUseThisBeforeTaskFinished,
+		Msg:  "don't use this before task finish",
+	}
+	ErrCantRemoveCommittedValue = &Error{
+		Code: consts.ErrCodeCantRemoveCommittedValue,
+		Msg:  "can't remove committed value",
 	}
 )

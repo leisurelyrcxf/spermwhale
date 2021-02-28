@@ -3,6 +3,8 @@ package types
 import (
 	"sync"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	"github.com/golang/glog"
@@ -15,6 +17,7 @@ type BasicScheduler struct {
 
 	closed bool
 	sync.RWMutex
+	wg sync.WaitGroup
 }
 
 func NewBasicScheduler(maxBufferedTask, workerNumber int) *BasicScheduler {
@@ -39,18 +42,25 @@ func (s *BasicScheduler) Schedule(t *types.Task) error {
 
 func (s *BasicScheduler) Close() {
 	s.Lock()
-	defer s.Unlock()
-
 	if s.closed {
+		s.Unlock()
 		return
 	}
 	close(s.tasks)
 	s.closed = true
+	s.Unlock()
+
+	s.wg.Wait()
+	assert.Must(len(s.tasks) == 0)
 }
 
 func (s *BasicScheduler) start() {
 	for i := 0; i < s.workerNumber; i++ {
+		s.wg.Add(1)
+
 		go func() {
+			defer s.wg.Done()
+
 			for {
 				task, ok := <-s.tasks
 				if !ok {

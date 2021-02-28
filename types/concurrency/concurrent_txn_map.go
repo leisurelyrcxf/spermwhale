@@ -98,6 +98,18 @@ func (cmp *ConcurrentTxnMap) RUnlock() {
 	}
 }
 
+func (cmp *ConcurrentTxnMap) Lock() {
+	for i := 0; i < len(cmp.partitions); i++ {
+		cmp.partitions[i].mutex.Lock()
+	}
+}
+
+func (cmp *ConcurrentTxnMap) Unlock() {
+	for i := len(cmp.partitions) - 1; i >= 0; i-- {
+		cmp.partitions[i].mutex.Unlock()
+	}
+}
+
 func (cmp *ConcurrentTxnMap) MustGet(key types.TxnId) interface{} {
 	val, ok := cmp.Get(key)
 	if !ok {
@@ -140,6 +152,14 @@ func (cmp *ConcurrentTxnMap) ForEachStrict(cb func(types.TxnId, interface{})) {
 		partition.forEachLocked(cb)
 	}
 	cmp.RUnlock()
+}
+
+func (cmp *ConcurrentTxnMap) Clear() {
+	cmp.Lock()
+	for _, partition := range cmp.partitions {
+		partition.m = nil
+	}
+	cmp.Unlock()
 }
 
 func (cmp *ConcurrentTxnMap) Size() (sz int) {

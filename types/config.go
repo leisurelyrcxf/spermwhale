@@ -8,7 +8,7 @@ type TxnConfig struct {
 }
 
 func (c TxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
-	return c.StaleWriteThreshold*2 + c.MaxClockDrift*2
+	return c.StaleWriteThreshold + c.MaxClockDrift*10
 }
 
 func (c TxnConfig) SetStaleWriteThreshold(val time.Duration) TxnConfig {

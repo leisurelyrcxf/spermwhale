@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
 
@@ -14,10 +14,10 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-func getKeyExactVersionWithRetry(ctx context.Context, kv types.KV, key string, version uint64, maxRetry int) (val types.Value, exists bool, err error) {
+func getValueWrittenByTxn(ctx context.Context, kv types.KV, key string, txn types.TxnId, maxRetry int) (val types.Value, exists bool, err error) {
 	for i := 0; i < maxRetry; i++ {
 		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		val, err = kv.Get(ctx, key, types.NewReadOption(version).SetExactVersion())
+		val, err = kv.Get(ctx, key, types.NewReadOption(txn.Version()).SetExactVersion())
 		cancel()
 		if err == nil {
 			return val, true, nil
@@ -25,18 +25,17 @@ func getKeyExactVersionWithRetry(ctx context.Context, kv types.KV, key string, v
 		if errors.IsNotExistsErr(err) {
 			return types.Value{}, false, nil
 		}
-		glog.Warningf("[getKeyExactVersionWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
+		glog.Warningf("[getValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 		time.Sleep(time.Second)
-		continue
 	}
 	assert.Must(err != nil)
+	glog.Errorf("kv.Get returns unexpected error: %v", err)
 	return types.Value{}, false, err
 }
 
 type TransactionStore struct {
-	kv     types.KV
-	oracle *physical.Oracle
-	cfg    types.TxnConfig
+	kv  types.KV
+	cfg types.TxnConfig
 
 	txnInitializer func(txn *Txn)
 	txnConstructor func(txnId types.TxnId) *Txn
@@ -57,7 +56,6 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 			return nil, false, err
 		}
 		time.Sleep(time.Second)
-		continue
 	}
 	assert.Must(txn == nil && err != nil)
 	return nil, false, err
@@ -91,7 +89,7 @@ func (s *TransactionStore) loadTransactionRecord(ctx context.Context, txnID type
 func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID types.TxnId, callerTxn types.TxnId, conflictedKey string) (*Txn, error) {
 	// TODO maybe get from txn manager first?
 	readOpt := types.NewReadOption(math.MaxUint64)
-	isTooStale := s.oracle.IsTooStale(txnID.Version(), s.cfg.StaleWriteThreshold)
+	isTooStale := utils.IsTooStale(txnID.Version(), s.cfg.StaleWriteThreshold)
 	if !isTooStale {
 		readOpt = readOpt.SetNotUpdateTimestampCache()
 	}
@@ -108,7 +106,7 @@ func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID typ
 	// 1. transaction has been rollbacked, conflictedKey must be gone
 	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 	// 3. transaction neither committed nor rollbacked
-	vv, keyExists, keyErr := getKeyExactVersionWithRetry(ctx, s.kv, conflictedKey, txnID.Version(), 2)
+	vv, keyExists, keyErr := getValueWrittenByTxn(ctx, s.kv, conflictedKey, txnID, 2)
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
 		return nil, keyErr

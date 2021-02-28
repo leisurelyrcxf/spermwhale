@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -49,6 +48,7 @@ type ListScheduler struct {
 	workerNumber int
 
 	lm *concurrency.LockManager
+	wg sync.WaitGroup
 }
 
 func NewListScheduler(maxBufferedTask, workerNumber int) *ListScheduler {
@@ -96,24 +96,40 @@ func (s *ListScheduler) GC(tasks []*types.ListTask) {
 		taskKeys[t.ID] = struct{}{}
 	}
 	for key := range taskKeys {
+		//if obj, ok := s.taskListMap.Get(key); ok {
+		//	assert.Must(obj.(*list).lastFinishedTask == obj.(*list).tail)
+		//	s.taskListMap.Del(key)
+		//}
 		s.taskListMap.Del(key)
 	}
 }
 
 func (s *ListScheduler) Close() {
 	s.taskListsProtector.Lock()
-	defer s.taskListsProtector.Unlock()
 	if s.closed {
+		s.taskListsProtector.Unlock()
 		return
 	}
 
 	close(s.taskLists)
 	s.closed = true
+	s.taskListsProtector.Unlock()
+
+	s.wg.Wait()
+	assert.Must(len(s.taskLists) == 0)
+	s.taskListMap.ForEachLoosed(func(s string, i interface{}) {
+		assert.Must(i.(*list).lastFinishedTask == i.(*list).tail) // TODO remove this in product
+	})
+	s.taskListMap.Clear()
 }
 
 func (s *ListScheduler) start() {
 	for i := 0; i < s.workerNumber; i++ {
+		s.wg.Add(1)
+
 		go func() {
+			defer s.wg.Done()
+
 			for {
 				tl, ok := <-s.taskLists
 				if !ok {

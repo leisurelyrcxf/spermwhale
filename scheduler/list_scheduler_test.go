@@ -7,18 +7,26 @@ import (
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
-	"github.com/leisurelyrcxf/spermwhale/types"
-
 	"github.com/leisurelyrcxf/spermwhale/integration_test/utils"
+	"github.com/leisurelyrcxf/spermwhale/types"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
 func TestListScheduler(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		if !testListScheduler(t, i) {
+			return
+		}
+	}
+}
+
+func testListScheduler(t *testing.T, round int) (b bool) {
 	assert := testifyassert.New(t)
 
-	s := NewConcurrentListScheduler(16, 1024, 2)
+	s := NewConcurrentListScheduler(16, 1024, 1)
+	defer s.Close()
+
 	const (
 		taskNumberPerKey = 100000
 
@@ -75,11 +83,11 @@ func TestListScheduler(t *testing.T) {
 
 		maxVal := 0
 		for _, task := range tasks {
-			val, err := task.WaitFinish(ctx)
-			if !assert.NoError(err, "key: %s", key) {
+			if !assert.Truef(task.WaitFinishWithContext(ctx), "key: %s", key) ||
+				!assert.NoErrorf(task.Err(), "key: %s", key) {
 				return
 			}
-			i := val.(int)
+			i := task.Result().(int)
 			if !assert.Greater(i, 0) {
 				return
 			}
@@ -98,6 +106,7 @@ func TestListScheduler(t *testing.T) {
 	if !check(key3Tasks, "key3", key3InitialValue, key3Delta) {
 		return
 	}
+	return true
 }
 
 func TestListSchedulerPropagateErr(t *testing.T) {
@@ -150,17 +159,26 @@ func TestListSchedulerPropagateErr(t *testing.T) {
 	defer cancel()
 
 	for _, task := range key1Tasks {
-		_, err := task.WaitFinish(ctx)
-		if !assert.Equal(errors.ErrInject.Code, err.(*errors.Error).Code) {
+		finished := task.WaitFinishWithContext(ctx)
+		if !assert.True(finished) || !assert.Error(task.Err()) || !assert.Equal(errors.ErrInject.Code, task.Err().(*errors.Error).Code) {
 			return
 		}
 	}
 }
 
 func TestListSchedulerCancelWait(t *testing.T) {
+	for i := 0; i < 1; i++ {
+		if !testListSchedulerCancelWait(t) {
+			return
+		}
+	}
+}
+
+func testListSchedulerCancelWait(t *testing.T) (b bool) {
 	assert := testifyassert.New(t)
 
 	s := NewListScheduler(1024, 10)
+	defer s.Close()
 	const (
 		TaskNumber = 1000
 	)
@@ -199,8 +217,11 @@ func TestListSchedulerCancelWait(t *testing.T) {
 		task.Cancel()
 	}
 	for _, task := range tasks {
-		if _, err := task.WaitFinish(ctx); !assert.Error(err) || !assert.Contains(err.Error(), context.Canceled.Error()) {
+		if finished := task.WaitFinishWithContext(ctx); !assert.True(finished) ||
+			!assert.Error(task.Err()) ||
+			!assert.Contains(task.Err().Error(), context.Canceled.Error()) {
 			return
 		}
 	}
+	return true
 }

@@ -5,12 +5,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 )
 
 const defaultRunTimeout = time.Second * 30
 
-var DummyResult = &struct{}{}
+var (
+	InvalidTaskResult = &struct{}{}
+	DummyTaskResult   = &struct{}{}
+)
 
 type Task struct {
 	ID   string
@@ -33,7 +38,7 @@ func NewTaskNoResult(id string, name string, runTimeout time.Duration, g func(co
 		if err := g(ctx); err != nil {
 			return nil, err
 		}
-		return DummyResult, nil
+		return DummyTaskResult, nil
 	})
 }
 
@@ -49,6 +54,8 @@ func newTask(id string, name string, runTimeout time.Duration, f func(context.Co
 	return Task{
 		ID:         id,
 		Name:       name,
+		result:     InvalidTaskResult,
+		err:        errors.ErrDontUseThisBeforeTaskFinished,
 		runTimeout: runTimeout,
 		f:          f,
 		done:       make(chan struct{}),
@@ -60,13 +67,35 @@ func (t *Task) genContext() *Task {
 	return t
 }
 
-func (t *Task) WaitFinish(ctx context.Context) (interface{}, error) {
+func (t *Task) Result() interface{} {
+	assert.Must(t.result != InvalidTaskResult)
+	return t.result
+}
+
+func (t *Task) Err() error {
+	assert.Must(t.err != errors.ErrDontUseThisBeforeTaskFinished)
+	return t.err
+}
+
+func (t *Task) WaitFinishWithContext(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():
-		return nil, errors.Annotatef(errors.ErrFailedToWaitTask, ctx.Err().Error())
+		return false
 	case <-t.done:
-		return t.result, t.err
+		return true
 	}
+}
+
+func (t *Task) MustWaitFinishWithContext(ctx context.Context) {
+	if t.WaitFinishWithContext(ctx) {
+		return
+	}
+	t.cancel()
+	<-t.done
+}
+
+func (t *Task) WaitFinish() {
+	<-t.done
 }
 
 func (t *Task) Cancel() {
@@ -104,7 +133,7 @@ func NewListTaskNoResult(id string, name string, runTimeout time.Duration,
 		if err := g(ctx, prevResult); err != nil {
 			return nil, err
 		}
-		return DummyResult, nil
+		return DummyTaskResult, nil
 	})
 }
 
