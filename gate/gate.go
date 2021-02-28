@@ -129,13 +129,14 @@ func (g *Gate) watchShards() error {
 }
 
 func (g *Gate) syncShards() error {
-	g.shardsRW.Lock()
-	defer g.shardsRW.Unlock()
-
 	groups, err := g.store.ListGroup()
 	if err != nil {
 		return err
 	}
+
+	g.shardsRW.Lock()
+	defer g.shardsRW.Unlock()
+
 	for _, group := range groups {
 		if err := g.syncShard(group); err != nil {
 			return err
@@ -158,9 +159,11 @@ func (g *Gate) syncShard(group *topo.Group) error {
 
 	shard, err := NewShard(group)
 	if err != nil {
+		glog.Errorf("synchronizing group %d to %s failed: '%v'", group.Id, group.ServerAddr, err)
 		return err
 	}
 	g.shards[shard.ID] = shard
+	glog.Infof("synchronized group %d to %s successfully", shard.ID, group.ServerAddr)
 	return nil
 }
 

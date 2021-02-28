@@ -30,18 +30,18 @@ func GetLocalTimestamp() uint64 {
 	return uint64(time.Now().UnixNano())
 }
 
-func MustFetchTimestamp(oracle oracle.Oracle) uint64 {
-	ts, err := FetchTimestampWithRetry(oracle)
+func MustFetchTimestamp(oracleFac oracle.Factory) uint64 {
+	ts, err := FetchTimestampWithRetry(oracleFac)
 	if err != nil {
 		glog.Fatalf("failed to fetch timestamp: '%v'", err)
 	}
 	return ts
 }
 
-func FetchTimestampWithRetry(oracle oracle.Oracle) (ts uint64, err error) {
+func FetchTimestampWithRetry(oracleFac oracle.Factory) (ts uint64, err error) {
 	for i := 0; i < 30; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
-		ts, err = oracle.FetchTimestamp(ctx)
+		ts, err = oracleFac.GetOracle().FetchTimestamp(ctx)
 		cancel()
 		if err == nil {
 			return ts, nil

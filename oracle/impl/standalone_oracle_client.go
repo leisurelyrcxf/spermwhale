@@ -42,6 +42,10 @@ func (c *Client) FetchTimestamp(ctx context.Context) (uint64, error) {
 	return resp.Ts, nil
 }
 
+func (c *Client) TargetAddr() string {
+	return c.conn.Target()
+}
+
 func (c *Client) Close() error {
 	return c.conn.Close()
 }

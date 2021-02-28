@@ -2,6 +2,7 @@ package txn
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 
@@ -51,10 +52,9 @@ type TransactionManager struct {
 	txns concurrency.ConcurrentTxnMap
 
 	kv        types.KV
-	oracle    oracle.Oracle
+	oracle    atomic.Value
 	store     *TransactionStore
 	topoStore *topo.Store
-	workerNum int
 
 	s *Scheduler
 }
@@ -90,21 +90,22 @@ func NewTransactionManagerWithOracle(
 	tm := (&TransactionManager{
 		txns: concurrency.NewConcurrentTxnMap(32),
 
-		kv:        kv,
-		cfg:       cfg,
-		oracle:    oracle,
-		workerNum: clearWorkerNum,
+		kv:  kv,
+		cfg: cfg,
 
 		s: &Scheduler{
 			clearJobScheduler: scheduler.NewBasicScheduler(MaxTaskBuffered, clearWorkerNum),
-			ioJobScheduler:    scheduler.NewConcurrentListScheduler(ioWorkerNum, MaxTaskBuffered, 1),
+			ioJobScheduler:    scheduler.NewConcurrentListScheduler(MaxTaskBuffered, ioWorkerNum, 1),
 		},
 	}).createStore()
+	if oracle != nil {
+		tm.oracle.Store(oracle)
+	}
 	return tm
 }
 
 func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, error) {
-	ts, err := utils.FetchTimestampWithRetry(m.oracle)
+	ts, err := utils.FetchTimestampWithRetry(m)
 	if err != nil {
 		return nil, err
 	}
@@ -164,14 +165,21 @@ func (m *TransactionManager) createStore() *TransactionManager {
 func (m *TransactionManager) syncOracle() error {
 	o, err := m.topoStore.LoadOracle()
 	if err != nil {
+		glog.Errorf("synchronized oracle failed, can't load from store: '%v'", err)
 		return err
 	}
 	cli, err := impl.NewClient(o.ServerAddr)
 	if err != nil {
+		glog.Errorf("synchronized oracle to %s failed during creating client: '%v'", o.ServerAddr, err)
 		return err
 	}
-	m.oracle = cli
+	m.oracle.Store(cli)
+	glog.Infof("synchronized oracle to %s successfully", o.ServerAddr)
 	return nil
+}
+
+func (m *TransactionManager) GetOracle() oracle.Oracle {
+	return m.oracle.Load().(oracle.Oracle)
 }
 
 func (m *TransactionManager) watchOracle() error {
@@ -181,7 +189,7 @@ func (m *TransactionManager) watchOracle() error {
 	}
 
 	if errors.IsNotSupportedErr(err) {
-		if m.oracle != nil {
+		if m.oracle.Load() != nil {
 			return nil
 		}
 		return err

@@ -89,15 +89,15 @@ type Txn struct {
 
 	WrittenKeys []string
 
-	writeKeyTasks      []*types.ListTask          `json:"-"`
-	lastWriteKeyTasks  map[string]*types.ListTask `json:"-"`
-	txnRecordTask      *types.ListTask            `json:"-"`
-	allIOTasksFinished bool                       `json:"-"`
-	cfg                types.TxnConfig            `json:"-"`
-	kv                 types.KV                   `json:"-"`
-	store              *TransactionStore          `json:"-"`
-	s                  *Scheduler                 `json:"-"`
-	h                  TransactionHolder          `json:"-"`
+	writeKeyTasks      []*types.ListTask
+	lastWriteKeyTasks  map[string]*types.ListTask
+	txnRecordTask      *types.ListTask
+	allIOTasksFinished bool
+	cfg                types.TxnConfig
+	kv                 types.KV
+	store              *TransactionStore
+	s                  *Scheduler
+	h                  TransactionHolder
 
 	sync.Mutex `json:"-"`
 }

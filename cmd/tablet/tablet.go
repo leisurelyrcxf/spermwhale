@@ -12,7 +12,7 @@ import (
 
 func main() {
 	cmd.RegisterPortFlags(20000)
-	flagGid := flag.Int("gid", -1, "gid")
+	flagGid := flag.Int("gid", -1, "gid, range [0, groupNum)")
 	cmd.RegisterStoreFlags()
 	cmd.RegisterTxnConfigFlags()
 	flag.Parse()

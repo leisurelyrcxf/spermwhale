@@ -24,7 +24,7 @@ func TestListScheduler(t *testing.T) {
 func testListScheduler(t *testing.T, round int) (b bool) {
 	assert := testifyassert.New(t)
 
-	s := NewConcurrentListScheduler(16, 1024, 1)
+	s := NewConcurrentListScheduler(1024, 16, 1)
 	defer s.Close()
 
 	const (

@@ -177,10 +177,10 @@ type ConcurrentListScheduler struct {
 	partitions []*ListScheduler
 }
 
-func NewConcurrentListScheduler(partitionNum int, maxBuffered int, workerNumber int) *ConcurrentListScheduler {
+func NewConcurrentListScheduler(maxBuffered int, partitionNum int, workerNumberPerPartition int) *ConcurrentListScheduler {
 	s := &ConcurrentListScheduler{partitions: make([]*ListScheduler, partitionNum)}
 	for i := range s.partitions {
-		s.partitions[i] = NewListScheduler(maxBuffered, workerNumber)
+		s.partitions[i] = NewListScheduler(maxBuffered, workerNumberPerPartition)
 	}
 	return s
 }
