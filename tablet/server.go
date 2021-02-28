@@ -6,9 +6,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/topo"
-	fsclient "github.com/leisurelyrcxf/spermwhale/topo/client/fs"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"github.com/leisurelyrcxf/spermwhale/utils/network"
 )
 
 type Server struct {
@@ -45,7 +43,7 @@ func NewServerForTesting(port int, cfg types.TxnConfig, gid int, store *topo.Sto
 }
 
 func (s *Server) online() error {
-	localIP, err := network.GetLocalIP(s.targetAddr())
+	localIP, err := s.store.GetLocalIP()
 	if err != nil {
 		return err
 	}
@@ -55,11 +53,4 @@ func (s *Server) online() error {
 			ServerAddr: fmt.Sprintf("%s:%d", localIP, s.Port),
 		},
 	)
-}
-
-func (s *Server) targetAddr() string {
-	if _, isFsClient := s.store.Client().(*fsclient.Client); isFsClient {
-		return "8.8.8.8:53"
-	}
-	return s.store.Client().AddrList()
 }

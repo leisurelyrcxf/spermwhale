@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	cmd.RegisterPortFlags(9999)
+	cmd.RegisterPortFlags(5555)
 	flagAllocInAdvance := flag.Uint64("alloc-in-advance", 1000, "pre-allocate size")
 	flagLogical := flag.Bool("logical", false, "logical oracle")
 
@@ -25,16 +25,17 @@ func main() {
 	flag.Parse()
 	logicalOracle := *flagLogical
 
+	store := cmd.NewStore()
 	var o oracle.Oracle
 	if logicalOracle {
 		var err error
-		if o, err = logical.NewOracle(*flagAllocInAdvance, cmd.NewStore()); err != nil {
+		if o, err = logical.NewOracle(*flagAllocInAdvance, store); err != nil {
 			glog.Fatalf("failed to create oracle: %v", err)
 		}
 	} else {
 		o = physical.NewOracle()
 	}
-	server := impl.NewServer(*cmd.FlagPort, o)
+	server := impl.NewServer(*cmd.FlagPort, o, store)
 	if err := server.Start(); err != nil {
 		glog.Fatalf("failed to start: %v", err)
 	}

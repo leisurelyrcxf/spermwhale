@@ -243,6 +243,9 @@ func (c *Client) Delete(path string) error {
 
 	if err := os.RemoveAll(c.realpath(path)); err != nil {
 		glog.Warningf("fsclient - delete %s failed", path)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil
+		}
 		return errors.Trace(err)
 	} else {
 		glog.Infof("fsclient - delete %s OK", path)
@@ -273,7 +276,7 @@ func (c *Client) Read(path string, must bool) ([]byte, error) {
 			if !os.IsNotExist(err) {
 				return nil, errors.Trace(err)
 			}
-			return nil, nil
+			return nil, common.ErrKeyNotExists
 		}
 	}
 

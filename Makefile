@@ -18,6 +18,7 @@ deps:
 
 binary:
 	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o sptablet ./cmd/tablet
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o sporacle ./cmd/oracle
 	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spgate ./cmd/gate
 
 

@@ -4,11 +4,10 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-type Group struct {
-	Id         int    `json:"id"`
+type Oracle struct {
 	ServerAddr string `json:"server_addr"`
 }
 
-func (g *Group) Encode() []byte {
-	return utils.JsonEncode(g)
+func (o *Oracle) Encode() []byte {
+	return utils.JsonEncode(o)
 }

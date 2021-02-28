@@ -81,4 +81,8 @@ var (
 		Code: consts.ErrCodeCantRemoveCommittedValue,
 		Msg:  "can't remove committed value",
 	}
+	ErrInvalidTopoData = &Error{
+		Code: consts.ErrCodeInvalidTopoData,
+		Msg:  "invalid topo data",
+	}
 )

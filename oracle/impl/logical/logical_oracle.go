@@ -66,9 +66,9 @@ func (o *Oracle) alloc(counter uint64) {
 			return
 		}
 		if i < maxRetry-1 {
-			glog.Warningf("update %v to %d failed: %v, retrying...", o.store.OraclePath(), newPersisted, err)
+			glog.Warningf("update %v to %d failed: %v, retrying...", o.store.TimestampPath(), newPersisted, err)
 		} else {
-			glog.Fatalf("update %v to %d failed: %v, retrying...", o.store.OraclePath(), newPersisted, err)
+			glog.Fatalf("update %v to %d failed: %v, retrying...", o.store.TimestampPath(), newPersisted, err)
 		}
 		time.Sleep(time.Second)
 	}

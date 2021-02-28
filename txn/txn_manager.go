@@ -3,6 +3,16 @@ package txn
 import (
 	"context"
 
+	"github.com/golang/glog"
+
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
+
+	"github.com/leisurelyrcxf/spermwhale/topo"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
+	"github.com/leisurelyrcxf/spermwhale/oracle"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -41,8 +51,9 @@ type TransactionManager struct {
 	txns concurrency.ConcurrentTxnMap
 
 	kv        types.KV
-	oracle    *physical.Oracle
+	oracle    oracle.Oracle
 	store     *TransactionStore
+	topoStore *topo.Store
 	workerNum int
 
 	s *Scheduler
@@ -52,12 +63,36 @@ func NewTransactionManager(
 	kv types.KV,
 	cfg types.TxnConfig,
 	clearWorkerNum, ioWorkerNum int) *TransactionManager {
+	return NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, physical.NewOracle())
+}
+
+func NewTransactionManagerWithCluster(
+	kv types.KV,
+	cfg types.TxnConfig,
+	clearWorkerNum, ioWorkerNum int,
+	store *topo.Store) (*TransactionManager, error) {
+	tm := NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, nil)
+	tm.topoStore = store
+	if err := tm.syncOracle(); err != nil {
+		glog.Warningf("can't initialize oracle: %v", err)
+	}
+	if err := tm.watchOracle(); err != nil {
+		return nil, err
+	}
+	return tm, nil
+}
+
+func NewTransactionManagerWithOracle(
+	kv types.KV,
+	cfg types.TxnConfig,
+	clearWorkerNum, ioWorkerNum int,
+	oracle oracle.Oracle) *TransactionManager {
 	tm := (&TransactionManager{
 		txns: concurrency.NewConcurrentTxnMap(32),
 
 		kv:        kv,
 		cfg:       cfg,
-		oracle:    physical.NewOracle(),
+		oracle:    oracle,
 		workerNum: clearWorkerNum,
 
 		s: &Scheduler{
@@ -69,7 +104,11 @@ func NewTransactionManager(
 }
 
 func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, error) {
-	txnID := types.TxnId(m.oracle.MustFetchTimestamp())
+	ts, err := utils.FetchTimestampWithRetry(m.oracle)
+	if err != nil {
+		return nil, err
+	}
+	txnID := types.TxnId(ts)
 	if _, ok := m.txns.Get(txnID); ok {
 		return nil, errors.ErrTxnExists
 	}
@@ -120,4 +159,46 @@ func (m *TransactionManager) createStore() *TransactionManager {
 		},
 	}
 	return m
+}
+
+func (m *TransactionManager) syncOracle() error {
+	o, err := m.topoStore.LoadOracle()
+	if err != nil {
+		return err
+	}
+	cli, err := impl.NewClient(o.ServerAddr)
+	if err != nil {
+		return err
+	}
+	m.oracle = cli
+	return nil
+}
+
+func (m *TransactionManager) watchOracle() error {
+	watchFuture, err := m.topoStore.Client().WatchOnce(m.topoStore.OraclePath())
+	if err != nil && !errors.IsNotSupportedErr(err) {
+		return err
+	}
+
+	if errors.IsNotSupportedErr(err) {
+		if m.oracle != nil {
+			return nil
+		}
+		return err
+	}
+
+	go func() {
+		for {
+			<-watchFuture
+
+			if err := m.syncOracle(); err != nil {
+				glog.Fatalf("sync oracle failed: '%v'", err)
+			}
+			var err error
+			if watchFuture, err = m.topoStore.Client().WatchOnce(m.topoStore.OraclePath()); err != nil {
+				glog.Fatalf("watch once failed: '%v'", err)
+			}
+		}
+	}()
+	return nil
 }

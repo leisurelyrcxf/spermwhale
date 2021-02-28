@@ -35,3 +35,10 @@ func NewClient(coordinator string, addrList string, auth string, timeout time.Du
 	}
 	return nil, errors.Errorf("invalid coordinator name = %s", coordinator)
 }
+
+func TargetAddr(c Client) string {
+	if _, isFsClient := c.(*fsclient.Client); isFsClient {
+		return "8.8.8.8:53"
+	}
+	return c.AddrList()
+}

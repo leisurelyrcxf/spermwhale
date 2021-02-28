@@ -10,6 +10,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
+	"github.com/leisurelyrcxf/spermwhale/utils/network"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/leisurelyrcxf/spermwhale/topo/client/common"
 
 	"github.com/golang/glog"
@@ -37,6 +43,10 @@ func GroupPath(clusterName string, gid int) string {
 
 func OraclePath(clusterName string) string {
 	return filepath.Join(SpermwhaleDir, clusterName, "oracle")
+}
+
+func TimestampPath(clusterName string) string {
+	return filepath.Join(SpermwhaleDir, clusterName, "timestamp")
 }
 
 type Store struct {
@@ -72,6 +82,10 @@ func (s *Store) OraclePath() string {
 	return OraclePath(s.clusterName)
 }
 
+func (s *Store) TimestampPath() string {
+	return TimestampPath(s.clusterName)
+}
+
 func (s *Store) Lock() (err error) {
 	for i := 0; i < 60; i++ {
 		if err = s.client.Create(s.LockPath(), []byte{}); err != nil {
@@ -104,7 +118,7 @@ func (s *Store) ListGroup() (map[int]*Group, error) {
 			return nil, err
 		}
 		g := &Group{}
-		if err := jsonDecode(g, b); err != nil {
+		if err := utils.JsonDecode(g, b); err != nil {
 			return nil, err
 		}
 		group[g.Id] = g
@@ -118,7 +132,7 @@ func (s *Store) LoadGroup(gid int, must bool) (*Group, error) {
 		return nil, err
 	}
 	g := &Group{}
-	if err := jsonDecode(g, b); err != nil {
+	if err := utils.JsonDecode(g, b); err != nil {
 		return nil, err
 	}
 	return g, nil
@@ -132,12 +146,31 @@ func (s *Store) DeleteGroup(gid int) error {
 	return s.client.Delete(s.GroupPath(gid))
 }
 
+func (s *Store) UpdateOracle(o *Oracle) error {
+	return s.client.Update(s.OraclePath(), o.Encode())
+}
+
+func (s *Store) LoadOracle() (*Oracle, error) {
+	b, err := s.client.Read(s.OraclePath(), true)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) == 0 {
+		return nil, errors.Annotatef(errors.ErrInvalidTopoData, "len(b) == 0")
+	}
+	o := &Oracle{}
+	if err := utils.JsonDecode(o, b); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
+
 func (s *Store) UpdateTimestamp(ts uint64) error {
-	return s.client.Update(s.OraclePath(), []byte(strconv.FormatUint(ts, 10)))
+	return s.client.Update(s.TimestampPath(), []byte(strconv.FormatUint(ts, 10)))
 }
 
 func (s *Store) LoadTimestamp() (uint64, error) {
-	val, err := s.client.Read(s.OraclePath(), true)
+	val, err := s.client.Read(s.TimestampPath(), true)
 	if err != nil && err != common.ErrKeyNotExists {
 		return 0, err
 	}
@@ -152,7 +185,7 @@ func (s *Store) LoadTimestamp() (uint64, error) {
 }
 
 func (s *Store) DeleteTimestamp() error {
-	return s.client.Delete(s.OraclePath())
+	return s.client.Delete(s.TimestampPath())
 }
 
 func (s *Store) WithClusterLocked(f func() error) error {
@@ -161,4 +194,8 @@ func (s *Store) WithClusterLocked(f func() error) error {
 	}
 	defer s.Unlock()
 	return f()
+}
+
+func (s *Store) GetLocalIP() (string, error) {
+	return network.GetLocalIP(client.TargetAddr(s.client))
 }

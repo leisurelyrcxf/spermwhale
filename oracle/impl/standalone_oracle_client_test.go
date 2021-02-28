@@ -16,32 +16,31 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/logical"
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
 const rounds = 10
 
-func newOracle(assert *testifyassert.Assertions, port int, logicalOracle bool, clearDataForLogical bool) oracle.Oracle {
-	if logicalOracle {
-		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
-		if !assert.NoError(err) {
+func newServer(assert *testifyassert.Assertions, port int, logicalOracle bool, clearDataForLogical bool) *Server {
+	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
+	if !assert.NoError(err) {
+		return nil
+	}
+	store := topo.NewStore(cli, "test_cluster")
+	if clearDataForLogical {
+		if !assert.NoError(store.DeleteTimestamp()) {
 			return nil
 		}
-		store := topo.NewStore(cli, "test_cluster")
-		if clearDataForLogical {
-			if !assert.NoError(store.DeleteTimestamp()) {
-				return nil
-			}
-		}
+	}
+	if logicalOracle {
 		o, err := logical.NewOracle(100, store)
 		if !assert.NoError(err) {
 			return nil
 		}
-		return o
+		return NewServer(port, o, store)
 	}
-	return physical.NewOracle()
+	return NewServer(port, physical.NewOracle(), store)
 }
 
 func TestClient_FetchTimestamp(t *testing.T) {
@@ -58,26 +57,26 @@ func testClientFetchTimestamp(t *testing.T, logicalOracle bool) (b bool) {
 	assert := testifyassert.New(t)
 
 	const port = 9999
-	server := NewServer(port, newOracle(assert, port, logicalOracle, true))
+	server := newServer(assert, port, logicalOracle, true)
 	assert.NoError(server.Start())
 	defer server.Stop()
 	var serverAddr = fmt.Sprintf("localhost:%d", port)
 
-	client, err := NewClient(serverAddr)
+	cli, err := NewClient(serverAddr)
 	if !assert.NoError(err) {
 		return
 	}
-	defer client.Close()
+	defer cli.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	ts1, err := client.FetchTimestamp(ctx)
+	ts1, err := cli.FetchTimestamp(ctx)
 	if !assert.Equal(uint64(1), ts1) {
 		return
 	}
 
-	ts2, err := client.FetchTimestamp(ctx)
+	ts2, err := cli.FetchTimestamp(ctx)
 	return assert.Equal(uint64(2), ts2)
 }
 
@@ -97,7 +96,10 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 	assert := testifyassert.New(t)
 
 	const port = 9999
-	server1 := NewServer(port, newOracle(assert, port, logicalOracle, true))
+	server1 := newServer(assert, port, logicalOracle, true)
+	if !assert.NotNil(server1) {
+		return
+	}
 	assert.NoError(server1.Start())
 
 	var fetchWg sync.WaitGroup
@@ -158,7 +160,7 @@ func testClientFetchTimestamp2(t *testing.T, logicalOracle bool) (b bool) {
 	}
 
 	{
-		server2 := NewServer(port, newOracle(assert, port, logicalOracle, false))
+		server2 := newServer(assert, port, logicalOracle, false)
 		assert.NoError(server2.Start())
 		defer server2.Stop()
 

@@ -6,5 +6,6 @@ const (
 	DefaultTooStaleWriteThreshold = 5 * time.Second
 	DefaultMaxClockDrift          = time.Second
 
-	DefaultTxnManagerWorkerNumber = 12
+	DefaultTxnManagerClearWorkerNumber = 20
+	DefaultTxnManagerIOWorkerNumber    = 30
 )

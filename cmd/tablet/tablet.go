@@ -11,21 +11,21 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 9999, "port")
-	gid := flag.Int("gid", -1, "gid")
+	cmd.RegisterPortFlags(20000)
+	flagGid := flag.Int("gid", -1, "gid")
 	cmd.RegisterStoreFlags()
 	cmd.RegisterTxnConfigFlags()
 	flag.Parse()
 
-	if *gid == -1 {
+	if *flagGid == -1 {
 		glog.Fatalf("must provide gid")
 	}
 
 	store := cmd.NewStore()
 	cfg := cmd.NewTxnConfig()
-	server := tablet.NewServer(*port, cfg, *gid, store)
+	server := tablet.NewServer(*cmd.FlagPort, cfg, *flagGid, store)
 	if err := server.Start(); err != nil {
-		glog.Fatalf("failed to start: %v", err)
+		glog.Fatalf("failed to start tablet server: %v", err)
 	}
 	<-server.Done
 }

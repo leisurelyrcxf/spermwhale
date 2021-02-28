@@ -18,6 +18,7 @@ const (
 	ErrCodeSchedulerClosed               = 333
 	ErrCodeReadFailedToWaitWriteTask     = 555
 	ErrCodeDontUseThisBeforeTaskFinished = 666
+	ErrCodeInvalidTopoData               = 777
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
 	ErrCodeAssertFailed                  = 22222
