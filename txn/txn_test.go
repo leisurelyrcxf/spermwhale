@@ -76,7 +76,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
@@ -148,7 +148,7 @@ func testTxnReadAfterWrite(t *testing.T, round int, staleWriteThreshold time.Dur
 	t.Logf("testTxnReadAfterWrite @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(NewT(t))
@@ -235,7 +235,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 	t.Logf("testTxnLostUpdateWithSomeAborted @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
@@ -329,7 +329,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 	t.Logf("testTxnLostUpdateWithSomeAborted2 @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
@@ -490,7 +490,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 		delta             = 6
 	)
 	var (
-		cfg = types.TxnConfig{}.SetStaleWriteThreshold(staleWriteThreshold)
+		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
 	)
 	gAte, stopper := createGate(t, cfg)
 	defer stopper()
@@ -578,7 +578,7 @@ func testDistributedTxnConsistency(t *testing.T, round int, staleWriteThreshold 
 		valueSum                       = k1InitialValue + k2InitialValue
 	)
 	var (
-		cfg = types.TxnConfig{}.SetStaleWriteThreshold(staleWriteThreshold)
+		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
 	)
 	gAte, stopper := createGate(t, cfg)
 	defer stopper()
@@ -728,7 +728,7 @@ func testDistributedTxnConsistency2(t *testing.T, round int, staleWriteThreshold
 		key1ExtraDelta, key2ExtraDelta = 10, 20
 	)
 	var (
-		cfg = types.TxnConfig{}.SetStaleWriteThreshold(staleWriteThreshold)
+		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
 	)
 	gAte, stopper := createGate(t, cfg)
 	defer stopper()
@@ -885,7 +885,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 		k1InitialValue, k2InitialValue = 1000, 1000
 	)
 	var (
-		cfg        = types.TxnConfig{}.SetStaleWriteThreshold(staleWriteThreshold)
+		cfg        = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
 		constraint = func(v1, v2 int) bool { return v1+v2 > 0 }
 	)
 	gAte, stopper := createGate(t, cfg)

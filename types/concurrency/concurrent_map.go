@@ -46,13 +46,13 @@ func (cmp *concurrentMapPartition) set(key string, val interface{}) {
 	cmp.m[key] = val
 }
 
-func (cmp *concurrentMapPartition) setIf(key string, val interface{}, pred func(prev interface{}, exist bool) bool) (bool, interface{}) {
+func (cmp *concurrentMapPartition) setIf(key string, val interface{}, pred func(prev interface{}, exist bool) bool) (success bool, valAfterCall interface{}) {
 	cmp.mutex.Lock()
 	defer cmp.mutex.Unlock()
 	prev, ok := cmp.m[key]
 	if pred(prev, ok) {
 		cmp.m[key] = val
-		return true, prev
+		return true, val
 	}
 	return false, prev
 }
@@ -129,7 +129,7 @@ func (cmp *ConcurrentMap) Set(key string, val interface{}) {
 	cmp.partitions[cmp.hash(key)].set(key, val)
 }
 
-func (cmp *ConcurrentMap) SetIf(key string, val interface{}, pred func(prev interface{}, exist bool) bool) (bool, interface{}) {
+func (cmp *ConcurrentMap) SetIf(key string, val interface{}, pred func(prev interface{}, exist bool) bool) (success bool, valAfterCall interface{}) {
 	return cmp.partitions[cmp.hash(key)].setIf(key, val, pred)
 }
 

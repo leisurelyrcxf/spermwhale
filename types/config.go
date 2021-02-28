@@ -11,7 +11,7 @@ func (c TxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
 	return c.StaleWriteThreshold + c.MaxClockDrift*10
 }
 
-func (c TxnConfig) SetStaleWriteThreshold(val time.Duration) TxnConfig {
+func (c TxnConfig) WithStaleWriteThreshold(val time.Duration) TxnConfig {
 	c.StaleWriteThreshold = val
 	return c
 }

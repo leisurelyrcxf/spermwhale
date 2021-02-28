@@ -10,6 +10,7 @@ type ReadOption struct {
 	Version                 uint64
 	ExactVersion            bool
 	NotUpdateTimestampCache bool
+	GetMaxReadVersion       bool
 }
 
 func NewReadOption(version uint64) ReadOption {
@@ -23,6 +24,7 @@ func NewReadOptionFromPB(x *commonpb.ReadOption) ReadOption {
 		Version:                 x.Version,
 		ExactVersion:            x.ExactReadVersion,
 		NotUpdateTimestampCache: x.NotUpdateTimestampCache,
+		GetMaxReadVersion:       x.GetMaxReadVersion,
 	}
 }
 
@@ -31,16 +33,22 @@ func (opt ReadOption) ToPB() *commonpb.ReadOption {
 		Version:                 opt.Version,
 		ExactReadVersion:        opt.ExactVersion,
 		NotUpdateTimestampCache: opt.NotUpdateTimestampCache,
+		GetMaxReadVersion:       opt.GetMaxReadVersion,
 	}
 }
 
-func (opt ReadOption) SetExactVersion() ReadOption {
+func (opt ReadOption) WithExactVersion() ReadOption {
 	opt.ExactVersion = true
-	return opt.SetNotUpdateTimestampCache()
+	return opt
 }
 
-func (opt ReadOption) SetNotUpdateTimestampCache() ReadOption {
+func (opt ReadOption) WithNotUpdateTimestampCache() ReadOption {
 	opt.NotUpdateTimestampCache = true
+	return opt
+}
+
+func (opt ReadOption) WithGetMaxReadVersion() ReadOption {
+	opt.GetMaxReadVersion = true
 	return opt
 }
 
@@ -67,12 +75,12 @@ func (opt *WriteOption) ToPB() *commonpb.WriteOption {
 	}
 }
 
-func (opt WriteOption) SetClearWriteIntent() WriteOption {
+func (opt WriteOption) WithClearWriteIntent() WriteOption {
 	opt.ClearWriteIntent = true
 	return opt
 }
 
-func (opt WriteOption) SetRemoveVersion() WriteOption {
+func (opt WriteOption) WithRemoveVersion() WriteOption {
 	opt.RemoveVersion = true
 	return opt
 }

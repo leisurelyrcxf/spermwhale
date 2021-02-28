@@ -2,9 +2,21 @@ package types
 
 import (
 	"context"
+	"math"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 )
+
+const (
+	MaxTxnVersion = uint64(math.MaxUint64)
+	MaxTxnId      = TxnId(MaxTxnVersion)
+)
+
+func SafeIncr(version *uint64) {
+	if cur := *version; cur != math.MaxUint64 {
+		*version = cur + 1
+	}
+}
 
 type TxnId uint64
 

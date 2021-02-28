@@ -10,8 +10,9 @@ message Error {
 }
 
 message ValueMeta {
-    bool write_intent = 1;
-    uint64 version = 2;
+    uint64 version = 1;
+    bool write_intent = 2;
+    uint64 max_read_version = 3;
 }
 
 message Value {
@@ -23,6 +24,7 @@ message ReadOption {
     uint64 version = 1;
     bool exact_read_version = 2;
     bool not_update_timestamp_cache = 3;
+    bool get_max_read_version = 4;
 }
 
 message WriteOption {

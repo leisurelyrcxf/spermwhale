@@ -11,7 +11,6 @@ const (
 	ErrCodeTransactionNotFound           = 12
 	ErrCodeTransactionStateCorrupted     = 13
 	ErrCodeCantRemoveCommittedValue      = 14
-	ErrCodeVersionNotExistsNeedsRollback = 15
 	ErrCodeNilResponse                   = 55
 	ErrCodeTxnRetriedTooManyTimes        = 100
 	ErrCodeNotSupported                  = 111

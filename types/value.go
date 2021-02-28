@@ -8,22 +8,29 @@ import (
 )
 
 type Meta struct {
-	Version     uint64
-	WriteIntent bool
+	Version        uint64
+	WriteIntent    bool
+	MaxReadVersion uint64
 }
 
 func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
 	return Meta{
-		Version:     x.Version,
-		WriteIntent: x.WriteIntent,
+		Version:        x.Version,
+		WriteIntent:    x.WriteIntent,
+		MaxReadVersion: x.MaxReadVersion,
 	}
 }
 
 func (m Meta) ToPB() *commonpb.ValueMeta {
 	return &commonpb.ValueMeta{
-		Version:     m.Version,
-		WriteIntent: m.WriteIntent,
+		Version:        m.Version,
+		WriteIntent:    m.WriteIntent,
+		MaxReadVersion: m.MaxReadVersion,
 	}
+}
+
+func (m Meta) IsEmpty() bool {
+	return m.Version == 0 && m.MaxReadVersion == 0
 }
 
 type Value struct {
@@ -52,13 +59,32 @@ func NewValueFromPB(x *commonpb.Value) Value {
 	}
 }
 
-func (v Value) SetVersion(version uint64) Value {
+func (v Value) ToPB() *commonpb.Value {
+	if v.IsEmpty() {
+		return nil
+	}
+	return &commonpb.Value{
+		Meta: v.Meta.ToPB(),
+		Val:  v.V,
+	}
+}
+
+func (v Value) IsEmpty() bool {
+	return v.Meta.IsEmpty() && len(v.V) == 0
+}
+
+func (v Value) WithVersion(version uint64) Value {
 	v.Version = version
 	return v
 }
 
-func (v Value) SetNoWriteIntent() Value {
+func (v Value) WithNoWriteIntent() Value {
 	v.WriteIntent = false
+	return v
+}
+
+func (v Value) WithMaxReadVersion(maxReadVersion uint64) Value {
+	v.MaxReadVersion = maxReadVersion
 	return v
 }
 
@@ -77,13 +103,6 @@ func (v Value) MustInt() int {
 		panic(fmt.Sprintf("invalid int value '%s'", string(v.V)))
 	}
 	return int(x)
-}
-
-func (v Value) ToPB() *commonpb.Value {
-	return &commonpb.Value{
-		Meta: v.Meta.ToPB(),
-		Val:  v.V,
-	}
 }
 
 func IntValue(i int) Value {

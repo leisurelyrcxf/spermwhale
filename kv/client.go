@@ -38,7 +38,10 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp == nil")
 	}
 	if resp.Err != nil {
-		return types.EmptyValue, errors.NewErrorFromPB(resp.Err)
+		if resp.V == nil {
+			return types.EmptyValue, errors.NewErrorFromPB(resp.Err)
+		}
+		return types.NewValueFromPB(resp.V), errors.NewErrorFromPB(resp.Err)
 	}
 	if resp.V == nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp.V == nil")

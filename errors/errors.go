@@ -33,10 +33,6 @@ var (
 		Code: consts.ErrCodeInvalidRequest,
 		Msg:  "invalid request",
 	}
-	ErrVersionNotExistsNeedsRollback = &Error{
-		Code: consts.ErrCodeVersionNotExistsNeedsRollback,
-		Msg:  "key or version not exists needs rollback",
-	}
 	ErrTxnExists = &Error{
 		Code: consts.ErrCodeTransactionAlreadyExists,
 		Msg:  "transaction already exists",

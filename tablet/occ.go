@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
@@ -33,16 +33,14 @@ func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
 	return v.(uint64)
 }
 
-func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (success bool, prev uint64) {
+func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (success bool, maxVal uint64) {
 	b, v := cache.m.SetIf(key, version, func(prev interface{}, exist bool) bool {
 		if !exist {
 			return true
 		}
 		return version > prev.(uint64)
 	})
-	if v == nil {
-		return b, 0
-	}
+	assert.Must(v.(uint64) >= version)
 	return b, v.(uint64)
 }
 
@@ -82,39 +80,33 @@ func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *KVCC {
 }
 
 func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
-	if opt.NotUpdateTimestampCache {
-		val, err := kv.db.Get(ctx, key, opt)
-		if !opt.ExactVersion {
-			// only used by TransactionStore::loadTransactionRecord
-			return val, err
-		}
-		if err == nil {
-			assert.Must(val.Version == opt.Version)
-		}
-		// opt.ExactVersion is true, doing txn state checking for all written keys.
-		if !errors.IsNotExistsErr(err) {
-			return val, err
-		}
-
-		// either failed or not yet finished
-		maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
-		if opt.Version < maxReadVersion {
-			// version not written and won't be written, txn should rollback
-			return val, errors.ErrVersionNotExistsNeedsRollback
-		}
-		return val, err
+	if opt.NotUpdateTimestampCache && !opt.GetMaxReadVersion {
+		return kv.db.Get(ctx, key, opt)
 	}
+
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
 	kv.lm.RLock(key)
 	defer kv.lm.RUnlock(key)
 
-	kv.tsCache.UpdateMaxReadVersion(key, opt.Version)
+	var maxReadVersion uint64
+	if !opt.NotUpdateTimestampCache {
+		readVersion := opt.Version
+		if opt.ExactVersion {
+			types.SafeIncr(&readVersion) // prevent future write of opt.Version
+		}
+		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, readVersion)
+	}
 	//kv.lm.RUnlock(key) if put here performance will down for read-for-write txn, reason unknown.
 	val, err := kv.db.Get(ctx, key, opt)
-	if err == nil {
-		assert.Must(val.Version <= opt.Version)
+	assert.Must(err != nil || (opt.ExactVersion && val.Version == opt.Version) || (!opt.ExactVersion && val.Version <= opt.Version))
+	if opt.GetMaxReadVersion {
+		//noinspection ALL
+		if maxReadVersion > 0 {
+			return val.WithMaxReadVersion(maxReadVersion), err
+		}
+		return val.WithMaxReadVersion(kv.tsCache.GetMaxReadVersion(key)), err
 	}
 	return val, err
 }
@@ -135,12 +127,10 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	kv.lm.Lock(key)
 	defer kv.lm.Unlock(key)
 
-	maxReadVersion := kv.tsCache.GetMaxReadVersion(key)
-	if val.Version < maxReadVersion {
+	if val.Version < kv.tsCache.GetMaxReadVersion(key) {
 		return errors.ErrTransactionConflict
 	}
 
-	// TODO check clock uncertainty and verify if this is the same transaction
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	return kv.db.Set(ctx, key, val, opt)
 }

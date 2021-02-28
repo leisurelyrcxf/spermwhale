@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
 	utils2 "github.com/leisurelyrcxf/spermwhale/integration_test/utils"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
-
-	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/golang/glog"
 
@@ -187,23 +184,10 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn types.TxnId, key
 	txn.Lock()
 	defer txn.Unlock()
 
-	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent)
+	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, 1)
 }
 
-func (txn *Txn) checkCommitStateWithRetry(callerTxn types.TxnId, maxRetry int, keysWithWriteIntent map[string]struct{}) (committed bool, rollbacked bool) {
-	for i := 0; i < maxRetry; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		committed, rollbacked := txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent)
-		cancel()
-		if committed || rollbacked {
-			return committed, rollbacked
-		}
-		time.Sleep(time.Second)
-	}
-	return false, false
-}
-
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, keysWithWriteIntent map[string]struct{}) (committed bool, rollbacked bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, keysWithWriteIntent map[string]struct{}, maxRetry int) (committed bool, rollbacked bool) {
 	switch txn.State {
 	case types.TxnStateStaging:
 		if len(txn.WrittenKeys) == 0 {
@@ -230,7 +214,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, key
 		}
 		notInKeysLen := len(notInKeys)
 		for idx, key := range append(notInKeys, inKeys...) {
-			vv, exists, err := getValueWrittenByTxn(ctx, txn.kv, key, txn.ID, 1)
+			vv, exists, err := getValueWrittenByTxn(ctx, txn.kv, key, txn.ID, maxRetry, callerTxn == txn.ID)
 			if err != nil {
 				return false, false
 			}
@@ -248,7 +232,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, key
 				_ = txn.rollback(ctx, callerTxn, true, "previous write intent disappeared") // help rollback since original txn coordinator may have gone
 				return false, true
 			}
-			if errors.GetErrorCode(err) == consts.ErrCodeVersionNotExistsNeedsRollback {
+			if vv.MaxReadVersion > txn.ID.Version() {
 				txn.State = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, callerTxn, true, "found non exist key during CheckCommitState and is impossible to succeed in the future") // help rollback since original txn coordinator may have gone
 				return false, true
@@ -352,10 +336,10 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	// handle other kinds of error
+	ctx = context.Background()
 	maxRetry := utils2.MaxInt(int(int64(txn.cfg.StaleWriteThreshold)/int64(time.Second))*3, 10)
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
-		ctx = context.Background()
-		record, recordExists, err := txn.store.loadTransactionRecordWithRetry(ctx, txn.ID, types.NewReadOption(math.MaxUint64), maxRetry)
+		record, recordExists, err := txn.store.loadTransactionRecordWithRetry(ctx, txn.ID, true, maxRetry)
 		if err != nil {
 			txn.State = types.TxnStateInvalid
 			glog.Errorf("[Commit] can't get transaction record info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
@@ -367,7 +351,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			// 1. transaction has been rollbacked, conflictedKey must be gone
 			// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 			// 3. transaction neither committed nor rollbacked
-			_, val, keyExists, err := txn.getAnyValueWritten(ctx, maxRetry)
+			_, val, keyExists, err := txn.getAnyValueWrittenWithRetry(ctx, maxRetry)
 			if err != nil {
 				txn.State = types.TxnStateInvalid
 				glog.Errorf("[Commit] can't get key info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
@@ -400,7 +384,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		txn.onCommitted(txn.ID, "after checking found all keys and txn record written successfully")
 		return nil
 	}
-	committed, rollbacked := txn.checkCommitStateWithRetry(txn.ID, maxRetry, succeededKeys)
+	committed, rollbacked := txn.checkCommitState(ctx, txn.ID, succeededKeys, maxRetry)
 	if committed {
 		assert.Must(txn.State == types.TxnStateCommitted)
 		return nil
@@ -443,8 +427,8 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	txn.State = types.TxnStateRollbacking
 	for _, key := range txn.WrittenKeys {
 		if removeErr := txn.kv.Set(ctx, key,
-			types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
-			types.NewWriteOption().SetRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
+			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
+			types.NewWriteOption().WithRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 			glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 			err = errors.Wrap(err, removeErr)
 		}
@@ -465,17 +449,14 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	return nil
 }
 
-func (txn *Txn) getAnyValueWritten(ctx context.Context, maxRetry int) (key string, val types.Value, exists bool, err error) {
+func (txn *Txn) getAnyValueWrittenWithRetry(ctx context.Context, maxRetry int) (key string, val types.Value, exists bool, err error) {
 	for i := 0; i < maxRetry; {
 		for _, key := range txn.WrittenKeys {
 			ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-			val, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).SetExactVersion())
+			val, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).WithExactVersion().WithNotUpdateTimestampCache())
 			cancel()
-			if err == nil {
-				return key, val, true, nil
-			}
-			if errors.IsNotExistsErr(err) {
-				return key, types.Value{}, false, nil
+			if err == nil || errors.IsNotExistsErr(err) {
+				return key, val, err == nil, nil
 			}
 			glog.Warningf("[getAnyValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 			time.Sleep(time.Second)
@@ -514,9 +495,9 @@ func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
 	for _, cancelledTask := range cancelledTasks {
 		cancelledTask.WaitFinish()
 	}
-	for _, ioTask := range ioTasks { // TODO remove this in product
-		assert.Must(ioTask.Finished())
-	}
+	//for _, ioTask := range ioTasks { // TODO remove this in product
+	//	assert.Must(ioTask.Finished())
+	//}
 	txn.s.GCIOJobs(ioTasks)
 }
 
@@ -556,8 +537,8 @@ func (txn *Txn) clearCommitted(ctx context.Context, callerTxn types.TxnId) (err 
 
 	for _, key := range txn.WrittenKeys {
 		if setErr := txn.kv.Set(ctx, key,
-			types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
-			types.NewWriteOption().SetClearWriteIntent()); setErr != nil {
+			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
+			types.NewWriteOption().WithClearWriteIntent()); setErr != nil {
 			if errors.IsNotExistsErr(setErr) {
 				glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, setErr)
 			} else {
@@ -590,8 +571,8 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 
 func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	err := txn.kv.Set(ctx, txn.Key(),
-		types.NewValue(nil, txn.ID.Version()).SetNoWriteIntent(),
-		types.NewWriteOption().SetRemoveVersion())
+		types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
+		types.NewWriteOption().WithRemoveVersion())
 	if err != nil && !errors.IsNotExistsErr(err) {
 		glog.Warningf("clear transaction record failed: %v", err)
 		return err

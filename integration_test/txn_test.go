@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"context"
-	"math"
 	"testing"
 	"time"
 
@@ -54,7 +53,7 @@ func testTransaction(t *testing.T) (b bool) {
 		//}()
 	}
 
-	val, err := ts.KVClient.Get(ctx, "k1", types.NewReadOption(math.MaxUint64))
+	val, err := ts.KVClient.Get(ctx, "k1", types.NewReadOption(types.MaxTxnVersion))
 	if !ts.NoError(err) {
 		return
 	}
