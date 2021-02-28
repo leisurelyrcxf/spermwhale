@@ -73,12 +73,11 @@ type ConcurrentMap struct {
 	partitions []*concurrentMapPartition
 }
 
-func NewConcurrentMap(partitionNum int) ConcurrentMap {
-	cm := ConcurrentMap{partitions: make([]*concurrentMapPartition, partitionNum)}
+func (cmp *ConcurrentMap) Initialize(partitionNum int) {
+	cmp.partitions = make([]*concurrentMapPartition, partitionNum)
 	for i := 0; i < partitionNum; i++ {
-		cm.partitions[i] = &concurrentMapPartition{m: make(map[string]interface{})}
+		cmp.partitions[i] = &concurrentMapPartition{m: make(map[string]interface{})}
 	}
-	return cm
 }
 
 func (cmp *ConcurrentMap) hash(s string) int {

@@ -75,9 +75,9 @@ type DB struct {
 }
 
 func NewDB() *DB {
-	return &DB{
-		values: concurrency.NewConcurrentMap(256),
-	}
+	db := &DB{}
+	db.values.Initialize(256)
+	return db
 }
 
 func (db *DB) Get(_ context.Context, key string, opt types.ReadOption) (types.Value, error) {

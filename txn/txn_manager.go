@@ -88,8 +88,6 @@ func NewTransactionManagerWithOracle(
 	clearWorkerNum, ioWorkerNum int,
 	oracle oracle.Oracle) *TransactionManager {
 	tm := (&TransactionManager{
-		txns: concurrency.NewConcurrentTxnMap(32),
-
 		kv:  kv,
 		cfg: cfg,
 
@@ -98,6 +96,7 @@ func NewTransactionManagerWithOracle(
 			ioJobScheduler:    scheduler.NewConcurrentListScheduler(MaxTaskBuffered, ioWorkerNum, 1),
 		},
 	}).createStore()
+	tm.txns.Initialize(32)
 	if oracle != nil {
 		tm.oracle.Store(oracle)
 	}

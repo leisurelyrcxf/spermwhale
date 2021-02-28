@@ -55,10 +55,10 @@ type ListScheduler struct {
 func NewListScheduler(maxBufferedTask, workerNumber int) *ListScheduler {
 	b := &ListScheduler{
 		taskLists:    make(chan *list, maxBufferedTask),
-		taskListMap:  concurrency.NewConcurrentMap(16),
 		workerNumber: workerNumber,
 		lm:           concurrency.NewLockManager(),
 	}
+	b.taskListMap.Initialize(16)
 	b.start()
 	return b
 }

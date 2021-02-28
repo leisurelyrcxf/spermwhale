@@ -74,12 +74,11 @@ type ConcurrentTxnMap struct {
 	partitions []*concurrentTxnMapPartition
 }
 
-func NewConcurrentTxnMap(partitionNum int) ConcurrentTxnMap {
-	cm := ConcurrentTxnMap{partitions: make([]*concurrentTxnMapPartition, partitionNum)}
-	for i := 0; i < partitionNum; i++ {
-		cm.partitions[i] = &concurrentTxnMapPartition{m: make(map[types.TxnId]interface{})}
+func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
+	cmp.partitions = make([]*concurrentTxnMapPartition, partitionNum)
+	for i := range cmp.partitions {
+		cmp.partitions[i] = &concurrentTxnMapPartition{m: make(map[types.TxnId]interface{})}
 	}
-	return cm
 }
 
 func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {

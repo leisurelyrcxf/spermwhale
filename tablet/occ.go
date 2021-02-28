@@ -20,9 +20,9 @@ type TimestampCache struct {
 }
 
 func NewTimestampCache() *TimestampCache {
-	return &TimestampCache{
-		m: concurrency.NewConcurrentMap(64),
-	}
+	tc := &TimestampCache{}
+	tc.m.Initialize(64)
+	return tc
 }
 
 func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
