@@ -6,12 +6,11 @@ import (
 	"net"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"google.golang.org/grpc"
 
 	"github.com/golang/glog"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -34,7 +33,7 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.TxnGetResponse{
-			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
@@ -50,7 +49,7 @@ func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSet
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.TxnSetResponse{
-			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.TxnSetResponse{
 		Txn: txn.ToPB(),
@@ -62,7 +61,7 @@ func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.RollbackResponse{
-			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.RollbackResponse{
 		Txn: txn.ToPB(),
@@ -73,7 +72,7 @@ func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.Com
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {
 		return &txnpb.CommitResponse{
-			Txn: NewTransactionInfo(types.TxnId(req.TxnId), types.TxnStateInvalid).ToPB(), Err: errors.ToPBError(err)}, nil
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.CommitResponse{
 		Txn: txn.ToPB(),

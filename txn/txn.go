@@ -59,6 +59,13 @@ func NewTransactionInfo(id types.TxnId, state types.TxnState) TransactionInfo {
 	}
 }
 
+func InvalidTransactionInfo(id types.TxnId) TransactionInfo {
+	return TransactionInfo{
+		ID:    id,
+		State: types.TxnStateInvalid,
+	}
+}
+
 func (i *TransactionInfo) GetId() types.TxnId {
 	return i.ID
 }
@@ -535,7 +542,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 	// thus implement the safe-rollback functionality
 	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID.Version()), types.WriteOption{})
 	if err != nil {
-		glog.Errorf("[writeTxnRecord] write transaction record failed: %v", err)
+		glog.V(4).Infof("[writeTxnRecord] write transaction record failed: %v", err)
 	}
 	return err
 }

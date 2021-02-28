@@ -3,6 +3,8 @@ package txn
 import (
 	"context"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
@@ -29,16 +31,16 @@ func NewClient(serverAddr string) (*Client, error) {
 func (c *Client) Begin(ctx context.Context) (TransactionInfo, error) {
 	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{})
 	if err != nil {
-		return TransactionInfo{}, err
+		return InvalidTransactionInfo(0), err
 	}
 	if resp == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp == nil")
+		return InvalidTransactionInfo(0), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp == nil")
 	}
 	if resp.Err != nil {
-		return TransactionInfo{}, errors.NewErrorFromPB(resp.Err)
+		return InvalidTransactionInfo(0), errors.NewErrorFromPB(resp.Err)
 	}
 	if resp.Txn == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp.Txn == nil")
+		return InvalidTransactionInfo(0), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Begin resp.Txn == nil")
 	}
 	return NewTransactionInfoFromPB(resp.Txn), nil
 }
@@ -49,15 +51,16 @@ func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return types.EmptyValue, TransactionInfo{}, err
+		return types.EmptyValue, InvalidTransactionInfo(txnID), err
 	}
 	if resp == nil {
-		return types.EmptyValue, TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
+		return types.EmptyValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
 	}
 	if resp.Txn == nil {
-		return types.EmptyValue, TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "resp.Txn == nil")
+		return types.EmptyValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "resp.Txn == nil")
 	}
 	txnInfo := NewTransactionInfoFromPB(resp.Txn)
+	assert.Must(txnInfo.ID == txnID)
 	if resp.Err != nil {
 		return types.EmptyValue, txnInfo, errors.NewErrorFromPB(resp.Err)
 	}
@@ -77,14 +80,15 @@ func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.Tx
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return TransactionInfo{}, err
+		return InvalidTransactionInfo(txnID), err
 	}
 	if resp == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp == nil")
 	}
 	if resp.Txn == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp.Txn == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp.Txn == nil")
 	}
+	assert.Must(types.TxnId(resp.Txn.Id) == txnID)
 	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
 
@@ -93,14 +97,15 @@ func (c *Client) Commit(ctx context.Context, txnID types.TxnId) (TransactionInfo
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return TransactionInfo{}, err
+		return InvalidTransactionInfo(txnID), err
 	}
 	if resp == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp == nil")
 	}
 	if resp.Txn == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp.Txn == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Commit resp.Txn == nil")
 	}
+	assert.Must(types.TxnId(resp.Txn.Id) == txnID)
 	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
 
@@ -109,13 +114,13 @@ func (c *Client) Rollback(ctx context.Context, txnID types.TxnId) (TransactionIn
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return TransactionInfo{}, err
+		return InvalidTransactionInfo(txnID), err
 	}
 	if resp == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp == nil")
 	}
 	if resp.Txn == nil {
-		return TransactionInfo{}, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp.Txn == nil")
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Rollback resp.Txn == nil")
 	}
 	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
 }
@@ -155,32 +160,28 @@ type ClientTxn struct {
 
 func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
 	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID)
-	if txn.ID == txnInfo.ID {
-		txn.TransactionInfo = txnInfo
-	}
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
 	return val, err
 }
 
 func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
 	txnInfo, err := txn.c.Set(ctx, key, val, txn.ID)
-	if txn.ID == txnInfo.ID {
-		txn.TransactionInfo = txnInfo
-	}
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
 	return err
 }
 
 func (txn *ClientTxn) Commit(ctx context.Context) error {
 	txnInfo, err := txn.c.Commit(ctx, txn.ID)
-	if txn.ID == txnInfo.ID {
-		txn.TransactionInfo = txnInfo
-	}
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
 	return err
 }
 
 func (txn *ClientTxn) Rollback(ctx context.Context) error {
 	txnInfo, err := txn.c.Rollback(ctx, txn.ID)
-	if txn.ID == txnInfo.ID {
-		txn.TransactionInfo = txnInfo
-	}
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
 	return err
 }

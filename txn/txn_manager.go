@@ -11,11 +11,11 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
-const MaxTaskBuffered = 1024
+const MaxTaskBuffered = 10000
 
 type Scheduler struct {
 	clearJobScheduler *scheduler.BasicScheduler
-	ioJobScheduler    *scheduler.ListScheduler
+	ioJobScheduler    *scheduler.ConcurrentListScheduler
 }
 
 func (s *Scheduler) ScheduleClearJob(t *types.Task) error {
@@ -57,7 +57,7 @@ func NewTransactionManager(
 
 		s: &Scheduler{
 			clearJobScheduler: scheduler.NewBasicScheduler(MaxTaskBuffered, clearWorkerNum),
-			ioJobScheduler:    scheduler.NewListScheduler(MaxTaskBuffered, ioWorkerNum),
+			ioJobScheduler:    scheduler.NewConcurrentListScheduler(ioWorkerNum, MaxTaskBuffered, 1),
 		},
 	}).createStore()
 	return tm

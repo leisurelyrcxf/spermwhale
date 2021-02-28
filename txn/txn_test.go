@@ -60,9 +60,9 @@ func isMain() bool {
 
 func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
-	for _, threshold := range []int{1000, 100, 10, 5} {
+	for _, threshold := range []int{10000} {
 		for i := 0; i < 2; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -77,7 +77,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.SetStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
+	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m)
 	assert := testifyassert.New(t)
 
