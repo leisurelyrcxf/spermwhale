@@ -3,14 +3,14 @@ package types
 import (
 	"context"
 
+	. "github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 )
 
 type ReadOption struct {
-	Version                 uint64
-	ExactVersion            bool
-	NotUpdateTimestampCache bool
-	GetMaxReadVersion       bool
+	Version uint64
+	flag    uint8
 }
 
 func NewReadOption(version uint64) ReadOption {
@@ -21,40 +21,46 @@ func NewReadOption(version uint64) ReadOption {
 
 func NewReadOptionFromPB(x *commonpb.ReadOption) ReadOption {
 	return ReadOption{
-		Version:                 x.Version,
-		ExactVersion:            x.ExactReadVersion,
-		NotUpdateTimestampCache: x.NotUpdateTimestampCache,
-		GetMaxReadVersion:       x.GetMaxReadVersion,
+		Version: x.Version,
+		flag:    x.GetFlagSafe(),
 	}
 }
 
 func (opt ReadOption) ToPB() *commonpb.ReadOption {
-	return &commonpb.ReadOption{
-		Version:                 opt.Version,
-		ExactReadVersion:        opt.ExactVersion,
-		NotUpdateTimestampCache: opt.NotUpdateTimestampCache,
-		GetMaxReadVersion:       opt.GetMaxReadVersion,
-	}
+	return (&commonpb.ReadOption{
+		Version: opt.Version,
+	}).SetFlagSafe(opt.flag)
 }
 
 func (opt ReadOption) WithExactVersion() ReadOption {
-	opt.ExactVersion = true
+	opt.flag |= ReadOptBitMaskExactVersion
 	return opt
 }
 
 func (opt ReadOption) WithNotUpdateTimestampCache() ReadOption {
-	opt.NotUpdateTimestampCache = true
+	opt.flag |= ReadOptBitMaskNotUpdateTimestampCache
 	return opt
 }
 
-func (opt ReadOption) WithGetMaxReadVersion() ReadOption {
-	opt.GetMaxReadVersion = true
+func (opt ReadOption) WithNotGetMaxReadVersion() ReadOption {
+	opt.flag |= ReadOptBitMaskNotGetMaxReadVersion
 	return opt
+}
+
+func (opt ReadOption) IsGetExactVersion() bool {
+	return opt.flag&ReadOptBitMaskExactVersion > 0
+}
+
+func (opt ReadOption) IsNotUpdateTimestampCache() bool {
+	return opt.flag&ReadOptBitMaskNotUpdateTimestampCache > 0
+}
+
+func (opt ReadOption) IsNotGetMaxReadVersion() bool {
+	return opt.flag&ReadOptBitMaskNotGetMaxReadVersion > 0
 }
 
 type WriteOption struct {
-	ClearWriteIntent bool
-	RemoveVersion    bool
+	flag uint8
 }
 
 func NewWriteOption() WriteOption {
@@ -63,26 +69,30 @@ func NewWriteOption() WriteOption {
 
 func NewWriteOptionFromPB(x *commonpb.WriteOption) WriteOption {
 	return WriteOption{
-		ClearWriteIntent: x.ClearWriteIntent,
-		RemoveVersion:    x.RemoveVersion,
+		flag: x.GetFlagSafe(),
 	}
 }
 
 func (opt *WriteOption) ToPB() *commonpb.WriteOption {
-	return &commonpb.WriteOption{
-		ClearWriteIntent: opt.ClearWriteIntent,
-		RemoveVersion:    opt.RemoveVersion,
-	}
+	return (&commonpb.WriteOption{}).SetFlagSafe(opt.flag)
 }
 
 func (opt WriteOption) WithClearWriteIntent() WriteOption {
-	opt.ClearWriteIntent = true
+	opt.flag |= WriteOptBitMaskClearWriteIntent
 	return opt
 }
 
 func (opt WriteOption) WithRemoveVersion() WriteOption {
-	opt.RemoveVersion = true
+	opt.flag |= WriteOptBitMaskRemoveVersion
 	return opt
+}
+
+func (opt WriteOption) IsClearWriteIntent() bool {
+	return opt.flag&WriteOptBitMaskClearWriteIntent > 0
+}
+
+func (opt WriteOption) IsRemoveVersion() bool {
+	return opt.flag&WriteOptBitMaskRemoveVersion > 0
 }
 
 type KV interface {

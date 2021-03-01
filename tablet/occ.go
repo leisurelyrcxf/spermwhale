@@ -80,7 +80,12 @@ func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *KVCC {
 }
 
 func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
-	if opt.NotUpdateTimestampCache && !opt.GetMaxReadVersion {
+	var (
+		exactVersion         = opt.IsGetExactVersion()
+		updateTimestampCache = !opt.IsNotUpdateTimestampCache()
+		getMaxReadVersion    = !opt.IsNotUpdateTimestampCache()
+	)
+	if !updateTimestampCache && !getMaxReadVersion {
 		return kv.db.Get(ctx, key, opt)
 	}
 
@@ -91,28 +96,30 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (type
 	defer kv.lm.RUnlock(key)
 
 	var maxReadVersion uint64
-	if !opt.NotUpdateTimestampCache {
+	if updateTimestampCache {
 		readVersion := opt.Version
-		if opt.ExactVersion {
+		if exactVersion {
 			types.SafeIncr(&readVersion) // prevent future write of opt.Version
 		}
 		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, readVersion)
 	}
 	//kv.lm.RUnlock(key) if put here performance will down for read-for-write txn, reason unknown.
 	val, err := kv.db.Get(ctx, key, opt)
-	assert.Must(err != nil || (opt.ExactVersion && val.Version == opt.Version) || (!opt.ExactVersion && val.Version <= opt.Version))
-	if opt.GetMaxReadVersion {
+	assert.Must(err != nil || (exactVersion && val.Version == opt.Version) || (!exactVersion && val.Version <= opt.Version))
+	if getMaxReadVersion {
 		//noinspection ALL
-		if maxReadVersion > 0 {
-			return val.WithMaxReadVersion(maxReadVersion), err
+		if maxReadVersion <= opt.Version {
+			maxReadVersion = kv.tsCache.GetMaxReadVersion(key)
 		}
-		return val.WithMaxReadVersion(kv.tsCache.GetMaxReadVersion(key)), err
+		if maxReadVersion > opt.Version {
+			return val.WithMaxReadVersionBiggerThanRequested(), err
+		}
 	}
 	return val, err
 }
 
 func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
-	if !val.WriteIntent {
+	if !val.HasWriteIntent() {
 		return kv.db.Set(ctx, key, val, opt)
 	}
 

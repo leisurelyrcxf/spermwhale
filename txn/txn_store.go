@@ -14,7 +14,7 @@ import (
 )
 
 func getValueWrittenByTxn(ctx context.Context, kv types.KV, key string, txn types.TxnId, maxRetry int, preventFutureWrite bool) (val types.Value, exists bool, err error) {
-	readOpt := types.NewReadOption(txn.Version()).WithExactVersion().WithGetMaxReadVersion()
+	readOpt := types.NewReadOption(txn.Version()).WithExactVersion()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
@@ -43,7 +43,7 @@ type TransactionStore struct {
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
 	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, err error) {
-	readOpt := types.NewReadOption(types.MaxTxnVersion)
+	readOpt := types.NewReadOption(types.MaxTxnVersion).WithNotGetMaxReadVersion()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
@@ -101,7 +101,7 @@ func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID typ
 		// nothing to rollback
 		return txn, nil
 	}
-	if !vv.WriteIntent {
+	if !vv.HasWriteIntent() {
 		// case 2
 		txn.State = types.TxnStateCommitted
 		return txn, nil

@@ -85,14 +85,14 @@ func (db *DB) Get(_ context.Context, key string, opt types.ReadOption) (types.Va
 	if err != nil {
 		return types.EmptyValue, err
 	}
-	if opt.ExactVersion {
+	if opt.IsGetExactVersion() {
 		return vvs.Get(opt.Version)
 	}
 	return vvs.FindMaxBelow(opt.Version)
 }
 
 func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.WriteOption) error {
-	if opt.ClearWriteIntent {
+	if opt.IsClearWriteIntent() {
 		vvs, err := db.getVersionedValues(key)
 		if err != nil {
 			return errors.Annotatef(err, "key: %s", key)
@@ -101,12 +101,12 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 		if err != nil {
 			return errors.Annotatef(err, "key: %s", key)
 		}
-		vv.Meta.WriteIntent = false
+		vv.Meta.ClearWriteIntent()
 		vvs.Put(vv)
 		return nil
 	}
-	if opt.RemoveVersion {
-		if val.WriteIntent {
+	if opt.IsRemoveVersion() {
+		if val.HasWriteIntent() {
 			return errors.Annotatef(errors.ErrNotSupported, "soft remove")
 		}
 		vvs, err := db.getVersionedValues(key)
@@ -118,7 +118,7 @@ func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.Writ
 			assert.Must(errors.GetErrorCode(err) == consts.ErrCodeVersionNotExists)
 			return nil
 		}
-		if !prevVal.WriteIntent {
+		if !prevVal.HasWriteIntent() {
 			assert.Must(false)
 			return errors.ErrCantRemoveCommittedValue
 		}

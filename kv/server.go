@@ -23,7 +23,7 @@ type Stub struct {
 func (stub *Stub) Get(ctx context.Context, req *tabletpb.GetRequest) (*tabletpb.GetResponse, error) {
 	opt := types.NewReadOptionFromPB(req.Opt)
 	if stub.outerService {
-		opt = opt.WithNotUpdateTimestampCache()
+		opt = opt.WithNotUpdateTimestampCache().WithNotGetMaxReadVersion()
 	}
 	vv, err := stub.kv.Get(ctx, req.Key, opt)
 	//noinspection ALL

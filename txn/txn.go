@@ -89,15 +89,16 @@ type Txn struct {
 
 	WrittenKeys []string
 
-	writeKeyTasks      []*types.ListTask
-	lastWriteKeyTasks  map[string]*types.ListTask
-	txnRecordTask      *types.ListTask
-	allIOTasksFinished bool
-	cfg                types.TxnConfig
-	kv                 types.KV
-	store              *TransactionStore
-	s                  *Scheduler
-	h                  TransactionHolder
+	writeKeyTasks           []*types.ListTask
+	lastWriteKeyTasks       map[string]*types.ListTask
+	txnRecordTask           *types.ListTask
+	preventFutureWriteFlags map[string]bool
+	allIOTasksFinished      bool
+	cfg                     types.TxnConfig
+	kv                      types.KV
+	store                   *TransactionStore
+	s                       *Scheduler
+	h                       TransactionHolder
 
 	sync.Mutex `json:"-"`
 }
@@ -112,12 +113,13 @@ func NewTxn(
 			ID:    id,
 			State: types.TxnStateUncommitted,
 		},
-		lastWriteKeyTasks: make(map[string]*types.ListTask),
-		cfg:               cfg,
-		kv:                kv,
-		store:             store,
-		s:                 s,
-		h:                 holder,
+		lastWriteKeyTasks:       make(map[string]*types.ListTask),
+		preventFutureWriteFlags: make(map[string]bool),
+		cfg:                     cfg,
+		kv:                      kv,
+		store:                   store,
+		s:                       s,
+		h:                       holder,
 	}
 }
 
@@ -159,14 +161,18 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 			return types.EmptyValue, errors.Annotatef(lastWriteTask.Err(), "read aborted due to previous write task failed")
 		}
 	}
-	if vv, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version())); err != nil {
+	vv, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()))
+	if vv.IsMaxReadVersionBiggerThanRequested() {
+		txn.preventFutureWriteFlags[key] = true
+	}
+	if err != nil {
 		return types.EmptyValue, err
 	}
 	if lastWriteTask != nil && vv.Version != txn.ID.Version() {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: previous write intent disappeared probably rollbacked")
 	}
 	if vv.Version == txn.ID.Version() /* read after write */ ||
-		!vv.Meta.WriteIntent /* committed value */ {
+		!vv.Meta.HasWriteIntent() /* committed value */ {
 		return vv, nil
 	}
 	assert.Must(vv.Version < txn.ID.Version())
@@ -221,7 +227,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, key
 			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version())
-				if !vv.WriteIntent {
+				if !vv.HasWriteIntent() {
 					txn.State = types.TxnStateCommitted
 					txn.onCommitted(callerTxn, fmt.Sprintf("found committed during CheckCommitState: key '%s' committed", key)) // help commit since original txn coordinator may have gone
 					return true, false
@@ -233,7 +239,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, key
 				_ = txn.rollback(ctx, callerTxn, true, "previous write intent disappeared") // help rollback since original txn coordinator may have gone
 				return false, true
 			}
-			if vv.MaxReadVersion > txn.ID.Version() {
+			if vv.IsMaxReadVersionBiggerThanRequested() {
 				txn.State = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, callerTxn, true, "found non exist key during CheckCommitState and is impossible to succeed in the future") // help rollback since original txn coordinator may have gone
 				return false, true
@@ -265,6 +271,10 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 
 	if txn.State != types.TxnStateUncommitted {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State)
+	}
+
+	if txn.preventFutureWriteFlags[key] {
+		return errors.Annotatef(errors.ErrTransactionConflict, "txn.preventFutureWriteFlags['%s']==true", key)
 	}
 
 	writeVal := types.NewValue(val, txn.ID.Version())
@@ -358,7 +368,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 				glog.Errorf("[Commit] can't get key info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
 				return recordErr
 			}
-			if keyExists && !val.WriteIntent {
+			if keyExists && !val.HasWriteIntent() {
 				// case 2
 				assert.Must(val.Version == txn.ID.Version())
 				txn.State = types.TxnStateCommitted
@@ -454,7 +464,7 @@ func (txn *Txn) getAnyValueWrittenWithRetry(ctx context.Context, maxRetry int) (
 	for i := 0; i < maxRetry; {
 		for _, key := range txn.WrittenKeys {
 			ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-			val, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).WithExactVersion().WithNotUpdateTimestampCache())
+			val, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).WithExactVersion().WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
 			cancel()
 			if err == nil || errors.IsNotExistsErr(err) {
 				return key, val, err == nil, nil

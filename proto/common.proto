@@ -11,8 +11,7 @@ message Error {
 
 message ValueMeta {
     uint64 version = 1;
-    bool write_intent = 2;
-    uint64 max_read_version = 3;
+    uint32 flag = 2;
 }
 
 message Value {
@@ -22,12 +21,9 @@ message Value {
 
 message ReadOption {
     uint64 version = 1;
-    bool exact_read_version = 2;
-    bool not_update_timestamp_cache = 3;
-    bool get_max_read_version = 4;
+    uint32 flag = 2;
 }
 
 message WriteOption {
-    bool clear_write_intent = 1;
-    bool remove_version = 2;
+    uint32 flag = 1;
 }
