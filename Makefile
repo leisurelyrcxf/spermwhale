@@ -16,13 +16,17 @@ deps:
 	env GO111MODULE=on go mod download
 	env GO111MODULE=on go mod vendor
 
-binary:
-	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o sptablet ./cmd/tablet
-	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o sporacle ./cmd/oracle
-	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spgate ./cmd/gate
+server:
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spwtablet ./cmd/tablet
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spworacle ./cmd/oracle
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spwgate ./cmd/gate
+
+client:
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spwclient ./cmd/txn_client
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo" -installsuffix netgo -o spwkvclient ./cmd/kv_client
 
 
-build: deps binary
+build: deps server client
 
 clean-build: clean build
 

@@ -19,6 +19,7 @@ const (
 	ErrCodeReadFailedToWaitWriteTask     = 555
 	ErrCodeDontUseThisBeforeTaskFinished = 666
 	ErrCodeInvalidTopoData               = 777
+	ErrCodeCantGetOracle                 = 888
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
 	ErrCodeAssertFailed                  = 22222

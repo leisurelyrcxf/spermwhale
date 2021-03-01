@@ -21,3 +21,10 @@ const (
 	ValueMetaBitMaskHasWriteIntent                    = 1
 	ValueMetaBitMaskMaxReadVersionBiggerThanRequested = 1 << 1
 )
+
+const (
+	DefaultTabletServerPort = 20000
+	DefaultOracleServerPort = 5555
+	DefaultTxnServerPort    = 9999
+	DefaultKVServerPort     = 10001
+)

@@ -221,7 +221,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn types.TxnId, key
 		}
 		notInKeysLen := len(notInKeys)
 		for idx, key := range append(notInKeys, inKeys...) {
-			vv, exists, err := getValueWrittenByTxn(ctx, txn.kv, key, txn.ID, maxRetry, callerTxn == txn.ID)
+			vv, exists, err := getValueWrittenByTxnWithRetry(ctx, txn.kv, key, txn.ID, maxRetry, callerTxn == txn.ID)
 			if err != nil {
 				return false, false
 			}
@@ -424,11 +424,11 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		return nil
 	}
 
-	var verbose glog.Level = 10
 	if callerTxn != txn.ID {
-		verbose = 5
+		glog.V(5).Infof("rollbacking txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
+	} else {
+		glog.V(10).Infof("rollbacking txn %d..., reason: '%v'", txn.ID, reason)
 	}
-	glog.V(verbose).Infof("rollbacking txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
 
 	if txn.State != types.TxnStateUncommitted && txn.State != types.TxnStateRollbacking {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s or %s, but got %s", types.TxnStateUncommitted, types.TxnStateRollbacking, txn.State)
@@ -461,22 +461,21 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 }
 
 func (txn *Txn) getAnyValueWrittenWithRetry(ctx context.Context, maxRetry int) (key string, val types.Value, exists bool, err error) {
-	for i := 0; i < maxRetry; {
+	for i := 0; ; {
+		assert.Must(len(txn.WrittenKeys) > 0)
 		for _, key := range txn.WrittenKeys {
-			ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			val, err = txn.kv.Get(ctx, key, types.NewReadOption(txn.ID.Version()).WithExactVersion().WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
-			cancel()
 			if err == nil || errors.IsNotExistsErr(err) {
 				return key, val, err == nil, nil
 			}
 			glog.Warningf("[getAnyValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 			time.Sleep(time.Second)
-			i++
+			if i += 1; i > maxRetry || ctx.Err() != nil {
+				glog.Errorf("[getAnyValueWrittenByTxn] txn.kv.Get returns unexpected error: %v", err)
+				return "", types.Value{}, false, err
+			}
 		}
 	}
-	assert.Must(err != nil)
-	glog.Errorf("[getAnyValueWrittenByTxn] txn.kv.Get returns unexpected error: %v", err)
-	return "", types.Value{}, false, err
 }
 
 func (txn *Txn) Encode() []byte {

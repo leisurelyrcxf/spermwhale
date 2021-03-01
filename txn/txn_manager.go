@@ -179,7 +179,10 @@ func (m *TransactionManager) syncOracle() error {
 }
 
 func (m *TransactionManager) GetOracle() oracle.Oracle {
-	return m.oracle.Load().(oracle.Oracle)
+	if v, ok := m.oracle.Load().(oracle.Oracle); ok {
+		return v
+	}
+	return nil
 }
 
 func (m *TransactionManager) watchOracle() error {
@@ -189,7 +192,7 @@ func (m *TransactionManager) watchOracle() error {
 	}
 
 	if errors.IsNotSupportedErr(err) {
-		if m.oracle.Load() != nil {
+		if m.GetOracle() != nil {
 			return nil
 		}
 		return err

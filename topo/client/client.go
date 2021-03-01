@@ -1,6 +1,8 @@
 package client
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -41,4 +43,14 @@ func TargetAddr(c Client) string {
 		return "8.8.8.8:53"
 	}
 	return c.AddrList()
+}
+
+var SupportedCoordinators = []string{"etcdclient", "fs", "filesystem"}
+
+func SupportedCoordinatorsDesc() string {
+	xs := make([]string, len(SupportedCoordinators))
+	for i, v := range SupportedCoordinators {
+		xs[i] = fmt.Sprintf("'%s'", v)
+	}
+	return strings.Join(xs, ", ")
 }

@@ -13,22 +13,25 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-func getValueWrittenByTxn(ctx context.Context, kv types.KV, key string, txn types.TxnId, maxRetry int, preventFutureWrite bool) (val types.Value, exists bool, err error) {
+func getValueWrittenByTxnWithRetry(ctx context.Context, kv types.KV, key string, txn types.TxnId, maxRetry int, preventFutureWrite bool) (val types.Value, exists bool, err error) {
 	readOpt := types.NewReadOption(txn.Version()).WithExactVersion()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
-	for i := 0; i < maxRetry; i++ {
-		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	for i := 0; i < maxRetry && ctx.Err() == nil; i++ {
 		val, err = kv.Get(ctx, key, readOpt)
-		cancel()
 		if err == nil || errors.IsNotExistsErr(err) {
 			return val, err == nil, nil
 		}
-		glog.Warningf("[getValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
+		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 		time.Sleep(time.Second)
 	}
-	assert.Must(err != nil)
+	if err == nil {
+		ctxErr := ctx.Err()
+		assert.Must(ctxErr != nil)
+		glog.Errorf("kv.Get returns unexpected error: %v", ctxErr)
+		return val, false, ctxErr
+	}
 	glog.Errorf("kv.Get returns unexpected error: %v", err)
 	return val, false, err
 }
@@ -47,11 +50,9 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
-	for i := 0; i < maxRetryTimes; i++ {
+	for i := 0; i < maxRetryTimes && ctx.Err() == nil; i++ {
 		var txnRecordData types.Value
-		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		txnRecordData, err = s.kv.Get(ctx, TransactionKey(txnID), readOpt)
-		cancel()
 		if err == nil {
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
 			txn, err := DecodeTxn(txnRecordData.V)
@@ -69,7 +70,10 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 		}
 		time.Sleep(time.Second)
 	}
-	assert.Must(err != nil)
+	if err == nil {
+		assert.Must(ctx.Err() != nil)
+		return nil, false, ctx.Err()
+	}
 	return nil, false, err
 }
 
@@ -89,7 +93,7 @@ func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID typ
 	// 1. transaction has been rollbacked, conflictedKey must be gone
 	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 	// 3. transaction neither committed nor rollbacked
-	vv, keyExists, keyErr := getValueWrittenByTxn(ctx, s.kv, conflictedKey, txnID, 2, false)
+	vv, keyExists, keyErr := getValueWrittenByTxnWithRetry(ctx, s.kv, conflictedKey, txnID, 2, false)
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
 		return nil, keyErr

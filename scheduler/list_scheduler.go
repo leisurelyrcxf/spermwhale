@@ -5,6 +5,9 @@ import (
 	"hash/crc32"
 	"sync"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -151,7 +154,7 @@ func (s *ListScheduler) start() {
 				assert.Must(firstTask != nil)
 				for task := firstTask; ; {
 					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled {
+						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
 							glog.Errorf("task %s failed: %v", task.Name, err)
 						}
 					}

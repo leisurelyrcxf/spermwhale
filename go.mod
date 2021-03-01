@@ -3,6 +3,7 @@ module github.com/leisurelyrcxf/spermwhale
 go 1.14
 
 require (
+	github.com/c-bata/go-prompt v0.2.5
 	github.com/coreos/etcd v3.3.25+incompatible // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
@@ -20,4 +21,5 @@ require (
 )
 
 replace github.com/coreos/etcd => github.com/ozonru/etcd v3.3.20-grpc1.27-origmodule+incompatible
+
 replace google.golang.org/grpc => google.golang.org/grpc v1.27.0

@@ -39,13 +39,21 @@ func MustFetchTimestamp(oracleFac oracle.Factory) uint64 {
 }
 
 func FetchTimestampWithRetry(oracleFac oracle.Factory) (ts uint64, err error) {
-	for i := 0; i < 30; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
-		ts, err = oracleFac.GetOracle().FetchTimestamp(ctx)
-		cancel()
+	parentCtx, parentCancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer parentCancel()
+
+	for parentCtx.Err() == nil {
+		ora := oracleFac.GetOracle()
+		if ora == nil {
+			err = errors.ErrCantGetOracle
+			glog.Warningf("oracleFac.GetOracle() == nil")
+			continue
+		}
+		ts, err = ora.FetchTimestamp(parentCtx)
 		if err == nil {
 			return ts, nil
 		}
+		glog.Warningf("fetch timestamp failed: '%v'", err)
 		time.Sleep(time.Second)
 	}
 	assert.Must(err != nil)

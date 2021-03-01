@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
@@ -17,9 +18,9 @@ import (
 )
 
 func main() {
-	cmd.RegisterPortFlags(5555)
-	flagAllocInAdvance := flag.Uint64("alloc-in-advance", 1000, "pre-allocate size")
-	flagLogical := flag.Bool("logical", false, "logical oracle")
+	cmd.RegisterPortFlags(consts.DefaultOracleServerPort)
+	flagAllocInAdvance := flag.Uint64("alloc-in-advance", 1000, "pre-allocate size, only used when --logical is set")
+	flagLogical := flag.Bool("logical", false, "logical oracle, do not use this because this is not compatible with txn framework!")
 
 	cmd.RegisterStoreFlags()
 	flag.Parse()

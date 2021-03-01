@@ -4,62 +4,27 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
-	"runtime/debug"
 	"sort"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/gate"
-
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
-
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/gate"
 	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/tablet"
 	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
-
-var defaultTxnConfig = types.TxnConfig{
-	StaleWriteThreshold: time.Millisecond * 5,
-	MaxClockDrift:       time.Millisecond,
-}
-
-type MyT struct {
-	t *testing.T
-}
-
-func NewT(t *testing.T) MyT {
-	return MyT{
-		t: t,
-	}
-}
-
-func (t MyT) Errorf(format string, args ...interface{}) {
-	if isMain() {
-		t.t.Errorf(format, args...)
-		return
-	}
-	print(fmt.Sprintf(format, args...))
-	_ = os.Stderr.Sync()
-	os.Exit(1)
-}
-
-func isMain() bool {
-	ss := string(debug.Stack())
-	return strings.Contains(ss, "testing.(*T).Run")
-}
 
 func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
-	for _, threshold := range []int{10000} {
+	for _, threshold := range []int{10} {
 		for i := 0; i < 2; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -76,7 +41,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -148,22 +113,22 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	return true
 }
 
-func TestTxnReadAfterWrite(t *testing.T) {
+func TestTxnReadWriteAfterWrite(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 0))
 
-	for _, threshold := range []int{1000, 100, 10, 5} {
-		for i := 0; i < 100; i++ {
-			if !testifyassert.True(t, testTxnReadAfterWrite(t, i, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestTxnReadAfterWrite failed @round %d", i)
+	for _, threshold := range []int{10} {
+		for i := 0; i < rounds; i++ {
+			if !testifyassert.True(t, testTxnReadWriteAfterWrite(t, i, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestTxnReadWriteAfterWrite failed @round %d", i)
 				return
 			}
 		}
 	}
 }
 
-func testTxnReadAfterWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnReadAfterWrite @round %d", round)
+func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testTxnReadWriteAfterWrite @round %d", round)
 
 	db := memory.NewDB()
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
@@ -202,6 +167,12 @@ func testTxnReadAfterWrite(t *testing.T, round int, staleWriteThreshold time.Dur
 				}
 				v1 += delta
 
+				if err := txn.Set(ctx, "k1", types.IntValue(v1-1).V); err != nil {
+					return err
+				}
+				if err := txn.Set(ctx, "k1", types.IntValue(v1-3).V); err != nil {
+					return err
+				}
 				if err := txn.Set(ctx, "k1", types.IntValue(v1).V); err != nil {
 					return err
 				}
@@ -237,10 +208,10 @@ func testTxnReadAfterWrite(t *testing.T, round int, staleWriteThreshold time.Dur
 
 func TestTxnLostUpdateWithSomeAborted(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 10-1))
+	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
-	for _, threshold := range []int{5, 10, 100, 1000} {
-		for i := 0; i < 100; i++ {
+	for _, threshold := range []int{10, 100} {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testTxnLostUpdateWithSomeAborted(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdateWithSomeAborted failed @round %d", i)
 				return
@@ -256,7 +227,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -331,10 +302,10 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 
 func TestTxnLostUpdateWithSomeAborted2(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 10-1))
+	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
 	for _, threshold := range []int{5, 10, 100, 1000} {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testTxnLostUpdateWithSomeAborted2(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdateWithSomeAborted2 failed @round %d", i)
 				return
@@ -350,7 +321,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -433,7 +404,7 @@ func TestDistributedTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
-		for i := 0; i < 10; i++ {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testDistributedTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnLostUpdate failed @round %d", i)
 				return
@@ -444,7 +415,7 @@ func TestDistributedTxnLostUpdate(t *testing.T) {
 
 func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testDistributedTxnLostUpdate @round %d", round)
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -514,13 +485,13 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 	return true
 }
 
-func TestDistributedTxnConsistency(t *testing.T) {
+func TestDistributedTxnReadConsistency(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
-		for i := 0; i < 10; i++ {
-			if !testifyassert.True(t, testDistributedTxnConsistency(t, i, time.Millisecond*time.Duration(threshold))) {
+		for i := 0; i < rounds; i++ {
+			if !testifyassert.True(t, testDistributedTxnReadConsistency(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnConsistency failed @round %d", i)
 				return
 			}
@@ -528,8 +499,8 @@ func TestDistributedTxnConsistency(t *testing.T) {
 	}
 }
 
-func testDistributedTxnConsistency(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testDistributedTxnConsistency @round %d", round)
+func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testDistributedTxnReadConsistency @round %d", round)
 	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -663,22 +634,22 @@ func testDistributedTxnConsistency(t *testing.T, round int, staleWriteThreshold 
 	return true
 }
 
-func TestDistributedTxnConsistency2(t *testing.T) {
+func TestDistributedTxnConsistencyExtraWrite(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
 		for i := 0; i < 10; i++ {
-			if !testifyassert.True(t, testDistributedTxnConsistency2(t, i, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestDistributedTxnConsistency2 failed @round %d", i)
+			if !testifyassert.True(t, testDistributedTxnConsistencyExtraWrite(t, i, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestDistributedTxnConsistencyExtraWrite failed @round %d", i)
 				return
 			}
 		}
 	}
 }
 
-func testDistributedTxnConsistency2(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testDistributedTxnConsistency2 @round %d", round)
+func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testDistributedTxnConsistencyExtraWrite @round %d", round)
 	assert := testifyassert.New(NewT(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -827,7 +798,7 @@ func TestDistributedTxnWriteSkew(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
-		for i := 0; i < 10; i++ {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testDistributedTxnWriteSkew(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnWriteSkew failed @round %d", i)
 				return
@@ -995,7 +966,7 @@ func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
-		for i := 0; i < 10; i++ {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testDistributedTxnConsistencyIntegrate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnConsistencyIntegrate failed @round %d", i)
 				return
@@ -1005,7 +976,7 @@ func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
 }
 
 func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 	t.Logf("testDistributedTxnConsistencyIntegrate @round %d", round)
 	var (
 		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
@@ -1032,7 +1003,7 @@ func TestDistributedTxnConsistencyStandalone(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < rounds; i++ {
 		if !testifyassert.True(t, testDistributedTxnConsistencyStandalone(t, i)) {
 			t.Errorf("TestDistributedTxnConsistencyStandalone failed @round %d", i)
 			return
@@ -1041,7 +1012,7 @@ func TestDistributedTxnConsistencyStandalone(t *testing.T) {
 }
 
 func testDistributedTxnConsistencyStandalone(t *testing.T, round int) (b bool) {
-	assert := testifyassert.New(t)
+	assert := testifyassert.New(NewT(t))
 	t.Logf("testDistributedTxnConsistencyStandalone @round %d", round)
 	const (
 		port1 = 9999

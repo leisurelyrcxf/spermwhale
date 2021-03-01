@@ -1,6 +1,9 @@
 .idea/*
 *.swp
 vendor/*
-sptablet
-spgate
-sporacle
+spwtablet
+spwgate
+spworacle
+spwclient
+spwkvclient
+*.log

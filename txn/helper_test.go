@@ -2,6 +2,9 @@ package txn
 
 import (
 	"fmt"
+	"os"
+	"runtime/debug"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +20,38 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 	testifyassert "github.com/stretchr/testify/assert"
 )
+
+const rounds = 5
+
+var defaultTxnConfig = types.TxnConfig{
+	StaleWriteThreshold: time.Millisecond * 5,
+	MaxClockDrift:       time.Millisecond,
+}
+
+type MyT struct {
+	t *testing.T
+}
+
+func NewT(t *testing.T) MyT {
+	return MyT{
+		t: t,
+	}
+}
+
+func (t MyT) Errorf(format string, args ...interface{}) {
+	if isMain() {
+		t.t.Errorf(format, args...)
+		return
+	}
+	print(fmt.Sprintf(format, args...))
+	_ = os.Stderr.Sync()
+	os.Exit(1)
+}
+
+func isMain() bool {
+	ss := string(debug.Stack())
+	return strings.Contains(ss, "testing.(*T).Run")
+}
 
 type TxnInfo struct {
 	ID                      uint64

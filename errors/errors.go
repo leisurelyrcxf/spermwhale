@@ -85,4 +85,8 @@ var (
 		Code: consts.ErrCodeInvalidTopoData,
 		Msg:  "invalid topo data",
 	}
+	ErrCantGetOracle = &Error{
+		Code: consts.ErrCodeCantGetOracle,
+		Msg:  "can't get oracle",
+	}
 )

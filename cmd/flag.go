@@ -24,21 +24,23 @@ func RegisterPortFlags(defaultPort int) {
 }
 
 var (
-	flagCoordinatorType     *string
-	flagCoordinatorAddrList *string
-	flagCoordinatorAuth     *string
+	flagCoordinatorType *string
+	flagCoordinatorAddr *string
+	flagCoordinatorAuth *string
 )
 
 func registerCoordinatorFlags() {
-	flagCoordinatorType = flag.String("coordinator", "etcd", "client type")
-	flagCoordinatorAddrList = flag.String("coordinator-addr-list", "127.0.0.1:2379", "coordinator addr list")
+	flagCoordinatorType = flag.String("coordinator", "etcd",
+		"coordinator type, must be one of the following: "+client.SupportedCoordinatorsDesc())
+	flagCoordinatorAddr = flag.String("coordinator-addr", "127.0.0.1:2379",
+		"coordinator addr list, could be form 127.0.0.1:2379,127.0.0.1:12379,,127.0.0.1:22379")
 	flagCoordinatorAuth = flag.String("coordinator-auth", "", "coordinator auth")
 }
 
 func newClient() client.Client {
-	cli, err := client.NewClient(*flagCoordinatorType, *flagCoordinatorAddrList, *flagCoordinatorAuth, time.Minute)
+	cli, err := client.NewClient(*flagCoordinatorType, *flagCoordinatorAddr, *flagCoordinatorAuth, time.Minute)
 	if err != nil {
-		glog.Fatalf("create %s client failed: '%v', addr: %v", *flagCoordinatorType, err, *flagCoordinatorAddrList)
+		glog.Fatalf("create %s client failed: '%v', addr: %v", *flagCoordinatorType, err, *flagCoordinatorAddr)
 	}
 	return cli
 }

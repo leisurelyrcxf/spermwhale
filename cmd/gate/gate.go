@@ -16,8 +16,8 @@ import (
 )
 
 func main() {
-	flagTxnPort := flag.Int("port-txn", 9999, "txn port")
-	flagKVPort := flag.Int("port-kv", 10001, "kv port ")
+	flagTxnPort := flag.Int("port-txn", consts.DefaultTxnServerPort, "txn port")
+	flagKVPort := flag.Int("port-kv", consts.DefaultKVServerPort, "kv port ")
 	flagClearWorkerNum := flag.Int("clear-worker-num", consts.DefaultTxnManagerClearWorkerNumber, "txn manager worker number")
 	flagIOWorkerNum := flag.Int("io-worker-num", consts.DefaultTxnManagerIOWorkerNumber, "txn manager worker number")
 	cmd.RegisterStoreFlags()
