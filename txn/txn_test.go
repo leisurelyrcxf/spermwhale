@@ -113,6 +113,160 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	return true
 }
 
+func TestTxnLostUpdateModAdd(t *testing.T) {
+	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", fmt.Sprintf("%d", 1))
+
+	for _, threshold := range []int{10} {
+		for i := 0; i < rounds; i++ {
+			if !testifyassert.True(t, testTxnLostUpdateModAdd(t, i, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestTxnLostUpdateModAdd failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
+				return
+			}
+		}
+	}
+}
+
+func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("")
+	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
+
+	db := memory.NewDB()
+	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
+	sc := smart_txn_client.NewSmartClient(m, 0)
+	assert := testifyassert.New(NewT(t))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	const (
+		initialValue1   = 101
+		initialValue2   = 222
+		goRoutineNumber = 10000
+		delta           = 6
+	)
+	err := sc.SetInt(ctx, "k1", initialValue1)
+	if !assert.NoError(err) {
+		return
+	}
+	err = sc.SetInt(ctx, "k22", initialValue2)
+	if !assert.NoError(err) {
+		return
+	}
+
+	txns := make([]TxnInfo, goRoutineNumber)
+
+	f1, f2, f3 := func(x int) int {
+		return (x + 5) % 11
+	}, func(x int) int {
+		return (x + 8) % 19
+	}, func(x int) int {
+		return (x + 7) % 23
+	}
+	selector := func(i int, x int) (func(int) int, int) {
+		if i%3 == 0 {
+			return f1, f1(x)
+		}
+		if i%3 == 1 {
+			return f2, f2(x)
+		}
+		return f3, f3(x)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < goRoutineNumber; i++ {
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+
+			var (
+				g1, g2      func(int) int
+				readValues  = map[string]types.Value{}
+				writeValues = map[string]types.Value{}
+			)
+			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+				{
+					val, err := txn.Get(ctx, "k1")
+					if err != nil {
+						return err, true
+					}
+					readValues["k1"] = val
+					v1, err := val.Int()
+					if !assert.NoError(err) {
+						return err, false
+					}
+					g1, v1 = selector(i, v1)
+					writeValue := types.IntValue(v1).WithVersion(txn.GetId().Version())
+					writeValues["k1"] = writeValue
+					if err := txn.Set(ctx, "k1", writeValue.V); err != nil {
+						return err, true
+					}
+				}
+
+				{
+					val, err := txn.Get(ctx, "k22")
+					if err != nil {
+						return err, true
+					}
+					readValues["k22"] = val
+					v2, err := val.Int()
+					if !assert.NoError(err) {
+						return err, false
+					}
+					g2, v2 = selector(i+1, v2)
+					writeValue := types.IntValue(v2).WithVersion(txn.GetId().Version())
+					writeValues["k22"] = writeValue
+					if err := txn.Set(ctx, "k22", writeValue.V); err != nil {
+						return err, true
+					}
+				}
+				return nil, true
+			}, nil, nil); assert.NoError(err) {
+				txns[i] = TxnInfo{
+					ID:             tx.GetId().Version(),
+					State:          tx.GetState(),
+					ReadValues:     readValues,
+					WriteValues:    writeValues,
+					AdditionalInfo: [2]func(int) int{g1, g2},
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	val1, err := sc.GetInt(ctx, "k1")
+	if !assert.NoError(err) {
+		return
+	}
+	val2, err := sc.GetInt(ctx, "k22")
+	if !assert.NoError(err) {
+		return
+	}
+	t.Logf("res_v1: %d, res_v2: %d", val1, val2)
+
+	sort.Sort(SortedTxnInfos(txns))
+	for i := 1; i < len(txns); i++ {
+		prev, cur := txns[i-1], txns[i]
+		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
+			return
+		}
+		if !assert.Equal(prev.ID, cur.ReadValues["k22"].Version) || !assert.Equal(prev.WriteValues["k22"].MustInt(), cur.ReadValues["k22"].MustInt()) {
+			return
+		}
+	}
+
+	v1, v2 := initialValue1, initialValue2
+	for _, txn := range txns {
+		g1, g2 := txn.AdditionalInfo.([2]func(int) int)[0], txn.AdditionalInfo.([2]func(int) int)[1]
+		v1 = g1(v1)
+		v2 = g2(v2)
+	}
+	t.Logf("replay_res_v1 :%d, replay_res_v2 :%d", v1, v2)
+	return assert.Equal(v1, val1) && assert.Equal(v2, val2)
+}
+
 func TestTxnReadWriteAfterWrite(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 0))
@@ -677,7 +831,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 		return
 	}
 	tm := NewTransactionManager(gAte, cfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm, 0)
+	sc := smart_txn_client.NewSmartClient(tm, 10000)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}
@@ -691,6 +845,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 		return
 	}
 
+	txns := make([][]TxnInfo, goRoutineNumber)
 	var wg sync.WaitGroup
 	for i := 0; i < goRoutineNumber; i++ {
 		wg.Add(1)
@@ -701,8 +856,12 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 			start := time.Now()
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-						{
+					var (
+						readValues  = map[string]types.Value{}
+						writeValues = map[string]types.Value{}
+					)
+					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						return func() error {
 							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
@@ -711,13 +870,30 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							if !assert.NoError(err) {
 								return err
 							}
+							readValues[key1] = key1Val
 							v1 += key1ExtraDelta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							writtenVal1 := types.IntValue(v1)
+							if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
 								return err
 							}
-						}
-
-						{
+							writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
+							return nil
+						}(), true
+					}, nil, nil); assert.NoError(err) {
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+							ID:          tx.GetId().Version(),
+							State:       tx.GetState(),
+							ReadValues:  readValues,
+							WriteValues: writeValues,
+						})
+					}
+				} else if goRoutineIndex == 1 {
+					var (
+						readValues  = map[string]types.Value{}
+						writeValues = map[string]types.Value{}
+					)
+					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						return func() error {
 							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
@@ -726,46 +902,74 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							if !assert.NoError(err) {
 								return err
 							}
+							readValues[key2] = key2Val
 							v2 += key2ExtraDelta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							writtenVal2 := types.IntValue(v2)
+							if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
 								return err
 							}
-						}
-						return nil
-					}))
+							writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
+							return nil
+						}(), true
+					}, nil, nil); assert.NoError(err) {
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+							ID:          tx.GetId().Version(),
+							State:       tx.GetState(),
+							ReadValues:  readValues,
+							WriteValues: writeValues,
+						})
+					}
 				} else {
-					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-						{
-							key1Val, err := txn.Get(ctx, key1)
-							if err != nil {
-								return err
+					var (
+						readValues  = map[string]types.Value{}
+						writeValues = map[string]types.Value{}
+					)
+					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						return func() error {
+							{
+								key1Val, err := txn.Get(ctx, key1)
+								if err != nil {
+									return err
+								}
+								v1, err := key1Val.Int()
+								if !assert.NoError(err) {
+									return err
+								}
+								readValues[key1] = key1Val
+								v1 -= delta
+								writtenVal1 := types.IntValue(v1)
+								if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
+									return err
+								}
+								writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
 							}
-							v1, err := key1Val.Int()
-							if !assert.NoError(err) {
-								return err
-							}
-							v1 -= delta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
-								return err
-							}
-						}
 
-						{
-							key2Val, err := txn.Get(ctx, key2)
-							if err != nil {
-								return err
+							{
+								key2Val, err := txn.Get(ctx, key2)
+								if err != nil {
+									return err
+								}
+								v2, err := key2Val.Int()
+								if !assert.NoError(err) {
+									return err
+								}
+								v2 += delta
+								writtenVal2 := types.IntValue(v2)
+								if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
+									return err
+								}
+								writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
 							}
-							v2, err := key2Val.Int()
-							if !assert.NoError(err) {
-								return err
-							}
-							v2 += delta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
-								return err
-							}
-						}
-						return nil
-					}))
+							return nil
+						}(), true
+					}, nil, nil); assert.NoError(err) {
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+							ID:          tx.GetId().Version(),
+							State:       tx.GetState(),
+							ReadValues:  readValues,
+							WriteValues: writeValues,
+						})
+					}
 				}
 			}
 			t.Logf("cost %v per round", time.Now().Sub(start)/roundPerGoRoutine)
@@ -778,7 +982,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	if !assert.NoError(err) {
 		return
 	}
-	if !assert.Equal(k1InitialValue-(goRoutineNumber-1)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key1ExtraDelta, value1) {
+	if !assert.Equal(k1InitialValue-(goRoutineNumber-2)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key1ExtraDelta, value1) {
 		return
 	}
 
@@ -786,10 +990,35 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	if !assert.NoError(err) {
 		return
 	}
-	if !assert.Equal(k2InitialValue+(goRoutineNumber-1)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key2ExtraDelta, value2) {
+	if !assert.Equal(k2InitialValue+(goRoutineNumber-2)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key2ExtraDelta, value2) {
 		return
 	}
 
+	allTxns := make([]TxnInfo, 0, len(txns)*roundPerGoRoutine)
+	for _, txnsOneGoRoutine := range txns {
+		allTxns = append(allTxns, txnsOneGoRoutine...)
+	}
+	sort.Sort(SortedTxnInfos(allTxns))
+	for i := 0; i < len(allTxns); i++ {
+		findWriteVersion := func(cur int, key string, readVal types.Value) types.Value {
+			for j := i - 1; j > 0; j-- {
+				ptx := allTxns[j]
+				if writeVal, ok := ptx.WriteValues[key]; ok {
+					return writeVal
+				}
+			}
+			return types.EmptyValue
+		}
+		for key, readVal := range allTxns[i].ReadValues {
+			writeVal := findWriteVersion(i, key, readVal)
+			if writeVal.IsEmpty() {
+				continue
+			}
+			if !assert.Equal(readVal.Version, writeVal.Version) {
+				return
+			}
+		}
+	}
 	return true
 }
 

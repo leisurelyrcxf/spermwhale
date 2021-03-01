@@ -1,6 +1,6 @@
 # Key Features
- * Implemented interactive serializable distributed transaction using MVCC+OCC  
- * Implemented parallel commit, writing transaction record only during commit or rollback.
+ * Interactive serializable distributed transaction using MVCC+OCC  
+ * Parallel commit which was originally proposed by cockroachdb, the main difference is that spermwhale writes transaction record only during commit or rollback.
  * Async task scheduler supporting dependency management. E.g., a txn set(k1, v1) then set (k1, v2), then second write must be chained. If a txn set(k1, v1) and set (k2, v2) and then write a transaction record, then all the writes can be paralleled.  
  * Centralized physical timestamp oracle server (simplest implementation)
  * Topology management, support auto config reload at runtime using etcd's watch feature.

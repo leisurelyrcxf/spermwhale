@@ -57,6 +57,7 @@ type TxnInfo struct {
 	ID                      uint64
 	State                   types.TxnState
 	ReadValues, WriteValues map[string]types.Value
+	AdditionalInfo          interface{}
 }
 
 type SortedTxnInfos []TxnInfo
