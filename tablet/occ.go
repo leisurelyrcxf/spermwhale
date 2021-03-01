@@ -107,7 +107,6 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (type
 	val, err := kv.db.Get(ctx, key, opt)
 	assert.Must(err != nil || (exactVersion && val.Version == opt.Version) || (!exactVersion && val.Version <= opt.Version))
 	if getMaxReadVersion {
-		//noinspection ALL
 		if maxReadVersion <= opt.Version {
 			maxReadVersion = kv.tsCache.GetMaxReadVersion(key)
 		}
