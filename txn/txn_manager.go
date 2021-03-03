@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
@@ -143,8 +145,9 @@ func (m *TransactionManager) newTxn(id types.TxnId) *Txn {
 
 func (m *TransactionManager) createStore() *TransactionManager {
 	m.store = &TransactionStore{
-		kv:  m.kv,
-		cfg: m.cfg,
+		kv:              m.kv,
+		cfg:             m.cfg,
+		retryWaitPeriod: consts.DefaultRetryWaitPeriod,
 
 		txnInitializer: func(txn *Txn) {
 			txn.lastWriteKeyTasks = make(map[string]*types.ListTask)

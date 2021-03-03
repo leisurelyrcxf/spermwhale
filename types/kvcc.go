@@ -77,11 +77,11 @@ type KVCCWriteOption struct {
 	flag uint8
 }
 
-func NewWriteOption() KVCCWriteOption {
+func NewKVCCWriteOption() KVCCWriteOption {
 	return KVCCWriteOption{}
 }
 
-func NewWriteOptionFromPB(x *kvccpb.KVCCWriteOption) KVCCWriteOption {
+func NewKVCCWriteOptionFromPB(x *kvccpb.KVCCWriteOption) KVCCWriteOption {
 	return KVCCWriteOption{
 		flag: x.GetFlagSafe(),
 	}

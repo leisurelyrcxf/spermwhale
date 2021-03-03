@@ -13,36 +13,52 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-func getValueWrittenByTxnWithRetry(ctx context.Context, kv types.KVCC, key string, txnId types.TxnId, callerTxn *Txn, preventFutureWrite bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
-	readOpt := types.NewKVCCReadOption(txnId.Version()).WithExactVersion(txnId.Version())
+type TransactionStore struct {
+	kv              types.KVCC
+	cfg             types.TxnConfig
+	retryWaitPeriod time.Duration
+
+	txnInitializer func(txn *Txn)
+	txnConstructor func(txnId types.TxnId) *Txn
+}
+
+func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
+	preventFutureWrite bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
+	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithExactVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	} else if callerTxn.ID == txnId {
 		readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version hence future write with txnId can't succeed if key not exists
 	}
-	for i := 0; i < maxRetry && ctx.Err() == nil; i++ {
-		if val, err = kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
+	for i := 0; ; {
+		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
 			return val, err == nil, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
-		time.Sleep(time.Second)
+		if i++; i >= maxRetry || ctx.Err() != nil {
+			return val, false, err
+		}
+		time.Sleep(s.retryWaitPeriod)
 	}
-	if err == nil {
-		ctxErr := ctx.Err()
-		assert.Must(ctxErr != nil)
-		glog.Errorf("kv.Get returns unexpected error: %v", ctxErr)
-		return val, false, ctxErr
-	}
-	glog.Errorf("kv.Get returns unexpected error: %v", err)
-	return val, false, err
 }
 
-type TransactionStore struct {
-	kv  types.KVCC
-	cfg types.TxnConfig
-
-	txnInitializer func(txn *Txn)
-	txnConstructor func(txnId types.TxnId) *Txn
+func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, txnId types.TxnId, callTxn *Txn, keys []string, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
+	assert.Must(len(keys) > 0)
+	for i := 0; ; {
+		for _, key := range keys {
+			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithExactVersion(txnId.Version()).
+				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
+			if err == nil || errors.IsNotExistsErr(err) {
+				return key, val, err == nil, nil
+			}
+			glog.Warningf("[getAnyValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
+			if i += 1; i >= maxRetry || ctx.Err() != nil {
+				glog.Errorf("[getAnyValueWrittenByTxn] txn.kv.Get returns unexpected error: %v", err)
+				return "", types.EmptyValueCC, false, err
+			}
+			time.Sleep(s.retryWaitPeriod)
+		}
+	}
 }
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
@@ -51,7 +67,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
-	for i := 0; i < maxRetryTimes && ctx.Err() == nil; i++ {
+	for i := 0; ; {
 		var txnRecordData types.ValueCC
 		txnRecordData, err = s.kv.Get(ctx, TransactionKey(txnID), readOpt)
 		if err == nil {
@@ -60,67 +76,79 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 			if err != nil {
 				return nil, true, err
 			}
-			assert.Must(txn.ID == txnID)
-			assert.Must(len(txn.WrittenKeys) > 0)
-			assert.Must(txn.State == types.TxnStateStaging || txn.State == types.TxnStateRollbacking)
 			s.txnInitializer(txn)
 			return txn, true, nil
 		}
 		if errors.IsNotExistsErr(err) {
 			return nil, false, nil
 		}
-		time.Sleep(time.Second)
+		if i++; i >= maxRetryTimes || ctx.Err() != nil {
+			return nil, false, err
+		}
+		time.Sleep(s.retryWaitPeriod)
 	}
-	if err == nil {
-		assert.Must(ctx.Err() != nil)
-		return nil, false, ctx.Err()
-	}
-	return nil, false, err
 }
 
-func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID types.TxnId, callerTxn *Txn, conflictedKey string) (*Txn, error) {
-	assert.Must(conflictedKey != "")
+func (s *TransactionStore) inferTransactionRecordWithRetry(
+	ctx context.Context,
+	txnId types.TxnId, callerTxn *Txn,
+	keysWithWriteIntent map[string]struct{},
+	allKeys []string,
+	preventFutureTxnRecordWrite bool,
+	maxRetry int) (txn *Txn, err error) {
 	// TODO maybe get from txn manager first?
-	preventFutureTxnRecordWrite := utils.IsTooStale(txnID.Version(), s.cfg.StaleWriteThreshold)
-	txn, recordExists, err := s.loadTransactionRecordWithRetry(ctx, txnID, preventFutureTxnRecordWrite, 2)
-	if err != nil {
+	var recordExists bool
+	if txn, recordExists, err = s.loadTransactionRecordWithRetry(ctx, txnId, preventFutureTxnRecordWrite, maxRetry); err != nil {
 		return nil, err
 	}
 	if recordExists {
-		assert.Must(txn != nil)
+		assert.Must(txn.ID == txnId)
+		if len(keysWithWriteIntent) > 0 { // TODO remove this in product
+			assert.MustAllContain(utils.StringList2Set(txn.WrittenKeys), utils.Set2StringList(keysWithWriteIntent))
+		}
+		assert.Must(txn.State == types.TxnStateStaging || txn.State == types.TxnStateRollbacking)
 		return txn, nil
 	}
-	// Transaction record not exists
-	// There will be 3 cases:
-	// 1. transaction has been rollbacked, conflictedKey must be gone
-	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
+
+	// Transaction record not exists, thus must be one among the 3 cases:
+	// 1. transaction has been committed and cleared <=> all keys must have cleared write intent before the transaction record was removed, see the func Txn::onCommitted
+	// 2. transaction has been rollbacked => all keys must have been removed before the transaction record was removed, see the func Txn::rollback
 	// 3. transaction neither committed nor rollbacked
-	vv, keyExists, keyErr := getValueWrittenByTxnWithRetry(ctx, s.kv, conflictedKey, txnID, callerTxn, false /* no need to prevent future write because we can safe rollback if key not exists */, 2)
+	//
+	// Hence we get the keys. (we may get the same key a second time because the result of the key before seen transaction record not exists is not confident enough)
+	assert. /* NOTE: don't remove this assert*/ Must(preventFutureTxnRecordWrite || len(keysWithWriteIntent) == len(allKeys))
+	// Transaction record not exists, get key to find out the truth.
+	_, vv, keyExists, keyErr := s.getAnyValueWrittenByTxnWithRetry(ctx, txnId, callerTxn, allKeys, maxRetry)
 	if keyErr != nil {
-		glog.Errorf("[loadTransactionRecord] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
+		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%s)) returns unexpected error: %v", txnId, callerTxn.ID, allKeys, keyErr)
 		return nil, keyErr
 	}
-	txn = s.txnConstructor(txnID)
-	if !keyExists {
-		// case 1
-		txn.State = types.TxnStateRollbacked
-		// nothing to rollback
+	if keyExists {
+		if !vv.HasWriteIntent() {
+			// case 1
+			txn := s.txnConstructor(txnId)
+			txn.WrittenKeys = allKeys
+			txn.State = types.TxnStateCommitted
+			return txn, nil
+		}
+		// Must haven't committed.
+		if !preventFutureTxnRecordWrite {
+			return nil, errors.Annotatef(errors.ErrKeyNotExist, "txn record of %d not exists", txnId)
+		}
+	}
+	// 1. key not exists
+	//    1.1. preventFutureTxnRecordWrite, safe to rollback
+	//    1.2. len(keysWithWriteIntent) == len(allKeys), one of the keys with write intent disappeared, safe to rollback
+	// 2. key exists & vv.HasWriteIntent() && preventFutureTxnRecordWrite, since we've updated timestamp cache of txn record,
+	//	  guaranteed commit won't succeed in the future (because it needs to write transaction record with intent),
+	//	  hence safe to rollback., safe to rollback
+	txn = s.txnConstructor(txnId)
+	txn.WrittenKeys = allKeys
+	if !keyExists && len(txn.WrittenKeys) == 1 {
+		txn.State = types.TxnStateRollbacked // nothing to rollback
 		return txn, nil
 	}
-	if !vv.HasWriteIntent() {
-		// case 2
-		txn.State = types.TxnStateCommitted
-		return txn, nil
-	}
-	if !preventFutureTxnRecordWrite {
-		return nil, errors.Annotatef(errors.ErrKeyNotExist, "txn record of %d not exists", txnID)
-	}
-	// case 3
-	// since we've updated timestamp cache of txn record (in case isTooStale is true),
-	// guaranteed commit won't succeed in the future (because it needs to write transaction
-	// record with intent), hence safe to rollback.
-	txn.WrittenKeys = append(txn.WrittenKeys, conflictedKey)
 	txn.State = types.TxnStateRollbacking
-	_ = txn.rollback(ctx, callerTxn.ID, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
+	_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
 	return txn, nil
 }

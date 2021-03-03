@@ -26,3 +26,7 @@ const (
 	DefaultTxnServerPort    = 9999
 	DefaultKVServerPort     = 10001
 )
+
+const (
+	DefaultRetryWaitPeriod = time.Millisecond * 100
+)

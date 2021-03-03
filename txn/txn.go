@@ -161,27 +161,42 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 			return types.EmptyValue, errors.Annotatef(lastWriteTask.Err(), "read aborted due to previous write task failed")
 		}
 	}
-	vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()))
+	if lastWriteTask == nil {
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()))
+	} else {
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()))
+	}
 	if vv.MaxReadVersion > txn.ID.Version() {
 		txn.preventFutureWriteFlags[key] = true
 	}
 	if err != nil {
+		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
+			return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: previous write intent disappeared probably rollbacked")
+		}
 		return types.EmptyValue, err
 	}
-	if lastWriteTask != nil && vv.Version != txn.ID.Version() {
-		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: previous write intent disappeared probably rollbacked")
+	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
+	if !vv.Meta.HasWriteIntent() {
+		// committed value
+		return vv.Value, nil
 	}
-	if vv.Version == txn.ID.Version() /* read after write */ ||
-		!vv.Meta.HasWriteIntent() /* committed value */ {
+	if vv.Version == txn.ID.Version() {
+		// read after write
 		return vv.Value, nil
 	}
 	assert.Must(vv.Version < txn.ID.Version())
-	writeTxn, err := txn.store.inferTransactionRecord(ctx, types.TxnId(vv.Version), txn, key)
+	keyWithWriteIntent := map[string]struct{}{key: {}}
+	writeTxn, err := txn.store.inferTransactionRecordWithRetry(
+		ctx,
+		types.TxnId(vv.Version), txn,
+		keyWithWriteIntent, []string{key},
+		utils.IsTooStale(vv.Version, txn.cfg.StaleWriteThreshold),
+		2)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: %v", err)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	if committed, _ := writeTxn.CheckCommitState(ctx, txn, map[string]struct{}{key: {}}, false); committed {
+	if committed, _ := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, false); committed {
 		return vv.Value, nil
 	}
 	return types.EmptyValue, errors.ErrTransactionConflict
@@ -191,7 +206,7 @@ func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 	txn.Lock()
 	defer txn.Unlock()
 
-	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, 1)
+	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, 2)
 }
 
 func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbacked bool) {
@@ -221,7 +236,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 		}
 		notInKeysLen := len(notInKeys)
 		for idx, key := range append(notInKeys, inKeys...) {
-			vv, exists, err := getValueWrittenByTxnWithRetry(ctx, txn.kv, key, txn.ID, callerTxn, preventFutureWrite, maxRetry)
+			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, maxRetry)
 			if err != nil {
 				return false, false
 			}
@@ -351,39 +366,21 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	ctx = context.Background()
 	maxRetry := utils2.MaxInt(int(int64(txn.cfg.StaleWriteThreshold)/int64(time.Second))*3, 10)
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
-		record, recordExists, err := txn.store.loadTransactionRecordWithRetry(ctx, txn.ID, true, maxRetry)
+		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.WrittenKeys, true, maxRetry)
 		if err != nil {
-			txn.State = types.TxnStateInvalid
-			glog.Errorf("[Commit] can't get transaction record info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
-			return recordErr
+			return err
 		}
-		if !recordExists {
-			// Transaction record not exists
-			// There will be 3 cases:
-			// 1. transaction has been rollbacked, conflictedKey must be gone
-			// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
-			// 3. transaction neither committed nor rollbacked
-			_, val, keyExists, err := txn.getAnyValueWrittenWithRetry(ctx, maxRetry)
-			if err != nil {
-				txn.State = types.TxnStateInvalid
-				glog.Errorf("[Commit] can't get key info in %s, err: %v", txn.cfg.StaleWriteThreshold*10, err)
-				return recordErr
-			}
-			if keyExists && !val.HasWriteIntent() {
-				// case 2
-				assert.Must(val.Version == txn.ID.Version())
-				txn.State = types.TxnStateCommitted
-				return nil
-			}
-			txn.State = types.TxnStateRollbacking
-			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("transcation record not exists after a successful get with update timestamp cache option"))
-			return recordErr
+		assert.Must(txn.ID == inferredTxn.ID)
+		assert.MustEqualStrings(inferredTxn.WrittenKeys, txn.WrittenKeys)
+		txn.State = inferredTxn.State
+		if txn.State == types.TxnStateCommitted {
+			return nil
 		}
-		assert.Must(txn.ID == record.ID)
-		assert.MustEqualStrings(record.WrittenKeys, txn.WrittenKeys)
-		txn.State = record.State
+		if txn.State.IsAborted() {
+			return lastNonRollbackableIOErr
+		}
 	}
-
+	assert.Must(txn.State == types.TxnStateStaging)
 	succeededKeys := make(map[string]struct{})
 	for key, lastWriteKeyTask := range txn.lastWriteKeyTasks {
 		if lastWriteKeyTask.Err() == nil {
@@ -440,7 +437,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	for _, key := range txn.WrittenKeys {
 		if removeErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-			types.NewWriteOption().WithRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
+			types.NewKVCCWriteOption().WithRemoveVersion()); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 			glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 			err = errors.Wrap(err, removeErr)
 		}
@@ -459,24 +456,6 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		txn.h.RemoveTxn(txn)
 	}
 	return nil
-}
-
-func (txn *Txn) getAnyValueWrittenWithRetry(ctx context.Context, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
-	for i := 0; ; {
-		assert.Must(len(txn.WrittenKeys) > 0)
-		for _, key := range txn.WrittenKeys {
-			val, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()).WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
-			if err == nil || errors.IsNotExistsErr(err) {
-				return key, val, err == nil, nil
-			}
-			glog.Warningf("[getAnyValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
-			time.Sleep(time.Second)
-			if i += 1; i > maxRetry || ctx.Err() != nil {
-				glog.Errorf("[getAnyValueWrittenByTxn] txn.kv.Get returns unexpected error: %v", err)
-				return "", types.EmptyValueCC, false, err
-			}
-		}
-	}
 }
 
 func (txn *Txn) Encode() []byte {
@@ -554,7 +533,7 @@ func (txn *Txn) clearCommitted(ctx context.Context, callerTxn types.TxnId) (err 
 	for _, key := range txn.WrittenKeys {
 		if setErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-			types.NewWriteOption().WithClearWriteIntent()); setErr != nil {
+			types.NewKVCCWriteOption().WithClearWriteIntent()); setErr != nil {
 			if errors.IsNotExistsErr(setErr) {
 				glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, setErr)
 			} else {
@@ -588,7 +567,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	err := txn.kv.Set(ctx, txn.Key(),
 		types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-		types.NewWriteOption().WithRemoveVersion())
+		types.NewKVCCWriteOption().WithRemoveVersion())
 	if err != nil && !errors.IsNotExistsErr(err) {
 		glog.Warningf("clear transaction record failed: %v", err)
 		return err

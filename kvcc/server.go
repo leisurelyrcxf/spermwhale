@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/golang/glog"
 
 	"google.golang.org/grpc"
@@ -24,6 +26,7 @@ type Stub struct {
 func (stub *Stub) Get(ctx context.Context, req *kvccpb.KVCCGetRequest) (*kvccpb.KVCCGetResponse, error) {
 	opt := types.NewKVCCReadOptionFromPB(req.Opt)
 	vv, err := stub.kvcc.Get(ctx, req.Key, opt)
+	assert.Must(err != nil || !vv.IsEmpty())
 	//noinspection ALL
 	return &kvccpb.KVCCGetResponse{
 		V:   vv.ToPB(),
@@ -35,7 +38,7 @@ func (stub *Stub) Set(ctx context.Context, req *kvccpb.KVCCSetRequest) (*kvccpb.
 	if err := req.Validate(); err != nil {
 		return &kvccpb.KVCCSetResponse{Err: errors.ToPBError(err)}, nil
 	}
-	err := stub.kvcc.Set(ctx, req.Key, types.NewValueFromPB(req.Value), types.NewWriteOptionFromPB(req.Opt))
+	err := stub.kvcc.Set(ctx, req.Key, types.NewValueFromPB(req.Value), types.NewKVCCWriteOptionFromPB(req.Opt))
 	return &kvccpb.KVCCSetResponse{Err: errors.ToPBError(err)}, nil
 }
 
