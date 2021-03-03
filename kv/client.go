@@ -5,13 +5,13 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/tabletpb"
+	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"google.golang.org/grpc"
 )
 
 type Client struct {
-	kv   tabletpb.KVClient
+	kv   kvpb.KVClient
 	conn *grpc.ClientConn
 }
 
@@ -22,12 +22,12 @@ func NewClient(serverAddr string) (*Client, error) {
 	}
 	return &Client{
 		conn: conn,
-		kv:   tabletpb.NewKVClient(conn),
+		kv:   kvpb.NewKVClient(conn),
 	}, nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
-	resp, err := c.kv.Get(ctx, &tabletpb.GetRequest{
+func (c *Client) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+	resp, err := c.kv.Get(ctx, &kvpb.KVGetRequest{
 		Key: key,
 		Opt: opt.ToPB(),
 	})
@@ -35,7 +35,7 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		return types.EmptyValue, err
 	}
 	if resp == nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp == nil")
+		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "kv::Client::Get resp == nil")
 	}
 	if resp.Err != nil {
 		if resp.V == nil {
@@ -44,13 +44,13 @@ func (c *Client) Get(ctx context.Context, key string, opt types.ReadOption) (typ
 		return types.NewValueFromPB(resp.V), errors.NewErrorFromPB(resp.Err)
 	}
 	if resp.V == nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "TabletClient::Get resp.V == nil")
+		return types.EmptyValue, errors.Annotatef(errors.ErrNilResponse, "kv::Client::Get resp.V == nil")
 	}
 	return types.NewValueFromPB(resp.V), nil
 }
 
-func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
-	resp, err := c.kv.Set(ctx, &tabletpb.SetRequest{
+func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+	resp, err := c.kv.Set(ctx, &kvpb.KVSetRequest{
 		Key:   key,
 		Value: val.ToPB(),
 		Opt:   opt.ToPB(),

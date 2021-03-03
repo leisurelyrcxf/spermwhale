@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package proto;
+
+import "common.proto";
+
+option go_package = "proto/kvpb";
+
+message KVReadOption {
+    uint64 version = 1;
+    bool exact_version = 2;
+}
+
+message KVWriteOption {
+    uint32 flag = 1;
+}
+
+message KVGetRequest {
+    string key = 1;
+    KVReadOption opt = 2;
+}
+
+message KVGetResponse {
+    Value v = 1;
+    Error err = 2;
+}
+
+message KVSetRequest {
+    string key = 1;
+    Value value = 2;
+    KVWriteOption opt = 3;
+}
+
+message KVSetResponse {
+    Error err = 1;
+}
+
+service KV {
+    rpc Get(KVGetRequest) returns (KVGetResponse) {}
+    rpc Set(KVSetRequest) returns (KVSetResponse) {}
+}

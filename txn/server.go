@@ -92,7 +92,7 @@ type Server struct {
 
 func NewServer(
 	port int,
-	kv types.KV,
+	kv types.KVCC,
 	cfg types.TxnConfig,
 	clearWorkerNumber, ioWorkerNumber int,
 	store *topo.Store) (*Server, error) {

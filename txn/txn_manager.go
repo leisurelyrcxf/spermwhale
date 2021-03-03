@@ -51,7 +51,7 @@ type TransactionManager struct {
 
 	txns concurrency.ConcurrentTxnMap
 
-	kv        types.KV
+	kv        types.KVCC
 	oracle    atomic.Value
 	store     *TransactionStore
 	topoStore *topo.Store
@@ -60,14 +60,14 @@ type TransactionManager struct {
 }
 
 func NewTransactionManager(
-	kv types.KV,
+	kv types.KVCC,
 	cfg types.TxnConfig,
 	clearWorkerNum, ioWorkerNum int) *TransactionManager {
 	return NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, physical.NewOracle())
 }
 
 func NewTransactionManagerWithCluster(
-	kv types.KV,
+	kv types.KVCC,
 	cfg types.TxnConfig,
 	clearWorkerNum, ioWorkerNum int,
 	store *topo.Store) (*TransactionManager, error) {
@@ -83,7 +83,7 @@ func NewTransactionManagerWithCluster(
 }
 
 func NewTransactionManagerWithOracle(
-	kv types.KV,
+	kv types.KVCC,
 	cfg types.TxnConfig,
 	clearWorkerNum, ioWorkerNum int,
 	oracle oracle.Oracle) *TransactionManager {

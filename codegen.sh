@@ -15,6 +15,7 @@
 #
 protoc --go_out=plugins=grpc:. proto/common.proto
 protoc --go_out=plugins=grpc:. --proto_path proto proto/txn.proto
-protoc --go_out=plugins=grpc:. --proto_path proto proto/tablet.proto
+protoc --go_out=plugins=grpc:. --proto_path proto proto/kvcc.proto
 protoc --go_out=plugins=grpc:. --proto_path  proto proto/oracle.proto
+protoc --go_out=plugins=grpc:. --proto_path  proto proto/sp_kv.proto
 find . -iname "*.pb.go" | xargs -I {} sed -i 's/"proto\/commonpb"/"github.com\/leisurelyrcxf\/spermwhale\/proto\/commonpb"/g' {}

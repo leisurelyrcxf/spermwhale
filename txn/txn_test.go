@@ -13,8 +13,8 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
-	"github.com/leisurelyrcxf/spermwhale/mvcc/impl/memory"
-	"github.com/leisurelyrcxf/spermwhale/tablet"
+	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
+	"github.com/leisurelyrcxf/spermwhale/kvcc"
 	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
@@ -38,7 +38,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))
@@ -132,7 +132,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))
@@ -285,7 +285,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 	t.Logf("testTxnReadWriteAfterWrite @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))
@@ -378,7 +378,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 	t.Logf("testTxnLostUpdateWithSomeAborted @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))
@@ -472,7 +472,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 	t.Logf("testTxnLostUpdateWithSomeAborted2 @round %d", round)
 
 	db := memory.NewDB()
-	kvcc := tablet.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := testifyassert.New(NewT(t))

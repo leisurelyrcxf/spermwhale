@@ -11,15 +11,13 @@ const (
 )
 
 const (
-	ReadOptBitMaskExactVersion            = 1
-	ReadOptBitMaskNotUpdateTimestampCache = 1 << 1
-	ReadOptBitMaskNotGetMaxReadVersion    = 1 << 2
+	ReadOptBitMaskNotUpdateTimestampCache = 1
+	ReadOptBitMaskNotGetMaxReadVersion    = 1 << 1
 
 	WriteOptBitMaskClearWriteIntent = 1
 	WriteOptBitMaskRemoveVersion    = 1 << 1
 
-	ValueMetaBitMaskHasWriteIntent                    = 1
-	ValueMetaBitMaskMaxReadVersionBiggerThanRequested = 1 << 1
+	ValueMetaBitMaskHasWriteIntent = 1
 )
 
 const (

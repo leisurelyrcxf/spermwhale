@@ -2,11 +2,12 @@ package main
 
 import (
 	"flag"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/leisurelyrcxf/spermwhale/cmd"
 
-	"github.com/leisurelyrcxf/spermwhale/tablet"
+	"github.com/leisurelyrcxf/spermwhale/kvcc"
 
 	"github.com/golang/glog"
 )
@@ -14,7 +15,7 @@ import (
 func main() {
 	cmd.RegisterPortFlags(consts.DefaultTabletServerPort)
 	flagGid := flag.Int("gid", -1, "gid, range [0, groupNum)")
-	flagTestMode := flag.Bool("test",false, "test mode, won't sleep at start")
+	flagTestMode := flag.Bool("test", false, "test mode, won't sleep at start")
 	cmd.RegisterStoreFlags()
 	cmd.RegisterTxnConfigFlags()
 	flag.Parse()
@@ -25,14 +26,14 @@ func main() {
 
 	store := cmd.NewStore()
 	cfg := cmd.NewTxnConfig()
-	var server *tablet.Server
+	var server *kvcc.Server
 	if *flagTestMode {
-		server = tablet.NewServerForTesting(*cmd.FlagPort, cfg, *flagGid, store)
+		server = kvcc.NewServerForTesting(*cmd.FlagPort, cfg, *flagGid, store)
 	} else {
-		server = tablet.NewServer(*cmd.FlagPort, cfg, *flagGid, store)
+		server = kvcc.NewServer(*cmd.FlagPort, cfg, *flagGid, store)
 	}
 	if err := server.Start(); err != nil {
-		glog.Fatalf("failed to start tablet server: %v", err)
+		glog.Fatalf("failed to start kvcc server: %v", err)
 	}
 	<-server.Done
 }

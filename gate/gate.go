@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/leisurelyrcxf/spermwhale/kv"
+	"github.com/leisurelyrcxf/spermwhale/kvcc"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
@@ -18,19 +18,19 @@ import (
 )
 
 type Shard struct {
-	types.KV
+	types.KVCC
 
 	ID int
 }
 
 func NewShard(g *topo.Group) (*Shard, error) {
-	cli, err := kv.NewClient(g.ServerAddr)
+	cli, err := kvcc.NewClient(g.ServerAddr)
 	if err != nil {
 		return nil, err
 	}
 	return &Shard{
-		KV: cli,
-		ID: g.Id,
+		KVCC: cli,
+		ID:   g.Id,
 	}, nil
 }
 
@@ -55,15 +55,15 @@ func NewGate(store *topo.Store) (*Gate, error) {
 	return g, nil
 }
 
-func (g *Gate) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
+func (g *Gate) Get(ctx context.Context, key string, opt types.KVCCReadOption) (types.ValueCC, error) {
 	s, err := g.Route(key)
 	if err != nil {
-		return types.EmptyValue, err
+		return types.EmptyValueCC, err
 	}
 	return s.Get(ctx, key, opt)
 }
 
-func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
+func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
 	s, err := g.Route(key)
 	if err != nil {
 		return err
@@ -175,4 +175,29 @@ func (g *Gate) checkShards() {
 		}
 	}
 	g.shardsReady = true
+}
+
+// Use a gate as a kv server
+type ReadOnlyKV struct {
+	*Gate
+}
+
+func NewReadOnlyKV(gate *Gate) *ReadOnlyKV {
+	return &ReadOnlyKV{gate}
+}
+
+func (kv *ReadOnlyKV) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+	var kvccOpt types.KVCCReadOption
+	if opt.ExactVersion {
+		kvccOpt = types.NewKVCCReadOption(opt.Version).WithExactVersion(opt.Version).WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()
+	} else {
+		kvccOpt = types.NewKVCCReadOption(opt.Version).WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()
+	}
+	val, err := kv.Gate.Get(ctx, key, kvccOpt)
+	//noinspection ALL
+	return val.Value, err
+}
+
+func (kv *ReadOnlyKV) Set(context.Context, string, types.Value, types.KVWriteOption) error {
+	return errors.Annotatef(errors.ErrNotSupported, "this is an read-only kv server")
 }

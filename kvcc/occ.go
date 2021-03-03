@@ -1,4 +1,4 @@
-package tablet
+package kvcc
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 
-	"github.com/leisurelyrcxf/spermwhale/mvcc"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
@@ -52,18 +51,18 @@ type KVCC struct {
 
 	tsCache *TimestampCache
 
-	db mvcc.DB
+	db types.KV
 }
 
-func NewKVCC(db mvcc.DB, cfg types.TxnConfig) *KVCC {
+func NewKVCC(db types.KV, cfg types.TxnConfig) *KVCC {
 	return newKVCC(db, cfg, false)
 }
 
-func NewKVCCForTesting(db mvcc.DB, cfg types.TxnConfig) *KVCC {
+func NewKVCCForTesting(db types.KV, cfg types.TxnConfig) *KVCC {
 	return newKVCC(db, cfg, true)
 }
 
-func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *KVCC {
+func newKVCC(db types.KV, cfg types.TxnConfig, testing bool) *KVCC {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
@@ -79,14 +78,16 @@ func newKVCC(db mvcc.DB, cfg types.TxnConfig, testing bool) *KVCC {
 	}
 }
 
-func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (types.Value, error) {
+func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (types.ValueCC, error) {
 	var (
 		exactVersion         = opt.IsGetExactVersion()
 		updateTimestampCache = !opt.IsNotUpdateTimestampCache()
-		getMaxReadVersion    = !opt.IsNotUpdateTimestampCache()
+		getMaxReadVersion    = !opt.IsNotGetMaxReadVersion()
 	)
 	if !updateTimestampCache && !getMaxReadVersion {
-		return kv.db.Get(ctx, key, opt)
+		val, err := kv.db.Get(ctx, key, opt.ToKVReadOption())
+		//noinspection ALL
+		return val.WithMaxReadVersion(0), err
 	}
 
 	// guarantee mutual exclusion with set,
@@ -97,29 +98,23 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.ReadOption) (type
 
 	var maxReadVersion uint64
 	if updateTimestampCache {
-		readVersion := opt.Version
-		if exactVersion {
-			types.SafeIncr(&readVersion) // prevent future write of opt.Version
-		}
-		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, readVersion)
+		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, opt.ReaderVersion)
 	}
 	//kv.lm.RUnlock(key) if put here performance will down for read-for-write txn, reason unknown.
-	val, err := kv.db.Get(ctx, key, opt)
-	assert.Must(err != nil || (exactVersion && val.Version == opt.Version) || (!exactVersion && val.Version <= opt.Version))
+	val, err := kv.db.Get(ctx, key, opt.ToKVReadOption())
+	assert.Must(err != nil || (exactVersion && val.Version == opt.ExactVersion) || (!exactVersion && val.Version <= opt.ReaderVersion))
 	if getMaxReadVersion {
-		if maxReadVersion <= opt.Version {
+		if maxReadVersion <= opt.ReaderVersion {
 			maxReadVersion = kv.tsCache.GetMaxReadVersion(key)
 		}
-		if maxReadVersion > opt.Version {
-			return val.WithMaxReadVersionBiggerThanRequested(), err
-		}
+		return val.WithMaxReadVersion(maxReadVersion), err
 	}
-	return val, err
+	return val.WithMaxReadVersion(0), err
 }
 
-func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.WriteOption) error {
+func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
 	if !val.HasWriteIntent() {
-		return kv.db.Set(ctx, key, val, opt)
+		return kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 	}
 
 	// cache may lost after restarted, so ignore too stale write
@@ -138,7 +133,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	}
 
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
-	return kv.db.Set(ctx, key, val, opt)
+	return kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 }
 
 func (kv *KVCC) Close() error {

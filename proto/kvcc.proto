@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package proto;
+
+import "common.proto";
+
+option go_package = "proto/kvccpb";
+
+message KVCCReadOption {
+    uint64 reader_version = 1;
+    uint32 flag = 2;
+    uint64 exact_version = 3;
+}
+
+message KVCCWriteOption {
+    uint32 flag = 1;
+}
+
+message KVCCGetRequest {
+    string key = 1;
+    KVCCReadOption opt = 2;
+}
+
+message KVCCGetResponse {
+    ValueCC v = 1;
+    Error err = 2;
+}
+
+message KVCCSetRequest {
+    string key = 1;
+    Value value = 2;
+    KVCCWriteOption opt = 3;
+}
+
+message KVCCSetResponse {
+    Error err = 1;
+}
+
+
+service KVCC {
+    rpc Get(KVCCGetRequest) returns (KVCCGetResponse) {}
+    rpc Set(KVCCSetRequest) returns (KVCCSetResponse) {}
+}

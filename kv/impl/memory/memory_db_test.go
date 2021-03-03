@@ -23,18 +23,18 @@ func testMemoryDB(t *testing.T) (b bool) {
 	ctx := context.Background()
 
 	key := "key1"
-	assert.NoError(db.Set(ctx, key, types.IntValue(1).WithVersion(1), types.WriteOption{}))
-	val, err := db.Get(ctx, key, types.NewReadOption(1))
+	assert.NoError(db.Set(ctx, key, types.IntValue(1).WithVersion(1), types.KVWriteOption{}))
+	val, err := db.Get(ctx, key, types.NewKVReadOption(1))
 	if !assert.NoError(err) || !assert.Equal(1, val.MustInt()) {
 		return
 	}
-	assert.NoError(db.Set(ctx, key, types.IntValue(2).WithVersion(2), types.WriteOption{}))
-	val, err = db.Get(ctx, key, types.NewReadOption(2))
+	assert.NoError(db.Set(ctx, key, types.IntValue(2).WithVersion(2), types.KVWriteOption{}))
+	val, err = db.Get(ctx, key, types.NewKVReadOption(2))
 	if !assert.NoError(err) || !assert.Equal(2, val.MustInt()) {
 		return
 	}
-	assert.NoError(db.Set(ctx, key, types.IntValue(3).WithVersion(3), types.WriteOption{}))
-	val, err = db.Get(ctx, key, types.NewReadOption(3))
+	assert.NoError(db.Set(ctx, key, types.IntValue(3).WithVersion(3), types.KVWriteOption{}))
+	val, err = db.Get(ctx, key, types.NewKVReadOption(3))
 	if !assert.NoError(err) || !assert.Equal(3, val.MustInt()) {
 		return
 	}

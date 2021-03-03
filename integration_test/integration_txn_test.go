@@ -53,7 +53,7 @@ func testTransaction(t *testing.T) (b bool) {
 		//}()
 	}
 
-	val, err := ts.KVClient.Get(ctx, "k1", types.NewReadOption(types.MaxTxnVersion))
+	val, err := ts.KVClient.Get(ctx, "k1", types.NewKVReadOption(types.MaxTxnVersion))
 	if !ts.NoError(err) {
 		return
 	}

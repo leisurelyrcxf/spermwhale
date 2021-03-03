@@ -141,7 +141,7 @@ type Value struct {
 	unknownFields protoimpl.UnknownFields
 
 	Meta *ValueMeta `protobuf:"bytes,1,opt,name=Meta,proto3" json:"Meta,omitempty"`
-	Val  []byte     `protobuf:"bytes,2,opt,name=val,proto3" json:"val,omitempty"`
+	V    []byte     `protobuf:"bytes,2,opt,name=v,proto3" json:"v,omitempty"`
 }
 
 func (x *Value) Reset() {
@@ -183,24 +183,24 @@ func (x *Value) GetMeta() *ValueMeta {
 	return nil
 }
 
-func (x *Value) GetVal() []byte {
+func (x *Value) GetV() []byte {
 	if x != nil {
-		return x.Val
+		return x.V
 	}
 	return nil
 }
 
-type ReadOption struct {
+type ValueCC struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Version uint64 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
-	Flag    uint32 `protobuf:"varint,2,opt,name=flag,proto3" json:"flag,omitempty"`
+	Value          *Value `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	MaxReadVersion uint64 `protobuf:"varint,2,opt,name=max_read_version,json=maxReadVersion,proto3" json:"max_read_version,omitempty"`
 }
 
-func (x *ReadOption) Reset() {
-	*x = ReadOption{}
+func (x *ValueCC) Reset() {
+	*x = ValueCC{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_proto_common_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -208,13 +208,13 @@ func (x *ReadOption) Reset() {
 	}
 }
 
-func (x *ReadOption) String() string {
+func (x *ValueCC) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ReadOption) ProtoMessage() {}
+func (*ValueCC) ProtoMessage() {}
 
-func (x *ReadOption) ProtoReflect() protoreflect.Message {
+func (x *ValueCC) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_common_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -226,68 +226,21 @@ func (x *ReadOption) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ReadOption.ProtoReflect.Descriptor instead.
-func (*ReadOption) Descriptor() ([]byte, []int) {
+// Deprecated: Use ValueCC.ProtoReflect.Descriptor instead.
+func (*ValueCC) Descriptor() ([]byte, []int) {
 	return file_proto_common_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ReadOption) GetVersion() uint64 {
+func (x *ValueCC) GetValue() *Value {
 	if x != nil {
-		return x.Version
+		return x.Value
 	}
-	return 0
+	return nil
 }
 
-func (x *ReadOption) GetFlag() uint32 {
+func (x *ValueCC) GetMaxReadVersion() uint64 {
 	if x != nil {
-		return x.Flag
-	}
-	return 0
-}
-
-type WriteOption struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
-}
-
-func (x *WriteOption) Reset() {
-	*x = WriteOption{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_common_proto_msgTypes[4]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *WriteOption) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*WriteOption) ProtoMessage() {}
-
-func (x *WriteOption) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_common_proto_msgTypes[4]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use WriteOption.ProtoReflect.Descriptor instead.
-func (*WriteOption) Descriptor() ([]byte, []int) {
-	return file_proto_common_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *WriteOption) GetFlag() uint32 {
-	if x != nil {
-		return x.Flag
+		return x.MaxReadVersion
 	}
 	return 0
 }
@@ -303,18 +256,18 @@ var file_proto_common_proto_rawDesc = []byte{
 	0x6c, 0x75, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69,
 	0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f,
 	0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52,
-	0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x3f, 0x0a, 0x05, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x12, 0x24,
+	0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x3b, 0x0a, 0x05, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x12, 0x24,
 	0x0a, 0x04, 0x4d, 0x65, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x70,
 	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x52, 0x04,
-	0x4d, 0x65, 0x74, 0x61, 0x12, 0x10, 0x0a, 0x03, 0x76, 0x61, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x0c, 0x52, 0x03, 0x76, 0x61, 0x6c, 0x22, 0x3a, 0x0a, 0x0a, 0x52, 0x65, 0x61, 0x64, 0x4f, 0x70,
-	0x74, 0x69, 0x6f, 0x6e, 0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x12,
-	0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x66, 0x6c,
-	0x61, 0x67, 0x22, 0x21, 0x0a, 0x0b, 0x57, 0x72, 0x69, 0x74, 0x65, 0x4f, 0x70, 0x74, 0x69, 0x6f,
-	0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52,
-	0x04, 0x66, 0x6c, 0x61, 0x67, 0x42, 0x10, 0x5a, 0x0e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63,
-	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x4d, 0x65, 0x74, 0x61, 0x12, 0x0c, 0x0a, 0x01, 0x76, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52,
+	0x01, 0x76, 0x22, 0x57, 0x0a, 0x07, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x43, 0x43, 0x12, 0x22, 0x0a,
+	0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75,
+	0x65, 0x12, 0x28, 0x0a, 0x10, 0x6d, 0x61, 0x78, 0x5f, 0x72, 0x65, 0x61, 0x64, 0x5f, 0x76, 0x65,
+	0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0e, 0x6d, 0x61, 0x78,
+	0x52, 0x65, 0x61, 0x64, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x42, 0x10, 0x5a, 0x0e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x70, 0x62, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -329,21 +282,21 @@ func file_proto_common_proto_rawDescGZIP() []byte {
 	return file_proto_common_proto_rawDescData
 }
 
-var file_proto_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_common_proto_goTypes = []interface{}{
-	(*Error)(nil),       // 0: proto.Error
-	(*ValueMeta)(nil),   // 1: proto.ValueMeta
-	(*Value)(nil),       // 2: proto.Value
-	(*ReadOption)(nil),  // 3: proto.ReadOption
-	(*WriteOption)(nil), // 4: proto.WriteOption
+	(*Error)(nil),     // 0: proto.Error
+	(*ValueMeta)(nil), // 1: proto.ValueMeta
+	(*Value)(nil),     // 2: proto.Value
+	(*ValueCC)(nil),   // 3: proto.ValueCC
 }
 var file_proto_common_proto_depIdxs = []int32{
 	1, // 0: proto.Value.Meta:type_name -> proto.ValueMeta
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: proto.ValueCC.value:type_name -> proto.Value
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_proto_common_proto_init() }
@@ -389,19 +342,7 @@ func file_proto_common_proto_init() {
 			}
 		}
 		file_proto_common_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ReadOption); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_proto_common_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*WriteOption); i {
+			switch v := v.(*ValueCC); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -419,7 +360,7 @@ func file_proto_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_common_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

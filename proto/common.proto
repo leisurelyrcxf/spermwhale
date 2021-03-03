@@ -16,14 +16,10 @@ message ValueMeta {
 
 message Value {
     ValueMeta Meta = 1;
-    bytes val = 2;
+    bytes v = 2;
 }
 
-message ReadOption {
-    uint64 version = 1;
-    uint32 flag = 2;
-}
-
-message WriteOption {
-    uint32 flag = 1;
+message ValueCC {
+    Value value = 1;
+    uint64 max_read_version = 2;
 }

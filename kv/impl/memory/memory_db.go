@@ -80,18 +80,18 @@ func NewDB() *DB {
 	return db
 }
 
-func (db *DB) Get(_ context.Context, key string, opt types.ReadOption) (types.Value, error) {
+func (db *DB) Get(_ context.Context, key string, opt types.KVReadOption) (types.Value, error) {
 	vvs, err := db.getVersionedValues(key)
 	if err != nil {
 		return types.EmptyValue, err
 	}
-	if opt.IsGetExactVersion() {
+	if opt.ExactVersion {
 		return vvs.Get(opt.Version)
 	}
 	return vvs.FindMaxBelow(opt.Version)
 }
 
-func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.WriteOption) error {
+func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.KVWriteOption) error {
 	if opt.IsClearWriteIntent() {
 		vvs, err := db.getVersionedValues(key)
 		if err != nil {

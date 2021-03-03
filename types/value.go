@@ -26,16 +26,12 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 	}).SetFlag(m.Flag)
 }
 
-func (m Meta) IsEmpty() bool {
-	return m.Version == 0 && !m.IsMaxReadVersionBiggerThanRequested()
+func (m Meta) isEmpty() bool {
+	return m.Version == 0
 }
 
 func (m Meta) HasWriteIntent() bool {
 	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent > 0
-}
-
-func (m Meta) IsMaxReadVersionBiggerThanRequested() bool {
-	return m.Flag&consts.ValueMetaBitMaskMaxReadVersionBiggerThanRequested > 0
 }
 
 func (m *Meta) ClearWriteIntent() {
@@ -63,23 +59,20 @@ func NewValue(val []byte, version uint64) Value {
 
 func NewValueFromPB(x *commonpb.Value) Value {
 	return Value{
-		V:    x.Val,
 		Meta: NewMetaFromPB(x.Meta),
+		V:    x.V,
 	}
 }
 
 func (v Value) ToPB() *commonpb.Value {
-	if v.IsEmpty() {
-		return nil
-	}
 	return &commonpb.Value{
 		Meta: v.Meta.ToPB(),
-		Val:  v.V,
+		V:    v.V,
 	}
 }
 
 func (v Value) IsEmpty() bool {
-	return v.Meta.IsEmpty() && len(v.V) == 0
+	return len(v.V) == 0 && v.Meta.isEmpty()
 }
 
 func (v Value) WithVersion(version uint64) Value {
@@ -89,11 +82,6 @@ func (v Value) WithVersion(version uint64) Value {
 
 func (v Value) WithNoWriteIntent() Value {
 	v.ClearWriteIntent()
-	return v
-}
-
-func (v Value) WithMaxReadVersionBiggerThanRequested() Value {
-	v.Flag |= consts.ValueMetaBitMaskMaxReadVersionBiggerThanRequested
 	return v
 }
 
@@ -114,6 +102,52 @@ func (v Value) MustInt() int {
 	return int(x)
 }
 
+func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
+	return ValueCC{
+		Value:          v,
+		MaxReadVersion: maxReadVersion,
+	}
+}
+
 func IntValue(i int) Value {
 	return NewValue([]byte(strconv.Itoa(i)), 0)
+}
+
+type ValueCC struct {
+	Value
+
+	MaxReadVersion uint64
+}
+
+var EmptyValueCC = ValueCC{}
+
+func NewValueCCFromPB(x *commonpb.ValueCC) ValueCC {
+	if x.Value == nil {
+		return ValueCC{
+			MaxReadVersion: x.MaxReadVersion,
+		}
+	}
+	return ValueCC{
+		Value:          NewValueFromPB(x.Value),
+		MaxReadVersion: x.MaxReadVersion,
+	}
+}
+
+func (v ValueCC) ToPB() *commonpb.ValueCC {
+	if v.IsEmpty() {
+		return nil
+	}
+	return &commonpb.ValueCC{
+		Value:          v.Value.ToPB(),
+		MaxReadVersion: v.MaxReadVersion,
+	}
+}
+
+func (v ValueCC) IsEmpty() bool {
+	return v.Value.IsEmpty() && v.MaxReadVersion == 0
+}
+
+func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
+	v.MaxReadVersion = maxReadVersion
+	return v
 }

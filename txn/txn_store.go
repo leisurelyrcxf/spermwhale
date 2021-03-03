@@ -13,14 +13,15 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
-func getValueWrittenByTxnWithRetry(ctx context.Context, kv types.KV, key string, txn types.TxnId, maxRetry int, preventFutureWrite bool) (val types.Value, exists bool, err error) {
-	readOpt := types.NewReadOption(txn.Version()).WithExactVersion()
+func getValueWrittenByTxnWithRetry(ctx context.Context, kv types.KVCC, key string, txnId types.TxnId, callerTxn *Txn, preventFutureWrite bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
+	readOpt := types.NewKVCCReadOption(txnId.Version()).WithExactVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
+	} else if callerTxn.ID == txnId {
+		readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version hence future write with txnId can't succeed if key not exists
 	}
 	for i := 0; i < maxRetry && ctx.Err() == nil; i++ {
-		val, err = kv.Get(ctx, key, readOpt)
-		if err == nil || errors.IsNotExistsErr(err) {
+		if val, err = kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
 			return val, err == nil, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
@@ -37,7 +38,7 @@ func getValueWrittenByTxnWithRetry(ctx context.Context, kv types.KV, key string,
 }
 
 type TransactionStore struct {
-	kv  types.KV
+	kv  types.KVCC
 	cfg types.TxnConfig
 
 	txnInitializer func(txn *Txn)
@@ -46,12 +47,12 @@ type TransactionStore struct {
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
 	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, err error) {
-	readOpt := types.NewReadOption(types.MaxTxnVersion).WithNotGetMaxReadVersion()
+	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithNotGetMaxReadVersion()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
 	for i := 0; i < maxRetryTimes && ctx.Err() == nil; i++ {
-		var txnRecordData types.Value
+		var txnRecordData types.ValueCC
 		txnRecordData, err = s.kv.Get(ctx, TransactionKey(txnID), readOpt)
 		if err == nil {
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
@@ -77,7 +78,8 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	return nil, false, err
 }
 
-func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID types.TxnId, callerTxn types.TxnId, conflictedKey string) (*Txn, error) {
+func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID types.TxnId, callerTxn *Txn, conflictedKey string) (*Txn, error) {
+	assert.Must(conflictedKey != "")
 	// TODO maybe get from txn manager first?
 	preventFutureTxnRecordWrite := utils.IsTooStale(txnID.Version(), s.cfg.StaleWriteThreshold)
 	txn, recordExists, err := s.loadTransactionRecordWithRetry(ctx, txnID, preventFutureTxnRecordWrite, 2)
@@ -93,7 +95,7 @@ func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID typ
 	// 1. transaction has been rollbacked, conflictedKey must be gone
 	// 2. transaction has been committed and cleared, conflictedKey must have been cleared (no write intent)
 	// 3. transaction neither committed nor rollbacked
-	vv, keyExists, keyErr := getValueWrittenByTxnWithRetry(ctx, s.kv, conflictedKey, txnID, 2, false)
+	vv, keyExists, keyErr := getValueWrittenByTxnWithRetry(ctx, s.kv, conflictedKey, txnID, callerTxn, false /* no need to prevent future write because we can safe rollback if key not exists */, 2)
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] kv.Get conflicted key %s returns unexpected error: %v", conflictedKey, keyErr)
 		return nil, keyErr
@@ -119,6 +121,6 @@ func (s *TransactionStore) inferTransactionRecord(ctx context.Context, txnID typ
 	// record with intent), hence safe to rollback.
 	txn.WrittenKeys = append(txn.WrittenKeys, conflictedKey)
 	txn.State = types.TxnStateRollbacking
-	_ = txn.rollback(ctx, callerTxn, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
+	_ = txn.rollback(ctx, callerTxn.ID, true, "stale transaction record not found") // help rollback if original txn coordinator was gone
 	return txn, nil
 }

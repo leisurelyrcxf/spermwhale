@@ -11,7 +11,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 
-	"github.com/leisurelyrcxf/spermwhale/tablet"
+	"github.com/leisurelyrcxf/spermwhale/kvcc"
 
 	"github.com/leisurelyrcxf/spermwhale/gate"
 	"github.com/leisurelyrcxf/spermwhale/topo"
@@ -116,12 +116,12 @@ func createGate(t *testing.T, cfg types.TxnConfig) (g *gate.Gate, _ func()) {
 	return g, stopper
 }
 
-func createTabletServer(assert *testifyassert.Assertions, port, gid int, cfg types.TxnConfig) (server *tablet.Server) {
+func createTabletServer(assert *testifyassert.Assertions, port, gid int, cfg types.TxnConfig) (server *kvcc.Server) {
 	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 	if !assert.NoError(err) {
 		return nil
 	}
-	return tablet.NewServerForTesting(port, cfg, gid, topo.NewStore(cli, "test_cluster"))
+	return kvcc.NewServerForTesting(port, cfg, gid, topo.NewStore(cli, "test_cluster"))
 }
 
 func createCluster(t *testing.T, cfg types.TxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {

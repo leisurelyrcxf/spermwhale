@@ -37,7 +37,7 @@ func main() {
 	if err := txnServer.Start(); err != nil {
 		glog.Fatalf("failed to start txn server: %v", err)
 	}
-	kvServer := kv.NewServer(*flagKVPort, gAte, true)
+	kvServer := kv.NewServer(*flagKVPort, gate.NewReadOnlyKV(gAte))
 	if err := kvServer.Start(); err != nil {
 		glog.Fatalf("failed to start kv server: %v", err)
 	}
