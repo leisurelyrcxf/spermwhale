@@ -26,8 +26,8 @@ func main() {
 
 	cmd.RegisterStoreFlags()
 	flag.Parse()
-	logicalOracle := *flagLogical
 
+	logicalOracle := *flagLogical
 	store := cmd.NewStore()
 	var o oracle.Oracle
 	if logicalOracle {

@@ -332,6 +332,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 
 	if len(txn.WrittenKeys) == 0 {
 		txn.State = types.TxnStateCommitted
+		txn.h.RemoveTxn(txn)
 		return nil
 	}
 
@@ -376,6 +377,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
 		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.WrittenKeys, true, maxRetry)
 		if err != nil {
+			txn.State = types.TxnStateInvalid
 			return err
 		}
 		assert.Must(txn.ID == inferredTxn.ID)
@@ -395,12 +397,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			succeededKeys[key] = struct{}{}
 		}
 	}
-	if len(succeededKeys) == len(txn.WrittenKeys) {
-		assert.Must(txn.txnRecordTask.Err() != nil)
-		txn.State = types.TxnStateCommitted
-		txn.onCommitted(txn.ID, "after checking found all keys and txn record written successfully")
-		return nil
-	}
+	assert.Must(len(succeededKeys) != len(txn.WrittenKeys) || txn.txnRecordTask.Err() != nil)
 	committed, rollbacked := txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
 	if committed {
 		assert.Must(txn.State == types.TxnStateCommitted)

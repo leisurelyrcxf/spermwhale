@@ -27,6 +27,8 @@ func completer(d prompt.Document) []prompt.Suggest {
 func main() {
 	flagHost := flag.String("host", "127.0.0.1", "host")
 	cmd.RegisterPortFlags(consts.DefaultKVServerPort)
+	flag.Parse()
+
 	kvClient, err := kv.NewClient(fmt.Sprintf("%s:%d", *flagHost, *cmd.FlagPort))
 	if err != nil {
 		glog.Fatalf("can't create kv client")
@@ -39,6 +41,10 @@ func main() {
 		t := prompt.Input("> ", completer)
 		if strings.HasPrefix(t, "get") {
 			remain := strings.TrimPrefix(t, "get")
+			if remain == "" {
+				fmt.Println("invalid get command, use 'get key'")
+				continue
+			}
 			if !strings.HasPrefix(remain, " ") {
 				fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
 				continue

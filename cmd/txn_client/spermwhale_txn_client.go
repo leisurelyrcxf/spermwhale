@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/c-bata/go-prompt"
 	"github.com/golang/glog"
@@ -21,6 +22,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 		{Text: "set", Description: "set key value"},
 		{Text: "commit", Description: "commit the transaction"},
 		{Text: "rollback", Description: "rollback the transaction"},
+		{Text: "show", Description: "show current transaction"},
 		{Text: "quit", Description: "quit terminal"},
 		{Text: "exit", Description: "quit terminal"},
 	}
@@ -30,24 +32,46 @@ func completer(d prompt.Document) []prompt.Suggest {
 func main() {
 	flagHost := flag.String("host", "127.0.0.1", "host")
 	flagNotAutoBegin := flag.Bool("not-auto-begin", false, "not auto begin")
+	flagNotAutoClearTerminatedTxn := flag.Bool("not-auto-clear-txn", false, "not auto clear txn after transaction committed or terminated")
+	flagShowTxnID := flag.Bool("show-txn-id", false, "show txn id instead of txn time")
 	cmd.RegisterPortFlags(consts.DefaultTxnServerPort)
+	flag.Parse()
 
 	cli, err := txn.NewClient(fmt.Sprintf("%s:%d", *flagHost, *cmd.FlagPort))
 	if err != nil {
 		glog.Fatalf("can't create txn client")
 	}
-	autoBegin := !*flagNotAutoBegin
+	var (
+		autoBegin              = !*flagNotAutoBegin
+		autoClearTerminatedTxn = !*flagNotAutoClearTerminatedTxn
+		showTxnID              = *flagShowTxnID
+	)
 	tm := txn.NewClientTxnManager(cli)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var tx types.Txn
+	showTxnInfo := func() {
+		if tx == nil {
+			fmt.Println("current transaction: nil")
+		} else if showTxnID {
+			fmt.Printf("Current transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
+		} else {
+			fmt.Printf("Current transaction: {timestamp: %s, state: %s}\n", time.Unix(0, int64(tx.GetId())).Format("15:04:05.000000000"), tx.GetState())
+		}
+	}
 	for {
 		if clientTxn, ok := tx.(*txn.ClientTxn); ok {
 			if clientTxn.State == types.TxnStateCommitted {
 				fmt.Println("committed")
+				if autoClearTerminatedTxn {
+					tx = nil
+				}
 			} else if clientTxn.State.IsAborted() {
 				fmt.Println("aborted")
+				if autoClearTerminatedTxn {
+					tx = nil
+				}
 			}
 		}
 		t := prompt.Input("> ", completer)
@@ -56,9 +80,13 @@ func main() {
 				fmt.Printf("begin failed: %v\n", err)
 				continue
 			}
-			fmt.Printf("Started transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
+			showTxnInfo()
 		} else if strings.HasPrefix(t, "get") {
 			remain := strings.TrimPrefix(t, "get")
+			if remain == "" {
+				fmt.Println("invalid get command, use 'get key'")
+				continue
+			}
 			if !strings.HasPrefix(remain, " ") {
 				fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
 				continue
@@ -78,7 +106,7 @@ func main() {
 					fmt.Printf("begin failed: %v\n", err)
 					continue
 				}
-				fmt.Printf("Started transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
+				showTxnInfo()
 			}
 			key := parts[0]
 			val, err := tx.Get(ctx, key)
@@ -89,6 +117,10 @@ func main() {
 			fmt.Println(string(val.V))
 		} else if strings.HasPrefix(t, "set") {
 			remain := strings.TrimPrefix(t, "set")
+			if remain == "" {
+				fmt.Println("invalid set command, use 'set key value'")
+				continue
+			}
 			if !strings.HasPrefix(remain, " ") {
 				fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
 				continue
@@ -108,7 +140,7 @@ func main() {
 					fmt.Printf("begin failed: %v\n", err)
 					continue
 				}
-				fmt.Printf("Started transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
+				showTxnInfo()
 			}
 			key, val := parts[0], parts[1]
 			if err := tx.Set(ctx, key, []byte(val)); err != nil {
@@ -134,6 +166,8 @@ func main() {
 				fmt.Printf("rollback failed: %v\n", err)
 				continue
 			}
+		} else if t == "show" {
+			showTxnInfo()
 		} else if t == "quit" || t == "exit" || t == "q" {
 			break
 		} else {

@@ -53,9 +53,10 @@ func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSet
 		return &txnpb.TxnSetResponse{
 			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
+	err = txn.Set(ctx, req.Key, req.Value)
 	return &txnpb.TxnSetResponse{
 		Txn: txn.ToPB(),
-		Err: errors.ToPBError(txn.Set(ctx, req.Key, req.Value)),
+		Err: errors.ToPBError(err),
 	}, nil
 }
 
@@ -65,9 +66,10 @@ func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb
 		return &txnpb.RollbackResponse{
 			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
+	err = txn.Rollback(ctx)
 	return &txnpb.RollbackResponse{
 		Txn: txn.ToPB(),
-		Err: errors.ToPBError(txn.Rollback(ctx))}, nil
+		Err: errors.ToPBError(err)}, nil
 }
 
 func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.CommitResponse, error) {
@@ -76,9 +78,10 @@ func (s *Stub) Commit(ctx context.Context, req *txnpb.CommitRequest) (*txnpb.Com
 		return &txnpb.CommitResponse{
 			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
+	err = txn.Commit(ctx)
 	return &txnpb.CommitResponse{
 		Txn: txn.ToPB(),
-		Err: errors.ToPBError(txn.Commit(ctx)),
+		Err: errors.ToPBError(err),
 	}, nil
 }
 

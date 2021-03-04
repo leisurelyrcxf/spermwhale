@@ -129,6 +129,9 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 			txn := s.txnConstructor(txnId)
 			txn.WrittenKeys = allKeys
 			txn.State = types.TxnStateCommitted
+			if txnId == callerTxn.ID {
+				txn.h.RemoveTxn(txn)
+			}
 			return txn, nil
 		}
 		// Must haven't committed.
@@ -146,6 +149,9 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	txn.WrittenKeys = allKeys
 	if !keyExists && len(txn.WrittenKeys) == 1 {
 		txn.State = types.TxnStateRollbacked // nothing to rollback
+		if txnId == callerTxn.ID {
+			txn.h.RemoveTxn(txn)
+		}
 		return txn, nil
 	}
 	txn.State = types.TxnStateRollbacking

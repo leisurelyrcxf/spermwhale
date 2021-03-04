@@ -34,10 +34,14 @@ etcd coordinator (support auto reconfiguration):
 **NOTE**:
 For using the interactive client, you may need to increase the stale write period.  
 E.g.:
-<pre>./spwtablet -cluster-name spermwhale -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 0  -port 20000 2>&1 1>&sptablet-0.log &
-./spwtablet -cluster-name spermwhale -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 1  -port 30000 2>&1 1>&sptablet-1.log &
-./spworacle -cluster-name spermwhale -coordinator fs -coordinator-addr /tmp -port 6666 2>&1 1>&sporacle.log &
+<pre>./spwtablet -cluster-name spermwhale --db redis -redis-port 6379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 0  -port 20000 2>&1 1>&sptablet-0.log &
+sleep 1s
+./spwtablet -cluster-name spermwhale --db redis -redis-port 16379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 1  -port 30000 2>&1 1>&sptablet-1.log &
+sleep 1s
+./spworacle -cluster-name spermwhale --loose -coordinator fs -coordinator-addr /tmp -port 6666 2>&1 1>&sporacle.log &
+sleep 1s
 ./spwgate   -cluster-name spermwhale -txn-stale-write-threshold 90s -coordinator fs -coordinator-addr /tmp -port-txn 9999 -port-kv 10001 2>&1 1>&spgate-1.log &
+sleep 1s
 ./spwgate   -cluster-name spermwhale -txn-stale-write-threshold 90s -coordinator fs -coordinator-addr /tmp -port-txn 19999 -port-kv 20001 2>&1 1>&spgate-2.log &
 </pre> 
 
