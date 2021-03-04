@@ -107,10 +107,10 @@ func IsNotSupportedErr(e error) bool {
 }
 
 func GetErrorCode(e error) int {
-	if ve, ok := e.(*Error); ok {
+	if ve, ok := e.(*Error); ok && ve != nil {
 		return ve.Code
 	}
-	if ce, ok := e.(*commonpb.Error); ok {
+	if ce, ok := e.(*commonpb.Error); ok && ce != nil {
 		return int(ce.Code)
 	}
 	return consts.ErrCodeUnknown
