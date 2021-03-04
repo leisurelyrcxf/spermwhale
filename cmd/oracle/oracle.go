@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -21,6 +22,7 @@ func main() {
 	cmd.RegisterPortFlags(consts.DefaultOracleServerPort)
 	flagAllocInAdvance := flag.Uint64("alloc-in-advance", 1000, "pre-allocate size, only used when --logical is set")
 	flagLogical := flag.Bool("logical", false, "logical oracle, do not use this because this is not compatible with txn framework!")
+	flagLoosedPrecisionOracle := flag.Bool("loose", false, "loosed precision physical oracle, used for redis backend only")
 
 	cmd.RegisterStoreFlags()
 	flag.Parse()
@@ -34,7 +36,11 @@ func main() {
 			glog.Fatalf("failed to create oracle: %v", err)
 		}
 	} else {
-		o = physical.NewOracle()
+		if *flagLoosedPrecisionOracle {
+			o = physical.NewLoosedPrecisionOracle()
+		} else {
+			o = physical.NewOracle()
+		}
 	}
 	server := impl.NewServer(*cmd.FlagPort, o, store)
 	if err := server.Start(); err != nil {

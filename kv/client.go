@@ -3,11 +3,11 @@ package kv
 import (
 	"context"
 
-	"github.com/leisurelyrcxf/spermwhale/errors"
+	"google.golang.org/grpc"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"google.golang.org/grpc"
 )
 
 type Client struct {

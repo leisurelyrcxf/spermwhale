@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvccpb"
 	"github.com/leisurelyrcxf/spermwhale/topo"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -55,17 +54,16 @@ type Server struct {
 }
 
 // readOnly indicate this is outer service
-func NewServer(port int, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
-	return newServer(port, cfg, gid, store, false)
+func NewServer(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
+	return newServer(port, db, cfg, gid, store, false)
 }
 
-func NewServerForTesting(port int, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
-	return newServer(port, cfg, gid, store, true)
+func NewServerForTesting(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
+	return newServer(port, db, cfg, gid, store, true)
 }
 
-func newServer(port int, cfg types.TxnConfig, gid int, store *topo.Store, testing bool) *Server {
+func newServer(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store, testing bool) *Server {
 	grpcServer := grpc.NewServer()
-	db := memory.NewDB()
 	kvcc := newKVCC(db, cfg, testing)
 	stub := &Stub{kvcc: kvcc}
 

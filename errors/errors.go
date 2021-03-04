@@ -25,6 +25,10 @@ var (
 		Code: consts.ErrCodeVersionNotExists,
 		Msg:  "version not exist",
 	}
+	ErrVersionAlreadyExists = &Error{
+		Code: consts.ErrCodeVersionAlreadyExists,
+		Msg:  "version already exists",
+	}
 	ErrNotSupported = &Error{
 		Code: consts.ErrCodeNotSupported,
 		Msg:  "not supported",

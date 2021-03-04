@@ -42,7 +42,7 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 	}
 }
 
-func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, txnId types.TxnId, callTxn *Txn, keys []string, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
+func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, keys []string, txnId types.TxnId, callTxn *Txn, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for _, key := range keys {
@@ -118,7 +118,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// Hence we get the keys. (we may get the same key a second time because the result of the key before seen transaction record not exists is not confident enough)
 	assert. /* NOTE: don't remove this assert*/ Must(preventFutureTxnRecordWrite || len(keysWithWriteIntent) == len(allKeys))
 	// Transaction record not exists, get key to find out the truth.
-	_, vv, keyExists, keyErr := s.getAnyValueWrittenByTxnWithRetry(ctx, txnId, callerTxn, allKeys, maxRetry)
+	_, vv, keyExists, keyErr := s.getAnyValueWrittenByTxnWithRetry(ctx, allKeys, txnId, callerTxn, maxRetry)
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%s)) returns unexpected error: %v", txnId, callerTxn.ID, allKeys, keyErr)
 		return nil, keyErr

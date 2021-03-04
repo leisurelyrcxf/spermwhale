@@ -37,11 +37,11 @@ func TestTxnLostUpdate(t *testing.T) {
 func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
-	db := memory.NewDB()
+	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -56,7 +56,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 		return
 	}
 
-	txns := make([]TxnInfo, goRoutineNumber)
+	txns := make([]ExecuteInfo, goRoutineNumber)
 
 	var wg sync.WaitGroup
 	for i := 0; i < goRoutineNumber; i++ {
@@ -82,7 +82,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
-				txns[i] = TxnInfo{
+				txns[i] = ExecuteInfo{
 					ID:          tx.GetId().Version(),
 					State:       tx.GetState(),
 					ReadValues:  map[string]types.Value{"k1": readValue},
@@ -131,11 +131,11 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 	t.Logf("")
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
-	db := memory.NewDB()
+	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -155,7 +155,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 		return
 	}
 
-	txns := make([]TxnInfo, goRoutineNumber)
+	txns := make([]ExecuteInfo, goRoutineNumber)
 
 	f1, f2, f3 := func(x int) int {
 		return (x + 5) % 11
@@ -224,7 +224,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 				}
 				return nil, true
 			}, nil, nil); assert.NoError(err) {
-				txns[i] = TxnInfo{
+				txns[i] = ExecuteInfo{
 					ID:             tx.GetId().Version(),
 					State:          tx.GetState(),
 					ReadValues:     readValues,
@@ -284,11 +284,11 @@ func TestTxnReadWriteAfterWrite(t *testing.T) {
 func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnReadWriteAfterWrite @round %d", round)
 
-	db := memory.NewDB()
+	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -377,11 +377,11 @@ func TestTxnLostUpdateWithSomeAborted(t *testing.T) {
 func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnLostUpdateWithSomeAborted @round %d", round)
 
-	db := memory.NewDB()
+	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -471,11 +471,11 @@ func TestTxnLostUpdateWithSomeAborted2(t *testing.T) {
 func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnLostUpdateWithSomeAborted2 @round %d", round)
 
-	db := memory.NewDB()
+	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvcc, defaultTxnConfig, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -569,7 +569,7 @@ func TestDistributedTxnLostUpdate(t *testing.T) {
 
 func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testDistributedTxnLostUpdate @round %d", round)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -655,7 +655,7 @@ func TestDistributedTxnReadConsistency(t *testing.T) {
 
 func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testDistributedTxnReadConsistency @round %d", round)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -804,7 +804,7 @@ func TestDistributedTxnConsistencyExtraWrite(t *testing.T) {
 
 func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testDistributedTxnConsistencyExtraWrite @round %d", round)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -845,7 +845,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 		return
 	}
 
-	txns := make([][]TxnInfo, goRoutineNumber)
+	txns := make([][]ExecuteInfo, goRoutineNumber)
 	var wg sync.WaitGroup
 	for i := 0; i < goRoutineNumber; i++ {
 		wg.Add(1)
@@ -880,7 +880,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							return nil
 						}(), true
 					}, nil, nil); assert.NoError(err) {
-						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
 							ReadValues:  readValues,
@@ -912,7 +912,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							return nil
 						}(), true
 					}, nil, nil); assert.NoError(err) {
-						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
 							ReadValues:  readValues,
@@ -963,7 +963,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							return nil
 						}(), true
 					}, nil, nil); assert.NoError(err) {
-						txns[goRoutineIndex] = append(txns[goRoutineIndex], TxnInfo{
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
 							ReadValues:  readValues,
@@ -994,7 +994,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 		return
 	}
 
-	allTxns := make([]TxnInfo, 0, len(txns)*roundPerGoRoutine)
+	allTxns := make([]ExecuteInfo, 0, len(txns)*roundPerGoRoutine)
 	for _, txnsOneGoRoutine := range txns {
 		allTxns = append(allTxns, txnsOneGoRoutine...)
 	}
@@ -1038,7 +1038,7 @@ func TestDistributedTxnWriteSkew(t *testing.T) {
 
 func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testDistributedTxnWriteSkew @round %d", round)
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -1205,7 +1205,7 @@ func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
 }
 
 func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 	t.Logf("testDistributedTxnConsistencyIntegrate @round %d", round)
 	var (
 		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
@@ -1229,6 +1229,7 @@ func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteT
 }
 
 func TestDistributedTxnConsistencyStandalone(t *testing.T) {
+	t.Skip("needs processes be upped")
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
@@ -1241,7 +1242,7 @@ func TestDistributedTxnConsistencyStandalone(t *testing.T) {
 }
 
 func testDistributedTxnConsistencyStandalone(t *testing.T, round int) (b bool) {
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 	t.Logf("testDistributedTxnConsistencyStandalone @round %d", round)
 	const (
 		port1 = 9999
@@ -1261,8 +1262,46 @@ func testDistributedTxnConsistencyStandalone(t *testing.T, round int) (b bool) {
 	return testDistributedTxnConsistencyIntegrateFunc(t, []*smart_txn_client.SmartClient{sc1, sc2})
 }
 
+func TestDistributedTxnConsistencyIntegrateRedis(t *testing.T) {
+	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+
+	for _, threshold := range []int{10000} {
+		for i := 0; i < rounds; i++ {
+			if !testifyassert.True(t, testDistributedTxnConsistencyIntegrateRedis(t, i, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("testDistributedTxnConsistencyIntegrateRedis failed @round %d", i)
+				return
+			}
+		}
+	}
+}
+
+func testDistributedTxnConsistencyIntegrateRedis(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+	assert := types.NewAssertion(t)
+	t.Logf("testDistributedTxnConsistencyIntegrateRedis @round %d", round)
+	var (
+		cfg = types.TxnConfig{}.WithStaleWriteThreshold(staleWriteThreshold)
+	)
+	tms, clientTMs, stopper := createClusterEx(t, types.DBTypeRedis, cfg)
+	if !assert.Len(tms, 2) {
+		return
+	}
+	defer stopper()
+	//t.Logf("%v shard: %d, %v shard: %d", key1, gAte.MustRoute(key1).ID, key2, gAte.MustRoute(key2).ID)
+	gAte := tms[0].tm.kv.(*gate.Gate)
+	const key1, key2 = "k1", "k22"
+	if !assert.NotEqual(gAte.MustRoute(key1).ID, gAte.MustRoute(key2).ID) {
+		return
+	}
+	tm1, tm2 := clientTMs[0], clientTMs[1]
+	sc1 := smart_txn_client.NewSmartClient(tm1, 10000)
+	sc2 := smart_txn_client.NewSmartClient(tm2, 10000)
+
+	return testDistributedTxnConsistencyIntegrateFunc(t, []*smart_txn_client.SmartClient{sc1, sc2})
+}
+
 func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_client.SmartClient) (b bool) {
-	assert := testifyassert.New(NewT(t))
+	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -1300,7 +1339,6 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 			start := time.Now()
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-
 					assert.NoError(sc1.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 						{
 							key1Val, err := txn.Get(ctx, key1)

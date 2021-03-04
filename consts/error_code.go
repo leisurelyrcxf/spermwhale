@@ -6,6 +6,7 @@ const (
 	ErrCodeStaleWrite                    = 3
 	ErrCodeShardsNotReady                = 5
 	ErrCodeEmptyKey                      = 6
+	ErrCodeVersionAlreadyExists          = 9
 	ErrCodeVersionNotExists              = 10
 	ErrCodeTransactionAlreadyExists      = 11
 	ErrCodeTransactionNotFound           = 12

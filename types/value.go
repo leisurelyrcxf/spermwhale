@@ -34,10 +34,6 @@ func (m Meta) HasWriteIntent() bool {
 	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent > 0
 }
 
-func (m *Meta) ClearWriteIntent() {
-	m.Flag &= 0xfe
-}
-
 type Value struct {
 	Meta
 
@@ -81,7 +77,7 @@ func (v Value) WithVersion(version uint64) Value {
 }
 
 func (v Value) WithNoWriteIntent() Value {
-	v.ClearWriteIntent()
+	v.Flag &= 0xfe
 	return v
 }
 

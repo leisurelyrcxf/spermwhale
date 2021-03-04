@@ -29,4 +29,8 @@ const (
 
 const (
 	DefaultRetryWaitPeriod = time.Millisecond * 100
+
+	LoosedOracleDiscardedBits = 10
+	LoosedOraclePrecision     = 1 << LoosedOracleDiscardedBits
+	LoosedOracleWaitPeriod    = LoosedOraclePrecision >> 2
 )

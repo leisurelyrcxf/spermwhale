@@ -1,12 +1,8 @@
 package memory
 
 import (
-	"context"
-
-	"github.com/leisurelyrcxf/spermwhale/consts"
-
-	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
@@ -38,8 +34,27 @@ func (vvs *VersionedValues) Get(version uint64) (types.Value, error) {
 	return val.(types.Value), nil
 }
 
-func (vvs *VersionedValues) Put(val types.Value) {
+func (vvs *VersionedValues) Insert(val types.Value) error {
+	if !vvs.ConcurrentTreeMap.Insert(val.Version, val) {
+		return errors.ErrVersionAlreadyExists
+	}
+	return nil
+}
+
+func (vvs *VersionedValues) Put(val types.Value) error {
 	vvs.ConcurrentTreeMap.Put(val.Version, val)
+	return nil
+}
+
+func (vvs *VersionedValues) UpdateFlag(version uint64, modifyFlag func(types.Value) types.Value) error {
+	if !vvs.ConcurrentTreeMap.Update(version, func(old interface{}) (new interface{}, modified bool) {
+		oldVal := old.(types.Value)
+		newVal := modifyFlag(oldVal)
+		return newVal, newVal.Flag != oldVal.Flag
+	}) {
+		return errors.ErrVersionNotExists
+	}
+	return nil
 }
 
 func (vvs *VersionedValues) Max() (types.Value, error) {
@@ -70,109 +85,41 @@ func (vvs *VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, erro
 	return dbVal.(types.Value), nil
 }
 
-type DB struct {
-	values concurrency.ConcurrentMap
+func (vvs *VersionedValues) RemoveIf(version uint64, pred func(prev types.Value) error) error {
+	var err error
+	vvs.ConcurrentTreeMap.RemoveIf(version, func(prev interface{}) bool {
+		if predErr := pred(prev.(types.Value)); predErr != nil {
+			err = predErr
+			return false
+		}
+		return true
+	})
+	return err
 }
 
-func NewDB() *DB {
-	db := &DB{}
-	db.values.Initialize(256)
-	return db
-}
-
-func (db *DB) Get(_ context.Context, key string, opt types.KVReadOption) (types.Value, error) {
-	vvs, err := db.getVersionedValues(key)
-	if err != nil {
-		return types.EmptyValue, err
-	}
-	if opt.ExactVersion {
-		return vvs.Get(opt.Version)
-	}
-	return vvs.FindMaxBelow(opt.Version)
-}
-
-func (db *DB) Set(_ context.Context, key string, val types.Value, opt types.KVWriteOption) error {
-	if opt.IsClearWriteIntent() {
-		vvs, err := db.getVersionedValues(key)
-		if err != nil {
-			return errors.Annotatef(err, "key: %s", key)
-		}
-		vv, err := vvs.Get(val.Version)
-		if err != nil {
-			return errors.Annotatef(err, "key: %s", key)
-		}
-		vv.Meta.ClearWriteIntent()
-		vvs.Put(vv)
-		return nil
-	}
-	if opt.IsRemoveVersion() {
-		if val.HasWriteIntent() {
-			return errors.Annotatef(errors.ErrNotSupported, "soft remove")
-		}
-		vvs, err := db.getVersionedValues(key)
-		if err != nil {
-			return errors.Annotatef(err, "key: %s", key)
-		}
-		prevVal, err := vvs.Get(val.Version)
-		if err != nil {
-			assert.Must(errors.GetErrorCode(err) == consts.ErrCodeVersionNotExists)
-			return nil
-		}
-		if !prevVal.HasWriteIntent() {
-			assert.Must(false)
-			return errors.ErrCantRemoveCommittedValue
-		}
-		vvs.Remove(val.Version)
-		return nil
-	}
-	db.values.GetLazy(key, func() interface{} {
-		return NewVersionedValues()
-	}).(*VersionedValues).Put(val)
+func (vvs *VersionedValues) Remove(version uint64) error {
+	vvs.ConcurrentTreeMap.Remove(version)
 	return nil
 }
 
-func (db *DB) Close() error {
-	db.values.Clear()
-	return nil
+func NewMemoryDB() *kv.DB {
+	allKeyValues := &concurrency.ConcurrentMap{}
+	allKeyValues.Initialize(256)
+	return kv.NewDB(kv.VersionedValuesFactory{
+		Get: func(key string) (vvs kv.VersionedValues, err error) {
+			val, ok := allKeyValues.Get(key)
+			if !ok {
+				return nil, errors.ErrKeyNotExist
+			}
+			return val.(*VersionedValues), nil
+		},
+		GetLazy: func(key string) kv.VersionedValues {
+			return allKeyValues.GetLazy(key, func() interface{} {
+				return NewVersionedValues()
+			}).(*VersionedValues)
+		},
+	}, func() error {
+		allKeyValues.Clear()
+		return nil
+	})
 }
-
-func (db *DB) getVersionedValues(key string) (*VersionedValues, error) {
-	val, ok := db.values.Get(key)
-	if !ok {
-		return nil, errors.ErrKeyNotExist
-	}
-	return val.(*VersionedValues), nil
-}
-
-func (db *DB) MustRemoveVersion(key string, version uint64) {
-	vvs, err := db.getVersionedValues(key)
-	assert.MustNoError(err)
-	_, err = vvs.Get(version)
-	assert.MustNoError(err)
-	vvs.Remove(version)
-}
-
-func (db *DB) MustClearVersions(key string) {
-	vvs, err := db.getVersionedValues(key)
-	assert.MustNoError(err)
-	vvs.Clear()
-}
-
-//func (db *DB) Snapshot() map[string]float64 {
-//	m := make(map[string]float64)
-//	if !db.mvccEnabled {
-//		db.values.ForEachStrict(func(k string, vv interface{}) {
-//			m[k] = vv.(Value).Value
-//		})
-//	} else {
-//		db.values.ForEachStrict(func(k string, vvs interface{}) {
-//			dbValue, err := vvs.(VersionedValues).Max()
-//			if err != nil {
-//				m[k] = math.NaN()
-//				return
-//			}
-//			m[k] = dbValue.Value
-//		})
-//	}
-//	return m
-//}

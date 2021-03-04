@@ -21,19 +21,61 @@ func NewConcurrentTreeMap(comparator utils.Comparator) *ConcurrentTreeMap {
 func (ctm *ConcurrentTreeMap) Get(key interface{}) (interface{}, bool) {
 	ctm.mutex.Lock()
 	defer ctm.mutex.Unlock()
+
 	return ctm.tm.Get(key)
+}
+
+func (ctm *ConcurrentTreeMap) Update(key interface{}, modifier func(old interface{}) (new interface{}, modified bool)) (success bool) {
+	ctm.mutex.Lock()
+	defer ctm.mutex.Unlock()
+
+	old, ok := ctm.tm.Get(key)
+	if !ok {
+		return false
+	}
+	if nv, modified := modifier(old); modified {
+		ctm.tm.Put(key, nv)
+	}
+	return true
 }
 
 func (ctm *ConcurrentTreeMap) Put(key interface{}, val interface{}) {
 	ctm.mutex.Lock()
+	defer ctm.mutex.Unlock()
+
 	ctm.tm.Put(key, val)
-	ctm.mutex.Unlock()
+}
+
+func (ctm *ConcurrentTreeMap) Insert(key interface{}, val interface{}) (success bool) {
+	ctm.mutex.Lock()
+	defer ctm.mutex.Unlock()
+
+	if _, ok := ctm.tm.Get(key); ok {
+		return false
+	}
+	ctm.tm.Put(key, val)
+	return true
 }
 
 func (ctm *ConcurrentTreeMap) Remove(key interface{}) {
 	ctm.mutex.Lock()
+	defer ctm.mutex.Unlock()
+
 	ctm.tm.Remove(key)
-	ctm.mutex.Unlock()
+}
+
+func (ctm *ConcurrentTreeMap) RemoveIf(key interface{}, pred func(prev interface{}) bool) {
+	ctm.mutex.Lock()
+	defer ctm.mutex.Unlock()
+
+	old, ok := ctm.tm.Get(key)
+	if !ok {
+		return // no need to remove
+	}
+
+	if pred(old) {
+		ctm.tm.Remove(key)
+	}
 }
 
 func (ctm *ConcurrentTreeMap) Clear() {

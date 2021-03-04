@@ -3,8 +3,6 @@ package integration
 import (
 	"fmt"
 	"os"
-	"runtime/debug"
-	"strings"
 	"sync"
 	"testing"
 
@@ -147,31 +145,4 @@ func chkTestPrerequisite() error {
 		}
 	})
 	return chkPrerequisiteErr
-}
-
-type MyT struct {
-	t *testing.T
-	*TestSuite
-}
-
-func NewT(t *testing.T, ts *TestSuite) MyT {
-	return MyT{
-		t:         t,
-		TestSuite: ts,
-	}
-}
-
-func (t MyT) Errorf(format string, args ...interface{}) {
-	if isMain() && !t.exiting.Get() {
-		t.t.Errorf(format, args...)
-		return
-	}
-	print(fmt.Sprintf(format, args...))
-	_ = os.Stderr.Sync()
-	t.Exit()
-}
-
-func isMain() bool {
-	ss := string(debug.Stack())
-	return strings.Contains(ss, "testing.(*T).Run")
 }
