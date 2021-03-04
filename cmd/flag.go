@@ -2,7 +2,11 @@ package cmd
 
 import (
 	"flag"
+	"fmt"
+	"os"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 
@@ -74,4 +78,25 @@ func NewTxnConfig() types.TxnConfig {
 		StaleWriteThreshold: *flagTxnConfigStaleWriteThreshold,
 		MaxClockDrift:       *flagTxnConfigMaxClockDrift,
 	}
+}
+
+var (
+	flagVersion *bool
+)
+
+func RegisterVersionFlags() {
+	flagVersion = flag.Bool("version", false, "show version")
+}
+
+func CheckVersionFlag() {
+	if *flagVersion {
+		fmt.Println(utils.Version())
+		os.Exit(1)
+	}
+}
+
+func ParseFlags() {
+	RegisterVersionFlags()
+	flag.Parse()
+	CheckVersionFlag()
 }

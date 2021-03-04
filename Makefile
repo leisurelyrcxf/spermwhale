@@ -28,6 +28,19 @@ client:
 
 build: deps server client
 
+debug: deps server-debug client-debug
+
+server-debug:
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo DBUG" -installsuffix netgo -o spwtablet ./cmd/tablet
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo DBUG" -installsuffix netgo -o spworacle ./cmd/oracle
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo DBUG" -installsuffix netgo -o spwgate ./cmd/gate
+
+client-debug:
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo DBUG" -installsuffix netgo -o spwclient ./cmd/txn_client
+	go build -ldflags "$(GO_LDFLAGS)" -a -tags "netgo osusergo DBUG" -installsuffix netgo -o spwkvclient ./cmd/kv_client
+
+
+
 clean-build: clean build
 
 clean:

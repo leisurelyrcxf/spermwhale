@@ -22,7 +22,7 @@ func main() {
 	flagIOWorkerNum := flag.Int("io-worker-num", consts.DefaultTxnManagerIOWorkerNumber, "txn manager worker number")
 	cmd.RegisterStoreFlags()
 	cmd.RegisterTxnConfigFlags()
-	flag.Parse()
+	cmd.ParseFlags()
 
 	store := cmd.NewStore()
 	gAte, err := gate.NewGate(store)

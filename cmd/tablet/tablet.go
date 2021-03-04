@@ -27,7 +27,7 @@ func main() {
 	flagTestMode := flag.Bool("test", false, "test mode, won't sleep at start")
 	cmd.RegisterStoreFlags()
 	cmd.RegisterTxnConfigFlags()
-	flag.Parse()
+	cmd.ParseFlags()
 
 	if *flagGid == -1 {
 		glog.Fatalf("must provide gid")

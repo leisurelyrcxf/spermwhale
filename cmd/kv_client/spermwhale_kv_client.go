@@ -27,7 +27,7 @@ func completer(d prompt.Document) []prompt.Suggest {
 func main() {
 	flagHost := flag.String("host", "127.0.0.1", "host")
 	cmd.RegisterPortFlags(consts.DefaultKVServerPort)
-	flag.Parse()
+	cmd.ParseFlags()
 
 	kvClient, err := kv.NewClient(fmt.Sprintf("%s:%d", *flagHost, *cmd.FlagPort))
 	if err != nil {

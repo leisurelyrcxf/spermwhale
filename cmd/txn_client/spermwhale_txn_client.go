@@ -38,7 +38,7 @@ func main() {
 	flagNotAutoClearTerminatedTxn := flag.Bool("not-auto-clear-txn", false, "not auto clear txn after transaction committed or terminated")
 	flagShowTxnID := flag.Bool("show-txn-id", false, "show txn id instead of txn time")
 	cmd.RegisterPortFlags(consts.DefaultTxnServerPort)
-	flag.Parse()
+	cmd.ParseFlags()
 
 	cli, err := txn.NewClient(fmt.Sprintf("%s:%d", *flagHost, *cmd.FlagPort))
 	if err != nil {

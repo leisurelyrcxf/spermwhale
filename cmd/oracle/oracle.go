@@ -25,7 +25,7 @@ func main() {
 	flagLoosedPrecisionOracle := flag.Bool("loose", false, "loosed precision physical oracle, used for redis backend only")
 
 	cmd.RegisterStoreFlags()
-	flag.Parse()
+	cmd.ParseFlags()
 
 	logicalOracle := *flagLogical
 	store := cmd.NewStore()
