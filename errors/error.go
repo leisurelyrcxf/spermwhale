@@ -89,6 +89,12 @@ func IsMustRollbackGetErr(e error) bool {
 		code == consts.ErrCodeStaleWrite
 }
 
+func IsMustRollbackWriteKeyErr(e error) bool {
+	code := GetErrorCode(e)
+	return code == consts.ErrCodeTransactionConflict ||
+		code == consts.ErrCodeStaleWrite
+}
+
 func IsMustRollbackCommitErr(e error) bool {
 	code := GetErrorCode(e)
 	return code == consts.ErrCodeTransactionConflict ||

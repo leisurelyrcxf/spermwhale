@@ -311,6 +311,14 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	}
 	txn.writeKeyTasks = append(txn.writeKeyTasks, writeTask)
 	txn.lastWriteKeyTasks[key] = writeTask
+	for _, task := range txn.writeKeyTasks {
+		// TODO this should be safe even though no sync was executed
+		if err := task.ErrUnsafe(); errors.IsMustRollbackWriteKeyErr(err) {
+			txn.State = types.TxnStateRollbacking
+			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write key io task '%s' failed: '%v'", task.ID, err.Error()))
+			return err
+		}
+	}
 	return nil
 }
 

@@ -972,7 +972,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					}
 				}
 			}
-			t.Logf("cost %v per round", time.Now().Sub(start)/roundPerGoRoutine)
+			t.Logf("cost %v per round @goroutine %d", time.Now().Sub(start)/roundPerGoRoutine, goRoutineIndex)
 		}(i)
 	}
 
@@ -1055,6 +1055,9 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 		constraint = func(v1, v2 int) bool { return v1+v2 > 0 }
 	)
 	gAte, stopper := createGate(t, cfg)
+	if !assert.NotNil(gAte) {
+		return
+	}
 	defer stopper()
 	//t.Logf("%v shard: %d, %v shard: %d", key1, gAte.MustRoute(key1).ID, key2, gAte.MustRoute(key2).ID)
 	if !assert.NotEqual(gAte.MustRoute(key1).ID, gAte.MustRoute(key2).ID) {

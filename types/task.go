@@ -77,6 +77,10 @@ func (t *Task) Err() error {
 	return t.err
 }
 
+func (t *Task) ErrUnsafe() error {
+	return t.err
+}
+
 func (t *Task) WaitFinishWithContext(ctx context.Context) bool {
 	select {
 	case <-ctx.Done():

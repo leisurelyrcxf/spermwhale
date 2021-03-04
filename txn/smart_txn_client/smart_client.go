@@ -92,7 +92,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, f func(ctx context.C
 			return tx, err
 		}
 		rand.Seed(time.Now().UnixNano())
-		time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
+		time.Sleep(time.Millisecond * time.Duration(1+rand.Intn(9)))
 	}
 	return nil, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }
