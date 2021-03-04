@@ -61,6 +61,10 @@ var (
 		Code: consts.ErrCodeInject,
 		Msg:  "injected error",
 	}
+	ErrDummy = &Error{
+		Code: consts.ErrCodeDummy,
+		Msg:  "dummy error",
+	}
 	ErrAssertFailed = &Error{
 		Code: consts.ErrCodeAssertFailed,
 		Msg:  "assert failed",

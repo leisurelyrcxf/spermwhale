@@ -23,5 +23,6 @@ const (
 	ErrCodeCantGetOracle                 = 888
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
+	ErrCodeDummy                         = 12222
 	ErrCodeAssertFailed                  = 22222
 )

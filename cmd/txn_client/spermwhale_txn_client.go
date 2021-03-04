@@ -56,20 +56,25 @@ func main() {
 	var (
 		tx types.Txn
 
-		showTxnInfo = func() {
+		showTxnInfo = func(began bool) {
+			desc := "Current"
+			if began {
+				desc = "Began"
+			}
 			if tx == nil {
-				fmt.Println("current transaction: nil")
+				fmt.Printf("%s transaction: nil\n", desc)
 			} else if showTxnID {
-				fmt.Printf("Current transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
+				fmt.Printf("%s transaction: {id: %d, state: %s}\n", desc, tx.GetId(), tx.GetState())
 			} else {
-				fmt.Printf("Current transaction: {timestamp: %s, state: %s}\n", time.Unix(0, int64(tx.GetId())).Format("15:04:05.000000000"), tx.GetState())
+				fmt.Printf("%s transaction: {timestamp: %s, state: %s}\n", desc, time.Unix(0, int64(tx.GetId())).Format("15:04:05.000000000"), tx.GetState())
 			}
 		}
 
 		quit = false
 
 		executor = func(promptText string) {
-			for _, t := range utils.TrimmedSplit(promptText, ";") {
+			cmds := utils.TrimmedSplit(promptText, ";")
+			for i := 0; ; i++ {
 				if clientTxn, ok := tx.(*txn.ClientTxn); ok {
 					if clientTxn.State == types.TxnStateCommitted {
 						fmt.Println("committed")
@@ -87,13 +92,17 @@ func main() {
 				if quit {
 					os.Exit(1)
 				}
+				if i >= len(cmds) {
+					break
+				}
 
+				var t = cmds[i]
 				if strings.HasPrefix(t, "begin") {
 					if tx, err = tm.BeginTransaction(ctx); err != nil {
 						fmt.Printf("begin failed: %v\n", err)
 						continue
 					}
-					showTxnInfo()
+					showTxnInfo(true)
 				} else if strings.HasPrefix(t, "get") {
 					remain := strings.TrimPrefix(t, "get")
 					if remain == "" {
@@ -119,7 +128,7 @@ func main() {
 							fmt.Printf("begin failed: %v\n", err)
 							continue
 						}
-						showTxnInfo()
+						showTxnInfo(true)
 					}
 					key := parts[0]
 					val, err := tx.Get(ctx, key)
@@ -153,7 +162,7 @@ func main() {
 							fmt.Printf("begin failed: %v\n", err)
 							continue
 						}
-						showTxnInfo()
+						showTxnInfo(true)
 					}
 					key, val := parts[0], parts[1]
 					if err := tx.Set(ctx, key, []byte(val)); err != nil {
@@ -180,7 +189,7 @@ func main() {
 						continue
 					}
 				} else if t == "show" {
-					showTxnInfo()
+					showTxnInfo(false)
 				} else if t == "quit" || t == "exit" || t == "q" {
 					quit = true
 					if tx != nil {
@@ -200,7 +209,7 @@ func main() {
 	p := prompt.New(
 		executor,
 		completer,
-		prompt.OptionPrefix(">"),
+		prompt.OptionPrefix("> "),
 		prompt.OptionTitle("spermwhale txn client"),
 	)
 	p.Run()
