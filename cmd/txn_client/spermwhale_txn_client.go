@@ -29,18 +29,27 @@ func completer(d prompt.Document) []prompt.Suggest {
 
 func main() {
 	flagHost := flag.String("host", "127.0.0.1", "host")
+	flagNotAutoBegin := flag.Bool("not-auto-begin", false, "not auto begin")
 	cmd.RegisterPortFlags(consts.DefaultTxnServerPort)
 
 	cli, err := txn.NewClient(fmt.Sprintf("%s:%d", *flagHost, *cmd.FlagPort))
 	if err != nil {
 		glog.Fatalf("can't create txn client")
 	}
+	autoBegin := !*flagNotAutoBegin
 	tm := txn.NewClientTxnManager(cli)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var tx types.Txn
 	for {
+		if clientTxn, ok := tx.(*txn.ClientTxn); ok {
+			if clientTxn.State == types.TxnStateCommitted {
+				fmt.Println("committed")
+			} else if clientTxn.State.IsAborted() {
+				fmt.Println("aborted")
+			}
+		}
 		t := prompt.Input("> ", completer)
 		if strings.HasPrefix(t, "begin") {
 			if tx, err = tm.BeginTransaction(ctx); err != nil {
@@ -61,8 +70,15 @@ func main() {
 				continue
 			}
 			if tx == nil {
-				fmt.Println("transaction is nil, needs begin first")
-				continue
+				if !autoBegin {
+					fmt.Println("transaction is nil, needs begin first")
+					continue
+				}
+				if tx, err = tm.BeginTransaction(ctx); err != nil {
+					fmt.Printf("begin failed: %v\n", err)
+					continue
+				}
+				fmt.Printf("Started transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
 			}
 			key := parts[0]
 			val, err := tx.Get(ctx, key)
@@ -84,8 +100,15 @@ func main() {
 				continue
 			}
 			if tx == nil {
-				fmt.Println("transaction is nil, needs begin first")
-				continue
+				if !autoBegin {
+					fmt.Println("transaction is nil, needs begin first")
+					continue
+				}
+				if tx, err = tm.BeginTransaction(ctx); err != nil {
+					fmt.Printf("begin failed: %v\n", err)
+					continue
+				}
+				fmt.Printf("Started transaction: {id: %d, state: %s}\n", tx.GetId(), tx.GetState())
 			}
 			key, val := parts[0], parts[1]
 			if err := tx.Set(ctx, key, []byte(val)); err != nil {
@@ -95,24 +118,22 @@ func main() {
 			fmt.Println("ok")
 		} else if strings.HasPrefix(t, "commit") {
 			if tx == nil {
-				fmt.Println("transaction is nil, needs begin first")
+				fmt.Println("transaction is nil, nothing to commit")
 				continue
 			}
 			if err := tx.Commit(ctx); err != nil {
 				fmt.Printf("commit failed: %v\n", err)
 				continue
 			}
-			fmt.Println("ok")
 		} else if strings.HasPrefix(t, "rollback") {
 			if tx == nil {
-				fmt.Println("transaction is nil, needs begin first")
+				fmt.Println("transaction is nil, nothing to rollback")
 				continue
 			}
 			if err := tx.Rollback(ctx); err != nil {
 				fmt.Printf("rollback failed: %v\n", err)
 				continue
 			}
-			fmt.Println("ok")
 		} else if t == "quit" || t == "exit" || t == "q" {
 			break
 		} else {
