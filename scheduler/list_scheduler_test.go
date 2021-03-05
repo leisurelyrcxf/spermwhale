@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/integration_test/utils"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )

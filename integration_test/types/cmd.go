@@ -13,8 +13,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/integration_test/consts"
-	"github.com/leisurelyrcxf/spermwhale/integration_test/utils"
 	testutils "github.com/leisurelyrcxf/spermwhale/integration_test/utils"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 const (

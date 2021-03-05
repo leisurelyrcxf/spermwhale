@@ -18,6 +18,6 @@ func TestValue(t *testing.T) {
 	}
 
 	assert.True(v.HasWriteIntent())
-	v.ClearWriteIntent()
+	v = v.WithNoWriteIntent()
 	assert.False(v.HasWriteIntent())
 }

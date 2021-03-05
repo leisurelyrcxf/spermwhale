@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/build_opt"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 
@@ -19,7 +21,7 @@ func TestRedis(t *testing.T) {
 	cli := mustNewClient("localhost:6379", "")
 	for i := 0; i < 1000; i++ {
 		for _, dbug := range []bool{true, false} {
-			kv.Debug = dbug
+			build_opt.Debug = dbug
 			if !kv.TestDB(t, cli) {
 				t.Errorf("testRedis failed @round %d, debug: %v", i, dbug)
 				return
@@ -175,7 +177,7 @@ func testConcurrentUpdateRemoveIf(t *testing.T) (b bool) {
 	for i := 0; i < 10000; i++ {
 		wg.Add(1)
 
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 
 			if i%2 == 0 {
@@ -187,7 +189,7 @@ func testConcurrentUpdateRemoveIf(t *testing.T) (b bool) {
 					return
 				}
 			}
-		}()
+		}(i)
 	}
 
 	wg.Wait()

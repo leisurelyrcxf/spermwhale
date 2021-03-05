@@ -60,7 +60,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 				return value.WithNoWriteIntent()
 			}, func(key string, version uint64) {
 				if !Testing {
-					glog.Fatalf("want to clear write intent for version %d of key %, but the version doesn't exist", version, key)
+					glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", version, key)
 				}
 			})
 		}

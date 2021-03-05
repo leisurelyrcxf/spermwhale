@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/topo"
@@ -20,7 +22,7 @@ func newTestServer(assert *testifyassert.Assertions, port int) (server *Server) 
 	if !assert.NoError(err) {
 		return nil
 	}
-	return NewServerForTesting(port, types.TxnConfig{
+	return NewServerForTesting(port, memory.NewMemoryDB(), types.TxnConfig{
 		StaleWriteThreshold: time.Second,
 		MaxClockDrift:       time.Nanosecond,
 	}, 1, topo.NewStore(cli, "test_cluster"))
