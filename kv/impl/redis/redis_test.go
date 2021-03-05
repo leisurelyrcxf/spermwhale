@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/leisurelyrcxf/spermwhale/build_opt"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -21,7 +21,7 @@ func TestRedis(t *testing.T) {
 	cli := mustNewClient("localhost:6379", "")
 	for i := 0; i < 1000; i++ {
 		for _, dbug := range []bool{true, false} {
-			build_opt.Debug = dbug
+			utils.SetCustomizedDebugFlag(dbug)
 			if !kv.TestDB(t, cli) {
 				t.Errorf("testRedis failed @round %d, debug: %v", i, dbug)
 				return

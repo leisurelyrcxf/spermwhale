@@ -3,9 +3,10 @@ package kv
 import (
 	"context"
 
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/build_opt"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -55,7 +56,7 @@ func (db *DB) Get(_ context.Context, key string, opt types.KVReadOption) (types.
 
 func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
 	if opt.IsClearWriteIntent() {
-		if build_opt.Debug {
+		if utils.IsDebug() {
 			return db.updateFlagRaw(key, val.Version, func(value types.Value) types.Value {
 				return value.WithNoWriteIntent()
 			}, func(key string, version uint64) {
@@ -83,7 +84,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 			return errors.Annotatef(err, "key: %s", key)
 		}
 		// TODO can remove the check in the future if stable enough
-		if build_opt.Debug {
+		if utils.IsDebug() {
 			return vvs.RemoveIf(val.Version, func(prev types.Value) error {
 				if !prev.HasWriteIntent() {
 					if !Testing {

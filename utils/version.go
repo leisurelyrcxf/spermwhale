@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/leisurelyrcxf/spermwhale/build_opt"
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/versioninfo"
 )
 
 // VersionString show version thing
 func VersionString(ver, rev, buildAt string) string {
 	version := ""
-	if build_opt.Debug {
+	if consts.BuildOption.IsDebug() {
 		version += fmt.Sprintf("Debug\n")
 	} else {
 		version += fmt.Sprintf("Release\n")
