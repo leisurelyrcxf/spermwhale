@@ -27,8 +27,11 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithExactVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
-	} else if callerTxn.ID == txnId {
-		readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version hence future write with txnId can't succeed if key not exists
+	} else {
+		if readOpt.ReaderVersion == txnId.Version() {
+			readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version to prevent future write if key not exists
+		}
+		assert.Must(txnId.Version() < readOpt.ReaderVersion)
 	}
 	for i := 0; ; {
 		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {

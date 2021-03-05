@@ -151,7 +151,7 @@ func (m *TransactionManager) createStore() *TransactionManager {
 
 		txnInitializer: func(txn *Txn) {
 			txn.lastWriteKeyTasks = make(map[string]*types.ListTask)
-			txn.preventFutureWriteFlags = make(map[string]bool)
+			txn.preventWriteFlags = make(map[string]bool)
 			txn.cfg = m.cfg
 			txn.kv = m.kv
 			txn.store = m.store

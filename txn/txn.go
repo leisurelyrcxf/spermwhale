@@ -88,16 +88,16 @@ type Txn struct {
 
 	WrittenKeys []string
 
-	writeKeyTasks           []*types.ListTask
-	lastWriteKeyTasks       map[string]*types.ListTask
-	txnRecordTask           *types.ListTask
-	preventFutureWriteFlags map[string]bool
-	allIOTasksFinished      bool
-	cfg                     types.TxnConfig
-	kv                      types.KVCC
-	store                   *TransactionStore
-	s                       *Scheduler
-	h                       TransactionHolder
+	writeKeyTasks      []*types.ListTask
+	lastWriteKeyTasks  map[string]*types.ListTask
+	txnRecordTask      *types.ListTask
+	preventWriteFlags  map[string]bool
+	allIOTasksFinished bool
+	cfg                types.TxnConfig
+	kv                 types.KVCC
+	store              *TransactionStore
+	s                  *Scheduler
+	h                  TransactionHolder
 
 	sync.Mutex `json:"-"`
 }
@@ -112,13 +112,13 @@ func NewTxn(
 			ID:    id,
 			State: types.TxnStateUncommitted,
 		},
-		lastWriteKeyTasks:       make(map[string]*types.ListTask),
-		preventFutureWriteFlags: make(map[string]bool),
-		cfg:                     cfg,
-		kv:                      kv,
-		store:                   store,
-		s:                       s,
-		h:                       holder,
+		lastWriteKeyTasks: make(map[string]*types.ListTask),
+		preventWriteFlags: make(map[string]bool),
+		cfg:               cfg,
+		kv:                kv,
+		store:             store,
+		s:                 s,
+		h:                 holder,
 	}
 }
 
@@ -180,7 +180,7 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
-		txn.preventFutureWriteFlags[key] = true
+		txn.preventWriteFlags[key] = true
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
@@ -198,18 +198,21 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 		return vv.Value, nil
 	}
 	assert.Must(vv.Version < txn.ID.Version())
-	keyWithWriteIntent := map[string]struct{}{key: {}}
+	var (
+		keyWithWriteIntent = map[string]struct{}{key: {}}
+		preventFutureWrite = utils.IsTooStale(vv.Version, txn.cfg.StaleWriteThreshold)
+	)
 	writeTxn, err := txn.store.inferTransactionRecordWithRetry(
 		ctx,
 		types.TxnId(vv.Version), txn,
 		keyWithWriteIntent, []string{key},
-		utils.IsTooStale(vv.Version, txn.cfg.StaleWriteThreshold),
+		preventFutureWrite,
 		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedData, "reason: '%v'", err)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	committed, rollbacked := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, false, consts.MaxRetryResolveFoundedWriteIntent)
+	committed, rollbacked := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
 		return vv.Value, nil
 	}
@@ -306,7 +309,7 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State)
 	}
 
-	if txn.preventFutureWriteFlags[key] {
+	if txn.preventWriteFlags[key] {
 		return errors.Annotatef(errors.ErrWriteReadConflict, "a transaction with higher timestamp has read the key '%s'", key)
 	}
 

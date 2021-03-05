@@ -61,8 +61,13 @@ func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
 	return opt.flag&ReadOptBitMaskNotGetMaxReadVersion > 0
 }
 
-func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
+func (opt KVCCReadOption) WithSafeIncrReaderVersion() KVCCReadOption {
 	SafeIncr(&opt.ReaderVersion)
+	return opt
+}
+
+func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
+	opt.ReaderVersion += 1
 	return opt
 }
 
