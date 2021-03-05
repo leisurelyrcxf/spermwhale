@@ -148,7 +148,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 		}
 		if errors.GetErrorCode(err) != consts.ErrCodeReadRollbackedData {
 			rand.Seed(time.Now().UnixNano())
-			time.Sleep(time.Duration(2+rand.Intn(5)) * time.Millisecond)
+			time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
 		}
 	}
 }

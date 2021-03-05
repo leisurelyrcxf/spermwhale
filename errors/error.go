@@ -87,8 +87,7 @@ func IsRetryableTransactionManagerErr(e error) bool {
 
 func IsRetryableGetErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadUncommittedData ||
-		code == consts.ErrCodeReadRollbackedData
+	return code == consts.ErrCodeReadRollbackedData
 }
 
 func IsMustRollbackGetErr(e error) bool {
