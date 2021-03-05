@@ -34,3 +34,8 @@ const (
 	LoosedOraclePrecision     = 1 << LoosedOracleDiscardedBits
 	LoosedOracleWaitPeriod    = LoosedOraclePrecision >> 2
 )
+
+const (
+	MaxRetryTxnGet                    = 2
+	MaxRetryResolveFoundedWriteIntent = 2
+)

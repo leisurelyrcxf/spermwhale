@@ -129,7 +129,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	defer kv.lm.Unlock(key)
 
 	if val.Version < kv.tsCache.GetMaxReadVersion(key) {
-		return errors.ErrTransactionConflict
+		return errors.ErrWriteReadConflict
 	}
 
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control

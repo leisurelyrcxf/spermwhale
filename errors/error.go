@@ -73,9 +73,11 @@ func IsNotExistsErr(e error) bool {
 
 func IsRetryableTransactionErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeTransactionConflict ||
+	return code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite ||
-		code == consts.ErrCodeReadFailedToWaitWriteTask
+		code == consts.ErrCodeReadAfterWriteFailed ||
+		code == consts.ErrCodeReadUncommittedData ||
+		code == consts.ErrCodeReadRollbackedData
 }
 
 func IsRetryableTransactionManagerErr(e error) bool {
@@ -83,21 +85,28 @@ func IsRetryableTransactionManagerErr(e error) bool {
 	return code == consts.ErrCodeTransactionAlreadyExists
 }
 
+func IsRetryableGetErr(e error) bool {
+	code := GetErrorCode(e)
+	return code == consts.ErrCodeReadUncommittedData ||
+		code == consts.ErrCodeReadRollbackedData
+}
+
 func IsMustRollbackGetErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeTransactionConflict ||
+	return code == consts.ErrCodeReadAfterWriteFailed ||
+		code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite
 }
 
 func IsMustRollbackWriteKeyErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeTransactionConflict ||
+	return code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite
 }
 
 func IsMustRollbackCommitErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeTransactionConflict ||
+	return code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite
 }
 

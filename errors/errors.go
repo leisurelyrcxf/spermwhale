@@ -5,9 +5,17 @@ import (
 )
 
 var (
-	ErrTransactionConflict = &Error{
-		Code: consts.ErrCodeTransactionConflict,
-		Msg:  "transaction conflict",
+	ErrWriteReadConflict = &Error{
+		Code: consts.ErrCodeWriteReadConflict,
+		Msg:  "write read conflict",
+	}
+	ErrReadUncommittedData = &Error{
+		Code: consts.ErrCodeReadUncommittedData,
+		Msg:  "read uncommitted data",
+	}
+	ErrReadRollbackedData = &Error{
+		Code: consts.ErrCodeReadRollbackedData,
+		Msg:  "read rollbacked data",
 	}
 	ErrStaleWrite = &Error{
 		Code: consts.ErrCodeStaleWrite,
@@ -73,9 +81,9 @@ var (
 		Code: consts.ErrCodeSchedulerClosed,
 		Msg:  "scheduler closed",
 	}
-	ErrReadFailedToWaitWriteTask = &Error{
-		Code: consts.ErrCodeReadFailedToWaitWriteTask,
-		Msg:  "read failed to wait previous write task",
+	ErrReadAfterWriteFailed = &Error{
+		Code: consts.ErrCodeReadAfterWriteFailed,
+		Msg:  "read after write failed",
 	}
 	ErrEmptyKey = &Error{
 		Code: consts.ErrCodeEmptyKey,

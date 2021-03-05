@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
-
-	utils2 "github.com/leisurelyrcxf/spermwhale/integration_test/utils"
-
-	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
@@ -135,30 +134,29 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 	txn.Lock()
 	defer txn.Unlock()
 
-	const maxRetry = 2
-	for i := 0; ; i++ {
-		val, err, retryable := txn.get(ctx, key)
-		if err == nil || !retryable || i >= maxRetry-1 {
-			if err == errors.ErrDummy {
-				assert.Must(i >= maxRetry-1)
-				err = errors.Annotatef(errors.ErrTransactionConflict, "get retried too many times(i)", maxRetry)
-			}
-			return val, err
-		}
-	}
-}
-
-func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error, retryable bool) {
-	if txn.State != types.TxnStateUncommitted {
-		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State), false
-	}
-
 	defer func() {
 		if err != nil && errors.IsMustRollbackGetErr(err) {
 			txn.State = types.TxnStateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, err.Error())
 		}
 	}()
+
+	for i := 0; ; i++ {
+		val, err := txn.get(ctx, key)
+		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
+			return val, err
+		}
+		if errors.GetErrorCode(err) != consts.ErrCodeReadRollbackedData {
+			rand.Seed(time.Now().UnixNano())
+			time.Sleep(time.Duration(2+rand.Intn(5)) * time.Millisecond)
+		}
+	}
+}
+
+func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) {
+	if txn.State != types.TxnStateUncommitted {
+		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State)
+	}
 
 	var (
 		vv            types.ValueCC
@@ -168,11 +166,11 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error, 
 		ctx, cancel := context.WithTimeout(ctx, defaultReadTimeout)
 		if !lastWriteTask.WaitFinishWithContext(ctx) {
 			cancel()
-			return types.EmptyValue, errors.Annotatef(errors.ErrReadFailedToWaitWriteTask, "read timeout: %s", defaultReadTimeout), false
+			return types.EmptyValue, errors.Annotatef(errors.ErrReadAfterWriteFailed, "wait write task timeouted after %s", defaultReadTimeout)
 		}
 		cancel()
-		if lastWriteTask.Err() != nil {
-			return types.EmptyValue, errors.Annotatef(lastWriteTask.Err(), "read aborted due to previous write task failed"), false
+		if writeErr := lastWriteTask.Err(); writeErr != nil {
+			return types.EmptyValue, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
 		}
 	}
 	if lastWriteTask == nil {
@@ -180,23 +178,24 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error, 
 	} else {
 		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()))
 	}
-	if vv.MaxReadVersion > txn.ID.Version() {
+	if //noinspection ALL
+	vv.MaxReadVersion > txn.ID.Version() {
 		txn.preventFutureWriteFlags[key] = true
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
-			return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: previous write intent disappeared probably rollbacked"), false
+			return types.EmptyValue, errors.Annotatef(errors.ErrWriteReadConflict, "reason: previous write intent disappeared probably rollbacked")
 		}
-		return types.EmptyValue, err, false
+		return types.EmptyValue, err
 	}
 	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
 	if !vv.Meta.HasWriteIntent() {
 		// committed value
-		return vv.Value, nil, false
+		return vv.Value, nil
 	}
 	if vv.Version == txn.ID.Version() {
 		// read after write
-		return vv.Value, nil, false
+		return vv.Value, nil
 	}
 	assert.Must(vv.Version < txn.ID.Version())
 	keyWithWriteIntent := map[string]struct{}{key: {}}
@@ -205,26 +204,26 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error, 
 		types.TxnId(vv.Version), txn,
 		keyWithWriteIntent, []string{key},
 		utils.IsTooStale(vv.Version, txn.cfg.StaleWriteThreshold),
-		2)
+		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "reason: %v", err), false
+		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedData, "reason: '%v'", err)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	committed, rollbacked := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, false)
+	committed, rollbacked := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, false, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
-		return vv.Value, nil, false
+		return vv.Value, nil
 	}
 	if rollbacked {
-		return types.EmptyValue, errors.ErrDummy, true
+		return types.EmptyValue, errors.ErrReadRollbackedData
 	}
-	return types.EmptyValue, errors.Annotatef(errors.ErrTransactionConflict, "can't determine previous txn status for %d", writeTxn.ID), false
+	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedData, "can't determine previous txn status for %d", writeTxn.ID)
 }
 
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool) (committed bool, rollbacked bool) {
+func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbacked bool) {
 	txn.Lock()
 	defer txn.Unlock()
 
-	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, 2)
+	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, maxRetry)
 }
 
 func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbacked bool) {
@@ -308,7 +307,7 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	}
 
 	if txn.preventFutureWriteFlags[key] {
-		return errors.Annotatef(errors.ErrTransactionConflict, "txn.preventFutureWriteFlags['%s']==true", key)
+		return errors.Annotatef(errors.ErrWriteReadConflict, "a transaction with higher timestamp has read the key '%s'", key)
 	}
 
 	writeVal := types.NewValue(val, txn.ID.Version())
@@ -391,7 +390,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 
 	// handle other kinds of error
 	ctx = context.Background()
-	maxRetry := utils2.MaxInt(int(int64(txn.cfg.StaleWriteThreshold)/int64(time.Second))*3, 10)
+	maxRetry := utils.MaxInt(int(int64(txn.cfg.StaleWriteThreshold)/int64(time.Second))*3, 10)
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
 		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.WrittenKeys, true, maxRetry)
 		if err != nil {

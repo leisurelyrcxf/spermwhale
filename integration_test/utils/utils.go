@@ -2,7 +2,6 @@ package utils
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"net"
 	"os"
@@ -13,97 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
-
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/errors"
+
+	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
 	"github.com/leisurelyrcxf/spermwhale/utils/trace"
 )
-
-var (
-	RetryAnyError = func(_ error) bool {
-		return true
-	}
-)
-
-// WithRetry retries f() up to max number of times.
-func WithRetry(interval, max int, f func(ctx context.Context) error) error {
-	return WithContextRetry(context.Background(), interval, max, f)
-}
-
-func WithContextRetry(ctx context.Context, interval, max int, f func(ctx context.Context) error) error {
-	return WithContextRetryEx(ctx, time.Second*time.Duration(interval), time.Second*time.Duration(interval*max), f, RetryAnyError)
-}
-
-func WithContextRetryEx(ctx context.Context, interval, timeout time.Duration, f func(ctx context.Context) error, isRetryable func(error) bool) error {
-	return withContextRetryRaw(ctx, interval, timeout, false, f, isRetryable)
-}
-
-func WithSafeContextRetryEx(ctx context.Context, interval, timeout time.Duration, f func(ctx context.Context) error, isRetryable func(error) bool) error {
-	return withContextRetryRaw(ctx, interval, timeout, true, f, isRetryable)
-}
-
-func withContextRetryRaw(ctx context.Context, interval, timeout time.Duration, safeCtx bool, f func(ctx context.Context) error, isRetryable func(error) bool) error {
-	var (
-		start  = time.Now()
-		caller = getWithContextCaller()
-	)
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	fCtx := timeoutCtx
-	if safeCtx {
-		fCtx = ctx
-	}
-
-	for {
-		err := f(fCtx)
-		if err == nil || !isRetryable(err) {
-			if err != nil {
-				glog.Errorf("[withContextRetryRaw][%s] returned non-retryable error: '%v'", caller, err)
-			}
-			return err
-		}
-		select {
-		case <-timeoutCtx.Done():
-			cost := time.Since(start)
-			glog.Errorf("[withContextRetryRaw][%s] failed after retrying for %s, last error: '%v'", caller, cost, err)
-			return errors.Annotatef(err, "failed after retrying for %s", cost)
-		case <-time.After(interval):
-			glog.Warningf("[withContextRetryRaw][%s] run failed with error '%v', retrying after %s...", caller, err, interval)
-		}
-	}
-}
-
-func WithSafeContextRetryBreakable(ctx context.Context, interval, timeout time.Duration, f func(ctx context.Context) (er error, kontinue bool)) error {
-	var (
-		start  = time.Now()
-		caller = getWithContextCaller()
-		cancel context.CancelFunc
-	)
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	for {
-		err, kontinue := f(ctx)
-		if err == nil || !kontinue {
-			if err != nil {
-				glog.Errorf("[WithSafeContextRetryBreakable][%s] returned non-continuable error: '%v'", caller, err)
-			}
-			return err
-		}
-		select {
-		case <-timeoutCtx.Done():
-			cost := time.Since(start)
-			glog.Errorf("[WithSafeContextRetryBreakable][%s] failed after retrying for %s, last error: '%v'", caller, cost, err)
-			return errors.Annotatef(err, "failed after retrying for %s", cost)
-		case <-time.After(interval):
-			glog.Warningf("[WithSafeContextRetryBreakable][%s] run failed with error '%v', retrying after %s...", caller, err, interval)
-		}
-	}
-}
 
 func IsPortAvailable(port int) bool {
 	return nil == TryPort(port)
@@ -261,20 +174,6 @@ func Bool2Int(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-func MinInt(a, b int) int {
-	if a > b {
-		return b
-	}
-	return a
-}
-
-func MaxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func NonInPlaceSort(array []string) []string {
