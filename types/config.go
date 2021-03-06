@@ -1,17 +1,65 @@
 package types
 
-import "time"
+import (
+	"time"
 
-type TxnConfig struct {
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
+	"github.com/leisurelyrcxf/spermwhale/consts"
+)
+
+type TxnManagerConfig struct {
+	WoundUncommittedTxnThreshold time.Duration
+}
+
+func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
+	return TxnManagerConfig{WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold}
+}
+
+func (cfg TxnManagerConfig) Validate() error {
+	if cfg.WoundUncommittedTxnThreshold <= time.Second {
+		return errors.Annotatef(errors.ErrInvalidConfig, "cfg.WoundUncommittedTxnThreshold <= time.Second")
+	}
+	return nil
+}
+
+func (cfg TxnManagerConfig) WithWoundUncommittedTxnThreshold(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
+	cfg.WoundUncommittedTxnThreshold = woundUncommittedTxnThreshold
+	return cfg
+}
+
+type TabletTxnConfig struct {
 	StaleWriteThreshold time.Duration
 	MaxClockDrift       time.Duration
 }
 
-func (c TxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
-	return c.StaleWriteThreshold + c.MaxClockDrift*10
+func NewTabletTxnConfig(staleWriteThreshold time.Duration) TabletTxnConfig {
+	return TabletTxnConfig{
+		StaleWriteThreshold: staleWriteThreshold,
+		MaxClockDrift:       consts.DefaultMaxClockDrift,
+	}
 }
 
-func (c TxnConfig) WithStaleWriteThreshold(val time.Duration) TxnConfig {
-	c.StaleWriteThreshold = val
-	return c
+func (cfg TabletTxnConfig) Validate() error {
+	if cfg.StaleWriteThreshold <= time.Second {
+		return errors.Annotatef(errors.ErrInvalidConfig, "cfg.StaleWriteThreshold <= time.Second")
+	}
+	if cfg.MaxClockDrift <= 0 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "cfg.MaxClockDrift <= 0")
+	}
+	return nil
+}
+
+func (cfg TabletTxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
+	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10
+}
+
+func (cfg TabletTxnConfig) WithStaleWriteThreshold(val time.Duration) TabletTxnConfig {
+	cfg.StaleWriteThreshold = val
+	return cfg
+}
+
+func (cfg TabletTxnConfig) WithMaxClockDrift(val time.Duration) TabletTxnConfig {
+	cfg.MaxClockDrift = val
+	return cfg
 }

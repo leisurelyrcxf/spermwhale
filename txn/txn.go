@@ -93,7 +93,7 @@ type Txn struct {
 	txnRecordTask      *types.ListTask
 	preventWriteFlags  map[string]bool
 	allIOTasksFinished bool
-	cfg                types.TxnConfig
+	cfg                types.TxnManagerConfig
 	kv                 types.KVCC
 	store              *TransactionStore
 	s                  *Scheduler
@@ -104,7 +104,7 @@ type Txn struct {
 
 func NewTxn(
 	id types.TxnId,
-	kv types.KVCC, cfg types.TxnConfig,
+	kv types.KVCC, cfg types.TxnManagerConfig,
 	store *TransactionStore, holder TransactionHolder,
 	s *Scheduler) *Txn {
 	return &Txn{
@@ -200,7 +200,7 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 	assert.Must(vv.Version < txn.ID.Version())
 	var (
 		keyWithWriteIntent = map[string]struct{}{key: {}}
-		preventFutureWrite = utils.IsTooStale(vv.Version, txn.cfg.StaleWriteThreshold)
+		preventFutureWrite = utils.IsTooOld(vv.Version, txn.cfg.WoundUncommittedTxnThreshold)
 	)
 	writeTxn, err := txn.store.inferTransactionRecordWithRetry(
 		ctx,
@@ -317,8 +317,7 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	writeTask := types.NewListTaskNoResult(
 		txn.ioTaskIDOfKey(key),
 		fmt.Sprintf("set-key-%s", key),
-		txn.cfg.StaleWriteThreshold, func(ctx context.Context, _ interface{}) error {
-
+		txn.cfg.WoundUncommittedTxnThreshold, func(ctx context.Context, _ interface{}) error {
 			return txn.kv.Set(ctx, key, writeVal, types.KVCCWriteOption{})
 		})
 	if err := txn.s.ScheduleIOJob(writeTask); err != nil {
@@ -360,7 +359,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	txnRecordTask := types.NewListTaskNoResult(
 		txn.Key(),
 		fmt.Sprintf("write-txn-record-%s", txn.Key()),
-		txn.cfg.StaleWriteThreshold, func(ctx context.Context, _ interface{}) error {
+		txn.cfg.WoundUncommittedTxnThreshold, func(ctx context.Context, _ interface{}) error {
 			return txn.writeTxnRecord(ctx)
 		})
 	if err := txn.s.ScheduleIOJob(txnRecordTask); err != nil {
@@ -393,7 +392,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 
 	// handle other kinds of error
 	ctx = context.Background()
-	maxRetry := utils.MaxInt(int(int64(txn.cfg.StaleWriteThreshold)/int64(time.Second))*3, 10)
+	maxRetry := utils.MaxInt(int(int64(txn.cfg.WoundUncommittedTxnThreshold)/int64(time.Second))*3, 10)
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
 		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.WrittenKeys, true, maxRetry)
 		if err != nil {
@@ -439,7 +438,7 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 }
 
 func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string) (err error) {
-	if callerTxn != txn.ID && !txn.isTooStale() {
+	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		return nil
 	}
 	txn.waitIOTasks(ctx, true)
@@ -530,7 +529,7 @@ func (txn *Txn) getIOTasks() []*types.ListTask {
 }
 
 func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
-	if callerTxn != txn.ID && !txn.isTooStale() {
+	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		return
 	}
 
@@ -600,6 +599,6 @@ func (txn *Txn) removeTxnRecord(ctx context.Context) error {
 	return nil
 }
 
-func (txn *Txn) isTooStale() bool {
-	return utils.IsTooStale(txn.ID.Version(), txn.cfg.StaleWriteThreshold)
+func (txn *Txn) couldBeWounded() bool {
+	return utils.IsTooOld(txn.ID.Version(), txn.cfg.WoundUncommittedTxnThreshold)
 }

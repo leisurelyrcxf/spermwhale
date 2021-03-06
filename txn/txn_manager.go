@@ -49,7 +49,7 @@ func (s *Scheduler) Close() {
 }
 
 type TransactionManager struct {
-	cfg types.TxnConfig
+	cfg types.TxnManagerConfig
 
 	txns concurrency.ConcurrentTxnMap
 
@@ -63,14 +63,14 @@ type TransactionManager struct {
 
 func NewTransactionManager(
 	kv types.KVCC,
-	cfg types.TxnConfig,
+	cfg types.TxnManagerConfig,
 	clearWorkerNum, ioWorkerNum int) *TransactionManager {
 	return NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, physical.NewOracle())
 }
 
 func NewTransactionManagerWithCluster(
 	kv types.KVCC,
-	cfg types.TxnConfig,
+	cfg types.TxnManagerConfig,
 	clearWorkerNum, ioWorkerNum int,
 	store *topo.Store) (*TransactionManager, error) {
 	tm := NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, nil)
@@ -86,7 +86,7 @@ func NewTransactionManagerWithCluster(
 
 func NewTransactionManagerWithOracle(
 	kv types.KVCC,
-	cfg types.TxnConfig,
+	cfg types.TxnManagerConfig,
 	clearWorkerNum, ioWorkerNum int,
 	oracle oracle.Oracle) *TransactionManager {
 	tm := (&TransactionManager{

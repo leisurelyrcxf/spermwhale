@@ -4,26 +4,25 @@ import (
 	"context"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/oracle"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/oracle"
 )
 
-func CheckTooStale(version uint64, staleWriteThreshold time.Duration) error {
+func CheckOldMan(version uint64, maxAge time.Duration) error {
 	currentTS := GetLocalTimestamp()
-	if version < currentTS && currentTS-version > uint64(staleWriteThreshold) {
+	if version < currentTS && currentTS-version > uint64(maxAge) {
 		return errors.Annotatef(errors.ErrStaleWrite,
-			"age(%s) > stale_thr(%s)", time.Duration(currentTS-version), staleWriteThreshold)
+			"age(%s) > stale_thr(%s)", time.Duration(currentTS-version), maxAge)
 	}
 	return nil
 }
 
-func IsTooStale(version uint64, staleWriteThreshold time.Duration) bool {
+func IsTooOld(version uint64, maxAge time.Duration) bool {
 	currentTS := GetLocalTimestamp()
-	return version < currentTS && currentTS-version > uint64(staleWriteThreshold)
+	return version < currentTS && currentTS-version > uint64(maxAge)
 }
 
 func GetLocalTimestamp() uint64 {

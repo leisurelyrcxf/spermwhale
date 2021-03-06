@@ -96,7 +96,7 @@ type Server struct {
 func NewServer(
 	port int,
 	kv types.KVCC,
-	cfg types.TxnConfig,
+	cfg types.TxnManagerConfig,
 	clearWorkerNumber, ioWorkerNumber int,
 	store *topo.Store) (*Server, error) {
 	tm, err := NewTransactionManagerWithCluster(kv, cfg, clearWorkerNumber, ioWorkerNumber, store)

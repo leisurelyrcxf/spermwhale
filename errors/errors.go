@@ -105,4 +105,8 @@ var (
 		Code: consts.ErrCodeCantGetOracle,
 		Msg:  "can't get oracle",
 	}
+	ErrInvalidConfig = &Error{
+		Code: consts.ErrCodeInvalidConfig,
+		Msg:  "invalid config",
+	}
 )

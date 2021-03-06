@@ -5,23 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle"
-
-	"github.com/leisurelyrcxf/spermwhale/kv/impl/redis"
-
-	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
-
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
-
-	"github.com/leisurelyrcxf/spermwhale/kvcc"
+	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/gate"
+	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
+	"github.com/leisurelyrcxf/spermwhale/kv/impl/redis"
+	"github.com/leisurelyrcxf/spermwhale/kvcc"
+	"github.com/leisurelyrcxf/spermwhale/oracle"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/topo"
 	"github.com/leisurelyrcxf/spermwhale/topo/client"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
-	testifyassert "github.com/stretchr/testify/assert"
 )
 
 const (
@@ -29,10 +25,10 @@ const (
 	rounds             = 5
 )
 
-var defaultTxnConfig = types.TxnConfig{
-	StaleWriteThreshold: time.Millisecond * 5,
-	MaxClockDrift:       time.Millisecond,
-}
+var (
+	defaultTxnManagerConfig = types.NewTxnManagerConfig(time.Millisecond * 1000)
+	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 1000).WithMaxClockDrift(0)
+)
 
 type ExecuteInfo struct {
 	ID                      uint64
@@ -53,14 +49,14 @@ func (ss SortedTxnInfos) Swap(i, j int) {
 	ss[i], ss[j] = ss[j], ss[i]
 }
 
-func createCluster(t *testing.T, cfg types.TxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
-	return createClusterEx(t, types.DBTypeMemory, cfg)
+func createCluster(t *testing.T, txnManagerCfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+	return createClusterEx(t, types.DBTypeMemory, txnManagerCfg, tabletCfg)
 }
 
-func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
 	assert := testifyassert.New(t)
 
-	gates, stopper := createGates(t, dbType, cfg)
+	gates, stopper := createGates(t, dbType, tabletCfg)
 	if !assert.Len(gates, 2) {
 		return nil, nil, nil
 	}
@@ -144,7 +140,7 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (tx
 	return txnServers, clientTxnManagers, stopper
 }
 
-func createGates(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (gates []*gate.Gate, _ func()) {
+func createGates(t *testing.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, _ func()) {
 	assert := testifyassert.New(t)
 
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
@@ -161,7 +157,7 @@ func createGates(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (gates 
 			stopper()
 		}
 	}()
-	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, cfg)
+	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
 	if !assert.NotNil(tablet1) {
 		return nil, nil
 	}
@@ -171,7 +167,7 @@ func createGates(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (gates 
 	stopper = func() {
 		assert.NoError(tablet1.Close())
 	}
-	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, cfg)
+	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
 	if !assert.NotNil(tablet2) {
 		return nil, nil
 	}
@@ -198,11 +194,11 @@ func createGates(t *testing.T, dbType types.DBType, cfg types.TxnConfig) (gates 
 	return []*gate.Gate{g1, g2}, stopper
 }
 
-func createGate(t types.T, cfg types.TxnConfig) (g *gate.Gate, _ func()) {
-	return createGateEx(t, types.DBTypeMemory, cfg)
+func createGate(t types.T, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
+	return createGateEx(t, types.DBTypeMemory, tabletCfg)
 }
 
-func createGateEx(t types.T, dbType types.DBType, cfg types.TxnConfig) (g *gate.Gate, _ func()) {
+func createGateEx(t types.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
 	assert := testifyassert.New(t)
 
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
@@ -219,7 +215,7 @@ func createGateEx(t types.T, dbType types.DBType, cfg types.TxnConfig) (g *gate.
 			stopper()
 		}
 	}()
-	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, cfg)
+	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
 	if !assert.NotNil(tablet1) {
 		return nil, nil
 	}
@@ -229,7 +225,7 @@ func createGateEx(t types.T, dbType types.DBType, cfg types.TxnConfig) (g *gate.
 	stopper = func() {
 		_ = tablet1.Close()
 	}
-	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, cfg)
+	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
 	if !assert.NotNil(tablet2) {
 		return nil, nil
 	}
@@ -252,7 +248,7 @@ func createGateEx(t types.T, dbType types.DBType, cfg types.TxnConfig) (g *gate.
 	return g, stopper
 }
 
-func createTabletServer(assert *testifyassert.Assertions, port int, dbType types.DBType, gid int, cfg types.TxnConfig) (server *kvcc.Server) {
+func createTabletServer(assert *testifyassert.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnConfig) (server *kvcc.Server) {
 	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 	if !assert.NoError(err) {
 		return nil

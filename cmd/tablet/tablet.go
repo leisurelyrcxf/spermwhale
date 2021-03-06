@@ -25,8 +25,9 @@ func main() {
 	flagRedisPort := flag.Int("redis-port", 6379, "redis port")
 	flagRedisAuth := flag.String("redis-auth", "", "redis auth")
 	flagTestMode := flag.Bool("test", false, "test mode, won't sleep at start")
+	flagTxnConfigStaleWriteThreshold := flag.Duration("txn-stale-write-threshold", consts.DefaultTooStaleWriteThreshold, "transaction stale write threshold")
+	flagTxnConfigMaxClockDrift := flag.Duration("max-clock-drift", consts.DefaultMaxClockDrift, "max clock drift")
 	cmd.RegisterStoreFlags()
-	cmd.RegisterTxnConfigFlags()
 	cmd.ParseFlags()
 
 	if *flagGid == -1 {
@@ -47,7 +48,10 @@ func main() {
 	}
 
 	store := cmd.NewStore()
-	cfg := cmd.NewTxnConfig()
+	cfg := types.NewTabletTxnConfig(*flagTxnConfigStaleWriteThreshold).WithMaxClockDrift(*flagTxnConfigMaxClockDrift)
+	if err := cfg.Validate(); err != nil {
+		glog.Fatalf("invalid config: %v", err)
+	}
 	var server *kvcc.Server
 	if *flagTestMode {
 		server = kvcc.NewServerForTesting(*cmd.FlagPort, db, cfg, *flagGid, store)

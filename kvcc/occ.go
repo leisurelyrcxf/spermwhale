@@ -45,7 +45,7 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 
 // KV with concurrent control
 type KVCC struct {
-	types.TxnConfig
+	types.TabletTxnConfig
 
 	lm *concurrency.LockManager
 
@@ -54,15 +54,15 @@ type KVCC struct {
 	db types.KV
 }
 
-func NewKVCC(db types.KV, cfg types.TxnConfig) *KVCC {
+func NewKVCC(db types.KV, cfg types.TabletTxnConfig) *KVCC {
 	return newKVCC(db, cfg, false)
 }
 
-func NewKVCCForTesting(db types.KV, cfg types.TxnConfig) *KVCC {
+func NewKVCCForTesting(db types.KV, cfg types.TabletTxnConfig) *KVCC {
 	return newKVCC(db, cfg, true)
 }
 
-func newKVCC(db types.KV, cfg types.TxnConfig, testing bool) *KVCC {
+func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
@@ -71,10 +71,10 @@ func newKVCC(db types.KV, cfg types.TxnConfig, testing bool) *KVCC {
 	}
 
 	return &KVCC{
-		TxnConfig: cfg,
-		lm:        concurrency.NewLockManager(),
-		tsCache:   NewTimestampCache(),
-		db:        db,
+		TabletTxnConfig: cfg,
+		lm:              concurrency.NewLockManager(),
+		tsCache:         NewTimestampCache(),
+		db:              db,
 	}
 }
 
@@ -118,7 +118,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	}
 
 	// cache may lost after restarted, so ignore too stale write
-	if err := utils.CheckTooStale(val.Version, kv.StaleWriteThreshold); err != nil {
+	if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
 		return err
 	}
 

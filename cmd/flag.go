@@ -8,10 +8,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
-	"github.com/leisurelyrcxf/spermwhale/types"
-
-	"github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/topo/client"
@@ -61,23 +57,6 @@ func RegisterStoreFlags() {
 func NewStore() *topo.Store {
 	cli := newClient()
 	return topo.NewStore(cli, *FlagClusterName)
-}
-
-var (
-	flagTxnConfigStaleWriteThreshold *time.Duration
-	flagTxnConfigMaxClockDrift       *time.Duration
-)
-
-func RegisterTxnConfigFlags() {
-	flagTxnConfigStaleWriteThreshold = flag.Duration("txn-stale-write-threshold", consts.DefaultTooStaleWriteThreshold, "stale write threshold")
-	flagTxnConfigMaxClockDrift = flag.Duration("max-clock-drift", consts.DefaultMaxClockDrift, "stale write threshold")
-}
-
-func NewTxnConfig() types.TxnConfig {
-	return types.TxnConfig{
-		StaleWriteThreshold: *flagTxnConfigStaleWriteThreshold,
-		MaxClockDrift:       *flagTxnConfigMaxClockDrift,
-	}
 }
 
 var (

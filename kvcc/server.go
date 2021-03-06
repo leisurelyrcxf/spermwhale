@@ -54,15 +54,15 @@ type Server struct {
 }
 
 // readOnly indicate this is outer service
-func NewServer(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
+func NewServer(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store) *Server {
 	return newServer(port, db, cfg, gid, store, false)
 }
 
-func NewServerForTesting(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store) *Server {
+func NewServerForTesting(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store) *Server {
 	return newServer(port, db, cfg, gid, store, true)
 }
 
-func newServer(port int, db types.KV, cfg types.TxnConfig, gid int, store *topo.Store, testing bool) *Server {
+func newServer(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store, testing bool) *Server {
 	grpcServer := grpc.NewServer()
 	kvcc := newKVCC(db, cfg, testing)
 	stub := &Stub{kvcc: kvcc}

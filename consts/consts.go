@@ -3,8 +3,9 @@ package consts
 import "time"
 
 const (
-	DefaultTooStaleWriteThreshold = 5 * time.Second
-	DefaultMaxClockDrift          = time.Second
+	DefaultTooStaleWriteThreshold       = 5 * time.Second
+	DefaultMaxClockDrift                = time.Second
+	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
 
 	DefaultTxnManagerClearWorkerNumber = 20
 	DefaultTxnManagerIOWorkerNumber    = 30

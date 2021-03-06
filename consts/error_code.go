@@ -23,6 +23,7 @@ const (
 	ErrCodeDontUseThisBeforeTaskFinished = 666
 	ErrCodeInvalidTopoData               = 777
 	ErrCodeCantGetOracle                 = 888
+	ErrCodeInvalidConfig                 = 999
 	ErrCodeUnknown                       = 1111
 	ErrCodeInject                        = 11111
 	ErrCodeDummy                         = 12222

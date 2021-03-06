@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/leisurelyrcxf/spermwhale/cmd"
 
 	"github.com/leisurelyrcxf/spermwhale/kv"
@@ -20,8 +22,9 @@ func main() {
 	flagKVPort := flag.Int("port-kv", consts.DefaultKVServerPort, "kv port ")
 	flagClearWorkerNum := flag.Int("clear-worker-num", consts.DefaultTxnManagerClearWorkerNumber, "txn manager worker number")
 	flagIOWorkerNum := flag.Int("io-worker-num", consts.DefaultTxnManagerIOWorkerNumber, "txn manager worker number")
+	flagWoundUncommittedTxnThreshold := flag.Duration("wound-uncommitted-txn-threshold", consts.DefaultWoundUncommittedTxnThreshold,
+		"transaction older than this may be wounded by another transaction")
 	cmd.RegisterStoreFlags()
-	cmd.RegisterTxnConfigFlags()
 	cmd.ParseFlags()
 
 	store := cmd.NewStore()
@@ -29,7 +32,10 @@ func main() {
 	if err != nil {
 		glog.Fatalf("can't create gate: %v", err)
 	}
-	cfg := cmd.NewTxnConfig()
+	cfg := types.NewTxnManagerConfig(*flagWoundUncommittedTxnThreshold)
+	if err := cfg.Validate(); err != nil {
+		glog.Fatalf("invalid config: %v", err)
+	}
 	txnServer, err := txn.NewServer(*flagTxnPort, gAte, cfg, *flagClearWorkerNum, *flagIOWorkerNum, store)
 	if err != nil {
 		glog.Fatalf("failed to new txn server: %v", err)

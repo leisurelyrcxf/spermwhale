@@ -15,7 +15,7 @@ import (
 
 type TransactionStore struct {
 	kv              types.KVCC
-	cfg             types.TxnConfig
+	cfg             types.TxnManagerConfig
 	retryWaitPeriod time.Duration
 
 	txnInitializer func(txn *Txn)

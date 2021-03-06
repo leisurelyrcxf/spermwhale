@@ -22,10 +22,9 @@ func newTestServer(assert *testifyassert.Assertions, port int) (server *Server) 
 	if !assert.NoError(err) {
 		return nil
 	}
-	return NewServerForTesting(port, memory.NewMemoryDB(), types.TxnConfig{
-		StaleWriteThreshold: time.Second,
-		MaxClockDrift:       time.Nanosecond,
-	}, 1, topo.NewStore(cli, "test_cluster"))
+	return NewServerForTesting(port, memory.NewMemoryDB(),
+		types.NewTabletTxnConfig(time.Second).WithMaxClockDrift(time.Nanosecond),
+		1, topo.NewStore(cli, "test_cluster"))
 }
 
 func newReadOption(version uint64) types.KVCCReadOption {
