@@ -15,3 +15,8 @@ func StringList2Set(keys []string) map[string]struct{} {
 	}
 	return m
 }
+
+func Contains(set map[string]struct{}, key string) bool {
+	_, ok := set[key]
+	return ok
+}

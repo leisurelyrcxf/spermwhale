@@ -23,7 +23,7 @@ type TransactionStore struct {
 }
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
-	preventFutureWrite bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
+	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
 	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithExactVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
@@ -32,6 +32,9 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 			readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version to prevent future write if key not exists
 		}
 		assert.Must(txnId.Version() < readOpt.ReaderVersion)
+	}
+	if !getMaxReadVersion {
+		readOpt = readOpt.WithNotGetMaxReadVersion()
 	}
 	for i := 0; ; {
 		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
@@ -119,9 +122,19 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// 3. transaction neither committed nor rollbacked
 	//
 	// Hence we get the keys. (we may get the same key a second time because the result of the key before seen transaction record not exists is not confident enough)
-	assert. /* NOTE: don't remove this assert*/ Must(preventFutureTxnRecordWrite || len(keysWithWriteIntent) == len(allKeys))
 	// Transaction record not exists, get key to find out the truth.
-	_, vv, keyExists, keyErr := s.getAnyValueWrittenByTxnWithRetry(ctx, allKeys, txnId, callerTxn, maxRetry)
+	assert. /* do not remove this*/ Must(preventFutureTxnRecordWrite || len(keysWithWriteIntent) == len(allKeys))
+	var (
+		vv        types.ValueCC
+		keyExists bool
+		keyErr    error
+	)
+	if len(keysWithWriteIntent) == 1 {
+		assert.Must(utils.Contains(keysWithWriteIntent, allKeys[0]))
+		vv, keyExists, keyErr = s.getValueWrittenByTxnWithRetry(ctx, allKeys[0], txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
+	} else {
+		_, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allKeys, txnId, callerTxn, maxRetry)
+	}
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%s)) returns unexpected error: %v", txnId, callerTxn.ID, allKeys, keyErr)
 		return nil, keyErr

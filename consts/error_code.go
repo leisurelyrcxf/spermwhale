@@ -1,25 +1,30 @@
 package consts
 
 const (
-	ErrCodeWriteReadConflict             = 1
-	ErrCodeReadUncommittedData           = 2
-	ErrCodeReadRollbackedData            = 3
-	ErrCodeKeyNotExists                  = 6
-	ErrCodeStaleWrite                    = 7
-	ErrCodeShardsNotReady                = 8
-	ErrCodeEmptyKey                      = 9
-	ErrCodeVersionAlreadyExists          = 10
-	ErrCodeVersionNotExists              = 11
-	ErrCodeTransactionAlreadyExists      = 12
-	ErrCodeTransactionNotFound           = 13
-	ErrCodeTransactionStateCorrupted     = 14
-	ErrCodeCantRemoveCommittedValue      = 15
-	ErrCodeNilResponse                   = 55
+	ErrCodeWriteReadConflict                           = 1
+	ErrCodeStaleWrite                                  = 2
+	ErrCodeReadUncommittedDataPrevTxnStateUndetermined = 3
+	ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked = 4
+	ErrCodeReadUncommittedDataPrevTxnToBeRollbacked    = 5
+	ErrCodeReadAfterWriteFailed                        = 6
+
+	ErrCodeKeyNotExists   = 27
+	ErrCodeShardsNotReady = 28
+	ErrCodeEmptyKey       = 29
+
+	ErrCodeVersionAlreadyExists = 50
+	ErrCodeVersionNotExists     = 51
+
+	ErrCodeTransactionAlreadyExists  = 62
+	ErrCodeTransactionNotFound       = 63
+	ErrCodeTransactionStateCorrupted = 64
+
+	ErrCodeCantRemoveCommittedValue      = 90
+	ErrCodeNilResponse                   = 99
 	ErrCodeTxnRetriedTooManyTimes        = 100
 	ErrCodeNotSupported                  = 111
 	ErrCodeInvalidRequest                = 222
 	ErrCodeSchedulerClosed               = 333
-	ErrCodeReadAfterWriteFailed          = 555
 	ErrCodeDontUseThisBeforeTaskFinished = 666
 	ErrCodeInvalidTopoData               = 777
 	ErrCodeCantGetOracle                 = 888

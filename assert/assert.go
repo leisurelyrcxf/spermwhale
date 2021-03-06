@@ -34,6 +34,11 @@ func MustAllContain(m map[string]struct{}, strings []string) {
 	}
 }
 
+func MustContain(m map[string]struct{}, str string) {
+	_, ok := m[str]
+	Must(ok)
+}
+
 func MustEqualString(s1, s2 string) {
 	if s1 != s2 {
 		panic(fmt.Sprintf("s1(%v) != s2(%v)", s1, s2))

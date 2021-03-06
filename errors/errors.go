@@ -9,13 +9,17 @@ var (
 		Code: consts.ErrCodeWriteReadConflict,
 		Msg:  "write read conflict",
 	}
-	ErrReadUncommittedData = &Error{
-		Code: consts.ErrCodeReadUncommittedData,
-		Msg:  "read uncommitted data",
+	ErrReadUncommittedDataPrevTxnStatusUndetermined = &Error{
+		Code: consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined,
+		Msg:  "read uncommitted data previous txn state undetermined",
 	}
-	ErrReadRollbackedData = &Error{
-		Code: consts.ErrCodeReadRollbackedData,
-		Msg:  "read rollbacked data",
+	ErrReadUncommittedDataPrevTxnHasBeenRollbacked = &Error{
+		Code: consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked,
+		Msg:  "read uncommitted data previous txn has been rollbacked",
+	}
+	ErrReadUncommittedDataPrevTxnToBeRollbacked = &Error{
+		Code: consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
+		Msg:  "read uncommitted data previous txn to be rollbacked",
 	}
 	ErrStaleWrite = &Error{
 		Code: consts.ErrCodeStaleWrite,

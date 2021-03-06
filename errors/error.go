@@ -76,8 +76,9 @@ func IsRetryableTransactionErr(e error) bool {
 	return code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite ||
 		code == consts.ErrCodeReadAfterWriteFailed ||
-		code == consts.ErrCodeReadUncommittedData ||
-		code == consts.ErrCodeReadRollbackedData
+		code == consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined ||
+		code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked ||
+		code == consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked
 }
 
 func IsRetryableTransactionManagerErr(e error) bool {
@@ -87,7 +88,7 @@ func IsRetryableTransactionManagerErr(e error) bool {
 
 func IsRetryableGetErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadRollbackedData
+	return code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked
 }
 
 func IsMustRollbackGetErr(e error) bool {

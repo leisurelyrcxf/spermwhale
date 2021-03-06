@@ -61,6 +61,10 @@ func (s TxnState) IsAborted() bool {
 	return s == TxnStateRollbacking || s == TxnStateRollbacked
 }
 
+func (s TxnState) IsTerminated() bool {
+	return s.IsAborted() || s == TxnStateCommitted
+}
+
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState

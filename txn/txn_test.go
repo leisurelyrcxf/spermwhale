@@ -25,7 +25,7 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
 	for _, threshold := range []int{10} {
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 10; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
 				return

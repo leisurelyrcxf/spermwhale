@@ -91,13 +91,15 @@ type Txn struct {
 	writeKeyTasks      []*types.ListTask
 	lastWriteKeyTasks  map[string]*types.ListTask
 	txnRecordTask      *types.ListTask
-	preventWriteFlags  map[string]bool
 	allIOTasksFinished bool
-	cfg                types.TxnManagerConfig
-	kv                 types.KVCC
-	store              *TransactionStore
-	s                  *Scheduler
-	h                  TransactionHolder
+
+	preventWriteFlags map[string]bool
+
+	cfg   types.TxnManagerConfig
+	kv    types.KVCC
+	store *TransactionStore
+	s     *Scheduler
+	h     TransactionHolder
 
 	sync.Mutex `json:"-"`
 }
@@ -146,7 +148,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
 			return val, err
 		}
-		if errors.GetErrorCode(err) != consts.ErrCodeReadRollbackedData {
+		if errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked {
 			rand.Seed(time.Now().UnixNano())
 			time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
 		}
@@ -209,27 +211,32 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 		preventFutureWrite,
 		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedData, "reason: '%v'", err)
+		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	committed, rollbacked := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
+	committed, rollbackedOrSafeToRollback := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
 		return vv.Value, nil
 	}
-	if rollbacked {
-		return types.EmptyValue, errors.ErrReadRollbackedData
+	if rollbackedOrSafeToRollback {
+		if writeTxn.State == types.TxnStateRollbacked {
+			return types.EmptyValue, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
+		}
+		assert.Must(writeTxn.State == types.TxnStateRollbacking)
+		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, "previous txn %d", writeTxn.ID)
 	}
-	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedData, "can't determine previous txn status for %d", writeTxn.ID)
+	assert.Must(!writeTxn.State.IsTerminated())
+	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
 
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbacked bool) {
+func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	txn.Lock()
 	defer txn.Unlock()
 
 	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, maxRetry)
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbacked bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	switch txn.State {
 	case types.TxnStateStaging:
 		if len(txn.WrittenKeys) == 0 {
@@ -256,7 +263,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 		}
 		notInKeysLen := len(notInKeys)
 		for idx, key := range append(notInKeys, inKeys...) {
-			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, maxRetry)
+			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, true, maxRetry)
 			if err != nil {
 				return false, false
 			}
@@ -439,6 +446,7 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 
 func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string) (err error) {
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
+		assert.Must(txn.State == types.TxnStateRollbacking)
 		return nil
 	}
 	txn.waitIOTasks(ctx, true)
@@ -529,6 +537,7 @@ func (txn *Txn) getIOTasks() []*types.ListTask {
 }
 
 func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
+	assert.Must(txn.State == types.TxnStateCommitted)
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		return
 	}
@@ -555,15 +564,15 @@ func (txn *Txn) clearCommitted(ctx context.Context, callerTxn types.TxnId) (err 
 	}
 
 	for _, key := range txn.WrittenKeys {
-		if setErr := txn.kv.Set(ctx, key,
+		if clearErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-			types.NewKVCCWriteOption().WithClearWriteIntent()); setErr != nil {
-			if errors.IsNotExistsErr(setErr) {
-				glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, setErr)
+			types.NewKVCCWriteOption().WithClearWriteIntent()); clearErr != nil {
+			if errors.IsNotExistsErr(clearErr) {
+				glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, clearErr)
 			} else {
-				glog.Warningf("clear transaction key '%s' write intent failed: '%v'", key, setErr)
+				glog.Warningf("clear transaction key '%s' write intent failed: '%v'", key, clearErr)
 			}
-			err = errors.Wrap(err, setErr)
+			err = errors.Wrap(err, clearErr)
 		}
 	}
 	if err != nil {
