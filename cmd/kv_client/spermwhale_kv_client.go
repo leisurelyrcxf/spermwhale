@@ -4,15 +4,19 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/c-bata/go-prompt"
+
 	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/cmd"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 func completer(d prompt.Document) []prompt.Suggest {
@@ -37,49 +41,72 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	for {
-		t := prompt.Input("> ", completer)
-		if strings.HasPrefix(t, "get") {
-			remain := strings.TrimPrefix(t, "get")
-			if remain == "" {
-				fmt.Println("invalid get command, use 'get key'")
-				continue
-			}
-			if !strings.HasPrefix(remain, " ") {
-				fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
-				continue
-			}
-			remain = strings.TrimPrefix(remain, " ")
-			parts := strings.Split(remain, " ")
-			key := parts[0]
-			version := types.MaxTxnVersion
-			if len(parts) >= 2 {
-				if version, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
-					fmt.Printf("invalid version '%s'\n", parts[1])
+	var (
+		quit = false
+
+		executor = func(promptText string) {
+			cmds := utils.TrimmedSplit(promptText, ";")
+			for i := 0; ; i++ {
+				if quit {
+					os.Exit(1)
+				}
+
+				if i >= len(cmds) {
+					break
+				}
+
+				var t = cmds[i]
+				if strings.HasPrefix(t, "get") {
+					remain := strings.TrimPrefix(t, "get")
+					if remain == "" {
+						fmt.Println("invalid get command, use 'get key'")
+						continue
+					}
+					if !strings.HasPrefix(remain, " ") {
+						fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
+						continue
+					}
+					remain = strings.TrimPrefix(remain, " ")
+					parts := strings.Split(remain, " ")
+					key := parts[0]
+					version := types.MaxTxnVersion
+					if len(parts) >= 2 {
+						if version, err = strconv.ParseUint(parts[1], 10, 64); err != nil {
+							fmt.Printf("invalid version '%s'\n", parts[1])
+							continue
+						}
+					}
+					readOpt := types.NewKVReadOption(version)
+					if len(parts) >= 3 {
+						if parts[2] != "exact-version" {
+							fmt.Println("invalid command, use 'get key [version] [exact_version]'")
+						}
+						readOpt = readOpt.WithExactVersion()
+					}
+					val, err := kvClient.Get(ctx, key, readOpt)
+					if err != nil {
+						fmt.Printf("get failed: %v\n", err)
+						continue
+					}
+					fmt.Println(string(val.V))
+				} else if strings.HasPrefix(t, "set") {
+					fmt.Println("set is not supported")
+					continue
+				} else if t == "quit" || t == "exit" || t == "q" {
+					break
+				} else {
+					fmt.Printf("cmd '%s' not supported\n", t)
 					continue
 				}
 			}
-			readOpt := types.NewKVReadOption(version)
-			if len(parts) >= 3 {
-				if parts[2] != "exact-version" {
-					fmt.Println("invalid command, use 'get key [version] [exact_version]'")
-				}
-				readOpt = readOpt.WithExactVersion()
-			}
-			val, err := kvClient.Get(ctx, key, readOpt)
-			if err != nil {
-				fmt.Printf("get failed: %v\n", err)
-				continue
-			}
-			fmt.Println(string(val.V))
-		} else if strings.HasPrefix(t, "set") {
-			fmt.Println("set is not supported")
-			continue
-		} else if t == "quit" || t == "exit" || t == "q" {
-			break
-		} else {
-			fmt.Printf("cmd '%s' not supported\n", t)
-			continue
 		}
-	}
+	)
+
+	p := prompt.New(
+		executor,
+		completer,
+		prompt.OptionPrefix("> "),
+		prompt.OptionTitle("spermwhale kv client"),
+	)
+	p.Run()
 }

@@ -70,23 +70,22 @@ func main() {
 			}
 		}
 
-		quit = false
+		prevTxnState types.TxnState
+		quit         = false
 
 		executor = func(promptText string) {
 			cmds := utils.TrimmedSplit(promptText, ";")
 			for i := 0; ; i++ {
-				if clientTxn, ok := tx.(*txn.ClientTxn); ok {
-					if clientTxn.State == types.TxnStateCommitted {
+				if clientTxn, ok := tx.(*txn.ClientTxn); ok && clientTxn != nil {
+					if prevTxnState != types.TxnStateCommitted && clientTxn.State == types.TxnStateCommitted {
 						fmt.Println("committed")
-						if autoClearTerminatedTxn {
-							tx = nil
-						}
-					} else if clientTxn.State.IsAborted() {
+					} else if !prevTxnState.IsAborted() && clientTxn.State.IsAborted() {
 						fmt.Println("aborted")
-						if autoClearTerminatedTxn {
-							tx = nil
-						}
 					}
+					if autoClearTerminatedTxn && clientTxn.State.IsTerminated() {
+						tx = nil
+					}
+					prevTxnState = clientTxn.State
 				}
 
 				if quit {
