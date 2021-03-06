@@ -9,7 +9,7 @@
  
 # Limitation
   * Single point oracle server (may change to HLCTimestamp in the future), but the benefit is that it provides the highest level of consistency --- linearizability.
-  * Long transaction is not supported, default max transaction length is 5 seconds. The value could be increased through configuration, but it will have side effect. When a transaction server is down and dirty record remains in the system, the unavailable time may increase.
+  * Long transaction is not supported, default max transaction length is 5 seconds. The value could be increased through configuration, but it will have side effect: tablets will have to wait longer before serving, this increase the unavailable time of the whole system.
  
 # Usage
 Local file system coordinator (doesn't support cluster auto reconfiguration at runtime)  
@@ -34,15 +34,15 @@ etcd coordinator (support auto reconfiguration):
 **NOTE**:
 For using the interactive client, you may need to increase the stale write period.  
 E.g.:
-<pre>./spwtablet -cluster-name spermwhale --db redis -redis-port 6379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 0  -port 20000 2>&1 1>&sptablet-0.log &
+<pre>./spwtablet -cluster-name spermwhale -logtostderr --db redis -redis-port 6379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 0  -port 20000 2>&1 1>&sptablet-0.log &
 sleep 1s
-./spwtablet -cluster-name spermwhale --db redis -redis-port 16379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 1  -port 30000 2>&1 1>&sptablet-1.log &
+./spwtablet -cluster-name spermwhale -logtostderr --db redis -redis-port 16379 -txn-stale-write-threshold 90s -test -coordinator fs -coordinator-addr /tmp -gid 1  -port 30000 2>&1 1>&sptablet-1.log &
 sleep 1s
-./spworacle -cluster-name spermwhale --loose -coordinator fs -coordinator-addr /tmp -port 6666 2>&1 1>&sporacle.log &
+./spworacle -cluster-name spermwhale -logtostderr --loose -coordinator fs -coordinator-addr /tmp -port 6666 2>&1 1>&sporacle.log &
 sleep 1s
-./spwgate   -cluster-name spermwhale -txn-stale-write-threshold 90s -coordinator fs -coordinator-addr /tmp -port-txn 9999 -port-kv 10001 2>&1 1>&spgate-1.log &
+./spwgate   -cluster-name spermwhale -logtostderr -wound-uncommitted-txn-threshold 15s -coordinator fs -coordinator-addr /tmp -port-txn 9999 -port-kv 10001 2>&1 1>&spgate-1.log &
 sleep 1s
-./spwgate   -cluster-name spermwhale -txn-stale-write-threshold 90s -coordinator fs -coordinator-addr /tmp -port-txn 19999 -port-kv 20001 2>&1 1>&spgate-2.log &
+./spwgate   -cluster-name spermwhale -logtostderr -wound-uncommitted-txn-threshold 15s -coordinator fs -coordinator-addr /tmp -port-txn 19999 -port-kv 20001 2>&1 1>&spgate-2.log &
 </pre> 
 
 # Client Library
