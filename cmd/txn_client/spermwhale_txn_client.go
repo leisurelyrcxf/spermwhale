@@ -78,9 +78,9 @@ func main() {
 			for i := 0; ; i++ {
 				if clientTxn, ok := tx.(*txn.ClientTxn); ok && clientTxn != nil {
 					if prevTxnState != types.TxnStateCommitted && clientTxn.State == types.TxnStateCommitted {
-						fmt.Println("committed")
+						fmt.Println("COMMITTED")
 					} else if !prevTxnState.IsAborted() && clientTxn.State.IsAborted() {
-						fmt.Println("aborted")
+						fmt.Println("ABORTED")
 					}
 					if autoClearTerminatedTxn && clientTxn.State.IsTerminated() {
 						tx = nil
@@ -98,14 +98,14 @@ func main() {
 				var t = cmds[i]
 				if strings.HasPrefix(t, "begin") {
 					if tx, err = tm.BeginTransaction(ctx); err != nil {
-						fmt.Printf("begin failed: %v\n", err)
+						fmt.Printf("BEGIN failed: %v\n", err)
 						continue
 					}
 					showTxnInfo(true)
 				} else if strings.HasPrefix(t, "get") {
 					remain := strings.TrimPrefix(t, "get")
 					if remain == "" {
-						fmt.Println("invalid get command, use 'get key'")
+						fmt.Println("Invalid get command, use 'get key'")
 						continue
 					}
 					if !strings.HasPrefix(remain, " ") {
@@ -115,16 +115,16 @@ func main() {
 					remain = strings.TrimPrefix(remain, " ")
 					parts := strings.Split(remain, " ")
 					if len(parts) != 1 {
-						fmt.Println("invalid get command, use 'get key'")
+						fmt.Println("Invalid get command, use 'get key'")
 						continue
 					}
 					if tx == nil {
 						if !autoBegin {
-							fmt.Println("transaction is nil, needs begin first")
+							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
 						if tx, err = tm.BeginTransaction(ctx); err != nil {
-							fmt.Printf("begin failed: %v\n", err)
+							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}
 						showTxnInfo(true)
@@ -132,33 +132,33 @@ func main() {
 					key := parts[0]
 					val, err := tx.Get(ctx, key)
 					if err != nil {
-						fmt.Printf("get failed: %v\n", err)
+						fmt.Printf("GET failed: %v\n", err)
 						continue
 					}
 					fmt.Printf("\"%s\": %s\n", key, string(val.V))
 				} else if strings.HasPrefix(t, "set") {
 					remain := strings.TrimPrefix(t, "set")
 					if remain == "" {
-						fmt.Println("invalid set command, use 'set key value'")
+						fmt.Println("Invalid set command, use 'set key value'")
 						continue
 					}
 					if !strings.HasPrefix(remain, " ") {
-						fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
+						fmt.Printf("Unknown command: '%s'\n", strings.Split(t, " ")[0])
 						continue
 					}
 					remain = strings.TrimPrefix(remain, " ")
 					parts := strings.Split(remain, " ")
 					if len(parts) != 2 {
-						fmt.Println("invalid set command, use 'set key value'")
+						fmt.Println("Invalid set command, use 'set key value'")
 						continue
 					}
 					if tx == nil {
 						if !autoBegin {
-							fmt.Println("transaction is nil, needs begin first")
+							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
 						if tx, err = tm.BeginTransaction(ctx); err != nil {
-							fmt.Printf("begin failed: %v\n", err)
+							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}
 						showTxnInfo(true)
@@ -171,7 +171,7 @@ func main() {
 					fmt.Println("ok")
 				} else if strings.HasPrefix(t, "commit") {
 					if tx == nil {
-						fmt.Println("transaction is nil, nothing to commit")
+						fmt.Println("Transaction is nil, nothing to commit")
 						continue
 					}
 					if err := tx.Commit(ctx); err != nil {
@@ -180,7 +180,7 @@ func main() {
 					}
 				} else if strings.HasPrefix(t, "rollback") {
 					if tx == nil {
-						fmt.Println("transaction is nil, nothing to rollback")
+						fmt.Println("Transaction is nil, nothing to rollback")
 						continue
 					}
 					if err := tx.Rollback(ctx); err != nil {
@@ -198,7 +198,7 @@ func main() {
 						}
 					}
 				} else {
-					fmt.Printf("cmd '%s' not supported\n", t)
+					fmt.Printf("Command '%s' not supported\n", t)
 					continue
 				}
 			}
