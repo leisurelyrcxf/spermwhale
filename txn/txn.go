@@ -201,7 +201,7 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 	}
 	assert.Must(vv.Version < txn.ID.Version())
 	var (
-		keyWithWriteIntent = map[string]struct{}{key: {}}
+		keyWithWriteIntent = map[string]bool{key: true} // value indicates the key exists
 		preventFutureWrite = utils.IsTooOld(vv.Version, txn.cfg.WoundUncommittedTxnThreshold)
 	)
 	writeTxn, err := txn.store.inferTransactionRecordWithRetry(
@@ -219,7 +219,7 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 		return vv.Value, nil
 	}
 	if rollbackedOrSafeToRollback {
-		if writeTxn.State == types.TxnStateRollbacked {
+		if writeTxn.State == types.TxnStateRollbacked || !keyWithWriteIntent[key] {
 			return types.EmptyValue, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
 		}
 		assert.Must(writeTxn.State == types.TxnStateRollbacking)
@@ -229,14 +229,14 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
 
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
+func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]bool, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	txn.Lock()
 	defer txn.Unlock()
 
 	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, maxRetry)
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]struct{}, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]bool, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	switch txn.State {
 	case types.TxnStateStaging:
 		if len(txn.WrittenKeys) == 0 {
@@ -278,6 +278,8 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			}
 			if idx >= notInKeysLen {
 				txn.State = types.TxnStateRollbacking
+				assert.MustContain(keysWithWriteIntent, key)
+				keysWithWriteIntent[key] = false                                               // key already rollbacked
 				_ = txn.rollback(ctx, callerTxn.ID, true, "previous write intent disappeared") // help rollback since original txn coordinator may have gone
 				return false, true
 			}
@@ -417,10 +419,10 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		}
 	}
 	assert.Must(txn.State == types.TxnStateStaging)
-	succeededKeys := make(map[string]struct{})
+	succeededKeys := make(map[string]bool)
 	for key, lastWriteKeyTask := range txn.lastWriteKeyTasks {
 		if lastWriteKeyTask.Err() == nil {
-			succeededKeys[key] = struct{}{}
+			succeededKeys[key] = true
 		}
 	}
 	assert.Must(len(succeededKeys) != len(txn.WrittenKeys) || txn.txnRecordTask.Err() != nil)

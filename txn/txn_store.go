@@ -98,7 +98,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 func (s *TransactionStore) inferTransactionRecordWithRetry(
 	ctx context.Context,
 	txnId types.TxnId, callerTxn *Txn,
-	keysWithWriteIntent map[string]struct{},
+	keysWithWriteIntent map[string]bool,
 	allKeys []string,
 	preventFutureTxnRecordWrite bool,
 	maxRetry int) (txn *Txn, err error) {
@@ -130,8 +130,10 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		keyErr    error
 	)
 	if len(keysWithWriteIntent) == 1 {
-		assert.Must(utils.Contains(keysWithWriteIntent, allKeys[0]))
-		vv, keyExists, keyErr = s.getValueWrittenByTxnWithRetry(ctx, allKeys[0], txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
+		assert.Must(len(allKeys) == 1)
+		conflictedKey := allKeys[0]
+		assert.MustContain(keysWithWriteIntent, conflictedKey)
+		vv, keyExists, keyErr = s.getValueWrittenByTxnWithRetry(ctx, conflictedKey, txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
 	} else {
 		_, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allKeys, txnId, callerTxn, maxRetry)
 	}
@@ -160,7 +162,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	//    1.2. len(keysWithWriteIntent) == len(allKeys), one of the keys with write intent disappeared, safe to rollback
 	// 2. key exists & vv.HasWriteIntent() && preventFutureTxnRecordWrite, since we've updated timestamp cache of txn record,
 	//	  guaranteed commit won't succeed in the future (because it needs to write transaction record with intent),
-	//	  hence safe to rollback., safe to rollback
+	//	  hence safe to rollback.
 	txn = s.txnConstructor(txnId)
 	txn.WrittenKeys = allKeys
 	if !keyExists && len(txn.WrittenKeys) == 1 {

@@ -12,7 +12,8 @@
   * Long transaction is not supported, default max transaction length is 5 seconds. The value could be increased through configuration, but it will have side effect: tablets will have to wait longer before serving, this increase the unavailable time of the whole system.
   
 # Transaction Design
-  Plz refer to TxnStore::inferTransactionRecordWithRetry() in txn/txn_store.go and Txn::CheckCommitState and Txn::Commit in txn/txn.go  
+  If a transaction sees a key with write intent during reading, it will try to find out the commit status of the transaction. 
+  Please refer to TxnStore::inferTransactionRecordWithRetry() in txn/txn_store.go and Txn::CheckCommitState and Txn::Commit in txn/txn.go  
  
 # Usage
 Local file system coordinator (doesn't support cluster auto reconfiguration at runtime)  
