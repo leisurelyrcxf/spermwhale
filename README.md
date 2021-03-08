@@ -12,7 +12,14 @@
   * Long transaction is not supported, default max transaction length is 5 seconds. The value could be increased through configuration, but it will have side effect: tablets will have to wait longer before serving, this increase the unavailable time of the whole system.
   
 # Transaction Design
-  If a transaction sees a key with write intent during reading, it will try to find out the commit status of the transaction. 
+  If a transaction sees a key with write intent during reading, it will try to find out the commit status of the transaction.  
+   
+  If the transaction record doesn't exist, it may prevent the transaction record from being written in the future using an atomic semantic (all transaction records needs write intent to proceed too, just like normal keys). This can be used to safely rollback a transaction without transaction record.   
+  
+  If transaction records exists, it will check the written keys of the transaction one-by-one and consider the transaction committed in one of the following 2 cases:
+  1. one of the keys written by the transaction's write intent has been cleared.
+  2. all keys written by the transaction exist.
+  
   Please refer to TxnStore::inferTransactionRecordWithRetry() in txn/txn_store.go and Txn::CheckCommitState and Txn::Commit in txn/txn.go  
  
 # Usage
