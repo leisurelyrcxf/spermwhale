@@ -10,6 +10,9 @@
 # Limitation
   * Single point oracle server (may change to HLCTimestamp in the future), but the benefit is that it provides the highest level of consistency --- linearizability.
   * Long transaction is not supported, default max transaction length is 5 seconds. The value could be increased through configuration, but it will have side effect: tablets will have to wait longer before serving, this increase the unavailable time of the whole system.
+  
+# Transaction Design
+  Plz refer to TxnStore::inferTransactionRecordWithRetry() in txn/txn_store.go and Txn::CheckCommitState and Txn::Commit in txn/txn.go  
  
 # Usage
 Local file system coordinator (doesn't support cluster auto reconfiguration at runtime)  
