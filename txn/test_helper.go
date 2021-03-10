@@ -37,6 +37,10 @@ type ExecuteInfo struct {
 	AdditionalInfo          interface{}
 }
 
+func (info ExecuteInfo) String() string {
+	return fmt.Sprintf("Txn{id: %d, state: %s, read: %v, write: %v}", info.ID, info.State.String(), info.ReadValues, info.WriteValues)
+}
+
 type SortedTxnInfos []ExecuteInfo
 
 func (ss SortedTxnInfos) Len() int {

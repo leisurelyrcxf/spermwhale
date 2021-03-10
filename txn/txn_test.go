@@ -820,13 +820,12 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	defer cancel()
 
 	const (
-		goRoutineNumber                = 6
-		roundPerGoRoutine              = 1000
-		delta                          = 6
-		key1, key2                     = "k1", "k22"
-		k1InitialValue, k2InitialValue = 100, 200
-		valueSum                       = k1InitialValue + k2InitialValue
-		key1ExtraDelta, key2ExtraDelta = 10, 20
+		goRoutineNumber                                = 8
+		roundPerGoRoutine                              = 1000
+		delta                                          = 6
+		key1, key2, key3                               = "k1", "k22", "k3"
+		k1InitialValue, k2InitialValue, k3InitialValue = 100, 200, 300
+		key1ExtraDelta, key2ExtraDelta, key3ExtraDelta = 10, 20, 30
 	)
 	var (
 		txnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)
@@ -853,6 +852,12 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 		return
 	}
 	if val, err := sc.GetInt(ctx, key2); !assert.NoError(err) || !assert.Equal(k2InitialValue, val) {
+		return
+	}
+	if err := sc.SetInt(ctx, key3, k3InitialValue); !assert.NoError(err) {
+		return
+	}
+	if val, err := sc.GetInt(ctx, key3); !assert.NoError(err) || !assert.Equal(k3InitialValue, val) {
 		return
 	}
 
@@ -930,6 +935,67 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							WriteValues: writeValues,
 						})
 					}
+				} else if goRoutineIndex == 2 {
+					var (
+						readValues  = map[string]types.Value{}
+						writeValues = map[string]types.Value{}
+					)
+					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						return func() error {
+							key3Val, err := txn.Get(ctx, key3)
+							if err != nil {
+								return err
+							}
+							v3, err := key3Val.Int()
+							if !assert.NoError(err) {
+								return err
+							}
+							readValues[key3] = key3Val
+							v3 += key3ExtraDelta
+							writtenVal3 := types.IntValue(v3)
+							if err := txn.Set(ctx, key3, writtenVal3.V); err != nil {
+								return err
+							}
+							writeValues[key3] = writtenVal3.WithVersion(txn.GetId().Version())
+							return nil
+						}(), true
+					}, nil, nil); assert.NoError(err) {
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
+							ID:          tx.GetId().Version(),
+							State:       tx.GetState(),
+							ReadValues:  readValues,
+							WriteValues: writeValues,
+						})
+					}
+				} else if goRoutineIndex == 3 {
+					var readValues = map[string]types.Value{}
+					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						return func() error {
+							key1Val, err := txn.Get(ctx, key1)
+							if err != nil {
+								return err
+							}
+							readValues[key1] = key1Val
+							key2Val, err := txn.Get(ctx, key2)
+							if err != nil {
+								return err
+							}
+							readValues[key2] = key2Val
+							key3Val, err := txn.Get(ctx, key3)
+							if err != nil {
+								return err
+							}
+							readValues[key3] = key3Val
+							return nil
+						}(), true
+					}, nil, nil); assert.NoError(err) {
+						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
+							ID:          tx.GetId().Version(),
+							State:       tx.GetState(),
+							ReadValues:  readValues,
+							WriteValues: nil,
+						})
+					}
 				} else {
 					var (
 						readValues  = map[string]types.Value{}
@@ -964,6 +1030,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 								if !assert.NoError(err) {
 									return err
 								}
+								readValues[key2] = key2Val
 								v2 += delta
 								writtenVal2 := types.IntValue(v2)
 								if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
@@ -993,7 +1060,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	if !assert.NoError(err) {
 		return
 	}
-	if !assert.Equal(k1InitialValue-(goRoutineNumber-2)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key1ExtraDelta, value1) {
+	if !assert.Equal(k1InitialValue-(goRoutineNumber-4)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key1ExtraDelta, value1) {
 		return
 	}
 
@@ -1001,7 +1068,15 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	if !assert.NoError(err) {
 		return
 	}
-	if !assert.Equal(k2InitialValue+(goRoutineNumber-2)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key2ExtraDelta, value2) {
+	if !assert.Equal(k2InitialValue+(goRoutineNumber-4)*roundPerGoRoutine*delta+1*roundPerGoRoutine*key2ExtraDelta, value2) {
+		return
+	}
+
+	value3, err := sc.GetInt(ctx, key3)
+	if !assert.NoError(err) {
+		return
+	}
+	if !assert.Equal(k3InitialValue+1*roundPerGoRoutine*key3ExtraDelta, value3) {
 		return
 	}
 
@@ -1030,6 +1105,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 			}
 		}
 	}
+
 	return true
 }
 
