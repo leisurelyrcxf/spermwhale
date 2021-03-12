@@ -14,6 +14,9 @@ const (
 const (
 	ReadOptBitMaskNotUpdateTimestampCache = 1
 	ReadOptBitMaskNotGetMaxReadVersion    = 1 << 1
+	readOptBitMaskCommon                  = uint8((0xffff << 2) & 0xff)
+	ReadOptBitMaskWaitNoWriteIntent       = 1 << 2
+	RevertReadOptBitMaskWaitNoWriteIntent = ^ReadOptBitMaskWaitNoWriteIntent & 0xff
 
 	WriteOptBitMaskClearWriteIntent = 1
 	WriteOptBitMaskRemoveVersion    = 1 << 1
@@ -40,3 +43,11 @@ const (
 	MaxRetryTxnGet                    = 2
 	MaxRetryResolveFoundedWriteIntent = 2
 )
+
+const (
+	DefaultReadTimeout = time.Second * 10
+)
+
+func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
+	return flag1 | (flag2 & readOptBitMaskCommon)
+}

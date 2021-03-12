@@ -44,8 +44,23 @@ func (opt KVCCReadOption) WithNotGetMaxReadVersion() KVCCReadOption {
 	return opt
 }
 
+func (opt KVCCReadOption) WithClearWaitNoWriteIntent() KVCCReadOption {
+	opt.flag &= RevertReadOptBitMaskWaitNoWriteIntent
+	return opt
+}
+
 func (opt KVCCReadOption) WithExactVersion(exactVersion uint64) KVCCReadOption {
 	opt.ExactVersion = exactVersion
+	return opt
+}
+
+func (opt KVCCReadOption) WithSafeIncrReaderVersion() KVCCReadOption {
+	SafeIncr(&opt.ReaderVersion)
+	return opt
+}
+
+func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
+	opt.ReaderVersion += 1
 	return opt
 }
 
@@ -61,14 +76,8 @@ func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
 	return opt.flag&ReadOptBitMaskNotGetMaxReadVersion > 0
 }
 
-func (opt KVCCReadOption) WithSafeIncrReaderVersion() KVCCReadOption {
-	SafeIncr(&opt.ReaderVersion)
-	return opt
-}
-
-func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
-	opt.ReaderVersion += 1
-	return opt
+func (opt KVCCReadOption) IsWaitNoWriteIntent() bool {
+	return opt.flag&ReadOptBitMaskWaitNoWriteIntent > 0
 }
 
 func (opt KVCCReadOption) ToKVReadOption() KVReadOption {
@@ -76,6 +85,11 @@ func (opt KVCCReadOption) ToKVReadOption() KVReadOption {
 		return NewKVReadOption(opt.ExactVersion).WithExactVersion()
 	}
 	return NewKVReadOption(opt.ReaderVersion)
+}
+
+func (opt KVCCReadOption) InheritTxnReadOption(txnOpt TxnReadOption) KVCCReadOption {
+	opt.flag = InheritReadCommonFlag(opt.flag, txnOpt.flag)
+	return opt
 }
 
 type KVCCWriteOption struct {

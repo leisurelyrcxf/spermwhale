@@ -25,7 +25,7 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("v", fmt.Sprintf("%d", 1))
 
 	for _, threshold := range []int{10} {
-		for i := 0; i < 10; i++ {
+		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
 				return
@@ -38,8 +38,8 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewMemoryDB()
-	kvcc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 10, 20)
+	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 10, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -67,9 +67,11 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 
 			var (
 				readValue, writeValue types.Value
+				readOpt               = types.NewTxnReadOption()
 			)
+			//readOpt = readOpt.WithWaitNoWriteIntent()
 			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-				val, err := txn.Get(ctx, "k1")
+				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
 				}
@@ -188,7 +190,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 			)
 			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 				{
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
 					}
@@ -206,7 +208,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 				}
 
 				{
-					val, err := txn.Get(ctx, "k22")
+					val, err := txn.Get(ctx, "k22", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
 					}
@@ -311,7 +313,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 			defer wg.Done()
 
 			assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-				val, err := txn.Get(ctx, "k1")
+				val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 				if err != nil {
 					return err
 				}
@@ -331,7 +333,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 					return err
 				}
 
-				val2, err := txn.Get(ctx, "k1")
+				val2, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 				if err != nil {
 					return err
 				}
@@ -382,8 +384,8 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 		txnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)
 		tabletCfg     = defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold)
 	)
-	kvcc := kvcc.NewKVCCForTesting(db, tabletCfg)
-	m := NewTransactionManager(kvcc, txnManagerCfg, 20, 30)
+	kvc := kvcc.NewKVCCForTesting(db, tabletCfg)
+	m := NewTransactionManager(kvc, txnManagerCfg, 20, 30)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -412,7 +414,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 
 			if i%100 == 0 {
 				assert.Equal(errors.ErrInject, sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
 					}
@@ -429,7 +431,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 			} else {
 				goodTxns.Add(1)
 				assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err
 					}
@@ -510,7 +512,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 
 			if i%100 == 0 {
 				err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
 					}
@@ -532,7 +534,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 			} else {
 				goodTxns.Add(1)
 				assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err
 					}
@@ -616,7 +618,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 			start := time.Now()
 			for i := 0; i < roundPerGoRoutine; i++ {
 				if !assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, "k1")
+					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err
 					}
@@ -716,7 +718,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
 					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1)
+						key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 						if err != nil {
 							return err
 						}
@@ -725,7 +727,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 							return err
 						}
 
-						key2Val, err := txn.Get(ctx, key2)
+						key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 						if err != nil {
 							return err
 						}
@@ -741,7 +743,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 				} else {
 					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -756,7 +758,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -878,7 +880,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					)
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -910,7 +912,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					)
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -942,7 +944,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					)
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
-							key3Val, err := txn.Get(ctx, key3)
+							key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -971,17 +973,17 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					var readValues = map[string]types.Value{}
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
 							readValues[key1] = key1Val
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
 							readValues[key2] = key2Val
-							key3Val, err := txn.Get(ctx, key3)
+							key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1004,7 +1006,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
 							{
-								key1Val, err := txn.Get(ctx, key1)
+								key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 								if err != nil {
 									return err
 								}
@@ -1022,7 +1024,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							}
 
 							{
-								key2Val, err := txn.Get(ctx, key2)
+								key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 								if err != nil {
 									return err
 								}
@@ -1180,7 +1182,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 || goRoutineIndex == 1 {
 					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1)
+						key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 						if err != nil {
 							return err
 						}
@@ -1189,7 +1191,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 							return err
 						}
 
-						key2Val, err := txn.Get(ctx, key2)
+						key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 						if err != nil {
 							return err
 						}
@@ -1205,7 +1207,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 				} else {
 					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 						if goRoutineIndex < (goRoutineNumber-2)/2+2 {
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1213,7 +1215,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 							if !assert.NoError(err) {
 								return err
 							}
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1229,7 +1231,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 								}
 							}
 						} else {
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1237,7 +1239,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 							if !assert.NoError(err) {
 								return err
 							}
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1434,7 +1436,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 				if goRoutineIndex == 0 {
 					assert.NoError(sc1.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1449,7 +1451,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1467,7 +1469,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 				} else {
 					assert.NoError(sc2.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1)
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}
@@ -1482,7 +1484,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2)
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
 							if err != nil {
 								return err
 							}

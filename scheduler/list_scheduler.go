@@ -1,4 +1,4 @@
-package types
+package scheduler
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func (l *list) append(t *types.ListTask) {
 	l.tail = t
 }
 
-type ListScheduler struct {
+type DynamicListScheduler struct {
 	taskLists          chan *list
 	taskListsProtector sync.RWMutex
 	closed             bool
@@ -55,8 +55,8 @@ type ListScheduler struct {
 	wg sync.WaitGroup
 }
 
-func NewListScheduler(maxBufferedTask, workerNumber int) *ListScheduler {
-	b := &ListScheduler{
+func NewDynamicListScheduler(maxBufferedTask, workerNumber int) *DynamicListScheduler {
+	b := &DynamicListScheduler{
 		taskLists:    make(chan *list, maxBufferedTask),
 		workerNumber: workerNumber,
 		lm:           concurrency.NewLockManager(),
@@ -66,7 +66,7 @@ func NewListScheduler(maxBufferedTask, workerNumber int) *ListScheduler {
 	return b
 }
 
-func (s *ListScheduler) Schedule(t *types.ListTask) error {
+func (s *DynamicListScheduler) Schedule(t *types.ListTask) error {
 	s.lm.Lock(t.ID)
 	var l *list
 	listObj, ok := s.taskListMap.Get(t.ID)
@@ -94,7 +94,7 @@ func (s *ListScheduler) Schedule(t *types.ListTask) error {
 	return nil
 }
 
-func (s *ListScheduler) GC(tasks []*types.ListTask) {
+func (s *DynamicListScheduler) GC(tasks []*types.ListTask) {
 	taskKeys := make(map[string]struct{})
 	for _, t := range tasks {
 		taskKeys[t.ID] = struct{}{}
@@ -108,7 +108,7 @@ func (s *ListScheduler) GC(tasks []*types.ListTask) {
 	}
 }
 
-func (s *ListScheduler) Close() {
+func (s *DynamicListScheduler) Close() {
 	s.taskListsProtector.Lock()
 	if s.closed {
 		s.taskListsProtector.Unlock()
@@ -127,7 +127,7 @@ func (s *ListScheduler) Close() {
 	s.taskListMap.Clear()
 }
 
-func (s *ListScheduler) start() {
+func (s *DynamicListScheduler) start() {
 	for i := 0; i < s.workerNumber; i++ {
 		s.wg.Add(1)
 
@@ -176,23 +176,23 @@ func (s *ListScheduler) start() {
 	}
 }
 
-type ConcurrentListScheduler struct {
-	partitions []*ListScheduler
+type ConcurrentDynamicListScheduler struct {
+	partitions []*DynamicListScheduler
 }
 
-func NewConcurrentListScheduler(maxBuffered int, partitionNum int, workerNumberPerPartition int) *ConcurrentListScheduler {
-	s := &ConcurrentListScheduler{partitions: make([]*ListScheduler, partitionNum)}
+func NewConcurrentDynamicListScheduler(partitionNum int, maxBufferedPerPartition int, workerNumberPerPartition int) *ConcurrentDynamicListScheduler {
+	s := &ConcurrentDynamicListScheduler{partitions: make([]*DynamicListScheduler, partitionNum)}
 	for i := range s.partitions {
-		s.partitions[i] = NewListScheduler(maxBuffered, workerNumberPerPartition)
+		s.partitions[i] = NewDynamicListScheduler(maxBufferedPerPartition, workerNumberPerPartition)
 	}
 	return s
 }
 
-func (s *ConcurrentListScheduler) Schedule(t *types.ListTask) error {
+func (s *ConcurrentDynamicListScheduler) Schedule(t *types.ListTask) error {
 	return s.partition(t.ID).Schedule(t)
 }
 
-func (s *ConcurrentListScheduler) GC(tasks []*types.ListTask) {
+func (s *ConcurrentDynamicListScheduler) GC(tasks []*types.ListTask) {
 	taskKeys := make(map[string]struct{})
 	for _, t := range tasks {
 		taskKeys[t.ID] = struct{}{}
@@ -202,12 +202,12 @@ func (s *ConcurrentListScheduler) GC(tasks []*types.ListTask) {
 	}
 }
 
-func (s *ConcurrentListScheduler) Close() {
+func (s *ConcurrentDynamicListScheduler) Close() {
 	for _, partition := range s.partitions {
 		partition.Close()
 	}
 }
 
-func (s *ConcurrentListScheduler) partition(taskID string) *ListScheduler {
+func (s *ConcurrentDynamicListScheduler) partition(taskID string) *DynamicListScheduler {
 	return s.partitions[int(crc32.ChecksumIEEE([]byte(taskID)))%len(s.partitions)]
 }

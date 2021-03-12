@@ -5,8 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/golang/glog"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 )
 
@@ -29,8 +30,9 @@ type Task struct {
 	result interface{}
 	err    error
 
-	f    func(context.Context) (interface{}, error)
-	done chan struct{}
+	f          func(context.Context) (interface{}, error)
+	done       chan struct{}
+	onFinished func()
 }
 
 func NewTaskNoResult(id string, name string, runTimeout time.Duration, g func(context.Context) error) *Task {
@@ -107,7 +109,13 @@ func (t *Task) Cancel() {
 }
 
 func (t *Task) Run() error {
-	defer close(t.done)
+	defer func() {
+		close(t.done)
+
+		if t.onFinished != nil {
+			t.onFinished()
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(t.ctx, t.runTimeout)
 	defer cancel()
@@ -149,9 +157,9 @@ func NewListTaskWithResult(id string, name string, runTimeout time.Duration,
 		if prev == nil {
 			return g(ctx, nil)
 		}
+		assert.Must(prev.Finished())
 		if prev.err != nil {
-			t.err = errors.Annotatef(prev.err, "detail: error propagated from previous task %s(%s)", prev.ID, prev.Name)
-			return nil, t.err
+			return nil, errors.Annotatef(prev.err, "detail: error propagated from previous task %s(%s)", prev.ID, prev.Name)
 		}
 		if prev.result == nil {
 			panic("previous task func returned (nil, nil), which is not allowed")
@@ -184,4 +192,70 @@ func (t *ListTask) SetNext(next *ListTask) {
 
 func (t *ListTask) SetPrev(prev *ListTask) {
 	t.prev.Store(prev)
+}
+
+type TreeTask struct {
+	Task
+
+	children     []*TreeTask
+	childrenDone int64
+
+	parent *TreeTask
+}
+
+func NewTreeTaskNoResult(
+	id string, name string, runTimeout time.Duration,
+	parent *TreeTask,
+	g func(ctx context.Context, childrenResult []interface{}) error) *TreeTask {
+	return NewTreeTaskWithResult(
+		id, name, runTimeout,
+		parent,
+		func(ctx context.Context, childrenResult []interface{}) (i interface{}, err error) {
+			if err := g(ctx, childrenResult); err != nil {
+				return nil, err
+			}
+			return DummyTaskResult, nil
+		})
+}
+
+func NewTreeTaskWithResult(
+	id string, name string, runTimeout time.Duration,
+	parent *TreeTask,
+	g func(ctx context.Context, childrenResult []interface{}) (interface{}, error)) *TreeTask {
+	t := &TreeTask{Task: newTask(id, name, runTimeout, nil), parent: parent}
+	if t.parent != nil {
+		t.parent.children = append(t.parent.children, t)
+	}
+	t.Task.f = func(ctx context.Context) (interface{}, error) {
+		var childrenResult []interface{}
+		for _, child := range t.Children() {
+			assert.Must(child.Finished())
+			if child.err != nil {
+				return nil, errors.Annotatef(child.err, "error propagated from child task %s(%s)", child.ID, child.Name)
+			}
+			childrenResult = append(childrenResult, child.result)
+		}
+		return g(ctx, childrenResult)
+	}
+	t.genContext()
+	t.onFinished = func() {
+		t.parent.childDone()
+	}
+	return t
+}
+
+func (t *TreeTask) childDone() {
+	if t == nil {
+		return
+	}
+
+	if newVal := atomic.AddInt64(&t.childrenDone, 1); newVal == int64(len(t.children)) {
+		if err := t.Run(); err != nil {
+			glog.Errorf("parent task %s(%s) failed: %v", t.ID, t.Name, err)
+		}
+	}
+}
+
+func (t *TreeTask) Children() []*TreeTask {
+	return t.children
 }

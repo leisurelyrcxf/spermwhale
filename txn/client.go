@@ -45,10 +45,11 @@ func (c *Client) Begin(ctx context.Context) (TransactionInfo, error) {
 	return NewTransactionInfoFromPB(resp.Txn), nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, TransactionInfo, error) {
+func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId, opt types.TxnReadOption) (types.Value, TransactionInfo, error) {
 	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
 		TxnId: uint64(txnID),
+		Opt:   opt.ToPB(),
 	})
 	if err != nil {
 		return types.EmptyValue, InvalidTransactionInfo(txnID), err
@@ -158,8 +159,8 @@ type ClientTxn struct {
 	c *Client
 }
 
-func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
-	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID)
+func (txn *ClientTxn) Get(ctx context.Context, key string, opt types.TxnReadOption) (types.Value, error) {
+	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID, opt)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return val, err

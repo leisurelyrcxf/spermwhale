@@ -114,7 +114,7 @@ func main() {
 					}
 					remain = strings.TrimPrefix(remain, " ")
 					parts := strings.Split(remain, " ")
-					if len(parts) != 1 {
+					if len(parts) > 2 {
 						fmt.Println("Invalid get command, use 'get key'")
 						continue
 					}
@@ -130,7 +130,13 @@ func main() {
 						showTxnInfo(true)
 					}
 					key := parts[0]
-					val, err := tx.Get(ctx, key)
+					optStr := parts[1]
+					opt, err := types.ParseTxnReadOption(optStr)
+					if err != nil {
+						fmt.Printf("Invalid read opt: %v, must be %s\n", err, types.GetTxnReadOptionDesc())
+						continue
+					}
+					val, err := tx.Get(ctx, key, opt)
 					if err != nil {
 						fmt.Printf("GET failed: %v\n", err)
 						continue

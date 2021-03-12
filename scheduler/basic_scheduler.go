@@ -1,13 +1,13 @@
-package types
+package scheduler
 
 import (
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 
-	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 )
 

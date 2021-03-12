@@ -147,3 +147,10 @@ func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	v.MaxReadVersion = maxReadVersion
 	return v
 }
+
+func (v ValueCC) WithNoWriteIntent() ValueCC {
+	return ValueCC{
+		Value:          v.Value.WithNoWriteIntent(),
+		MaxReadVersion: v.MaxReadVersion,
+	}
+}

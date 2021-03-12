@@ -1,4 +1,4 @@
-package types
+package scheduler
 
 import (
 	"context"
@@ -13,10 +13,15 @@ import (
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
+const rounds = 10000
+
 func TestListScheduler(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for i := 0; i <= rounds; i++ {
 		if !testListScheduler(t, i) {
 			return
+		}
+		if i%1000 == 0 {
+			t.Logf("round %d finished", i)
 		}
 	}
 }
@@ -24,11 +29,11 @@ func TestListScheduler(t *testing.T) {
 func testListScheduler(t *testing.T, round int) (b bool) {
 	assert := testifyassert.New(t)
 
-	s := NewConcurrentListScheduler(1024, 16, 1)
+	s := NewConcurrentDynamicListScheduler(16, 1024, 1)
 	defer s.Close()
 
 	const (
-		taskNumberPerKey = 100000
+		taskNumberPerKey = 100
 
 		key1InitialValue = 1000
 		key1Delta        = 1
@@ -112,7 +117,7 @@ func testListScheduler(t *testing.T, round int) (b bool) {
 func TestListSchedulerPropagateErr(t *testing.T) {
 	assert := testifyassert.New(t)
 
-	s := NewListScheduler(1024, 10)
+	s := NewDynamicListScheduler(1024, 10)
 	const (
 		taskNumberPerKey = 100000
 
@@ -177,7 +182,7 @@ func TestListSchedulerCancelWait(t *testing.T) {
 func testListSchedulerCancelWait(t *testing.T) (b bool) {
 	assert := testifyassert.New(t)
 
-	s := NewListScheduler(1024, 10)
+	s := NewDynamicListScheduler(1024, 10)
 	defer s.Close()
 	const (
 		TaskNumber = 1000

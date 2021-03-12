@@ -24,7 +24,6 @@ type TransactionHolder interface {
 }
 
 const (
-	defaultReadTimeout  = time.Second * 10
 	defaultClearTimeout = time.Second * 15
 )
 
@@ -128,7 +127,7 @@ func (txn *Txn) ioTaskIDOfKey(key string) string {
 	return fmt.Sprintf("%s-%s", txn.Key(), key)
 }
 
-func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) {
+func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
 	if key == "" {
 		return types.EmptyValue, errors.ErrEmptyKey
 	}
@@ -144,7 +143,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 	}()
 
 	for i := 0; ; i++ {
-		val, err := txn.get(ctx, key)
+		val, err := txn.get(ctx, key, opt)
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
 			return val, err
 		}
@@ -155,7 +154,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (_ types.Value, err error) 
 	}
 }
 
-func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) {
+func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
 	if txn.State != types.TxnStateUncommitted {
 		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State)
 	}
@@ -165,10 +164,10 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 		lastWriteTask = txn.lastWriteKeyTasks[key]
 	)
 	if lastWriteTask != nil {
-		ctx, cancel := context.WithTimeout(ctx, defaultReadTimeout)
+		ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
 		if !lastWriteTask.WaitFinishWithContext(ctx) {
 			cancel()
-			return types.EmptyValue, errors.Annotatef(errors.ErrReadAfterWriteFailed, "wait write task timeouted after %s", defaultReadTimeout)
+			return types.EmptyValue, errors.Annotatef(errors.ErrReadAfterWriteFailed, "wait write task timeouted after %s", consts.DefaultReadTimeout)
 		}
 		cancel()
 		if writeErr := lastWriteTask.Err(); writeErr != nil {
@@ -176,9 +175,9 @@ func (txn *Txn) get(ctx context.Context, key string) (_ types.Value, err error) 
 		}
 	}
 	if lastWriteTask == nil {
-		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()))
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt))
 	} else {
-		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()))
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt).WithExactVersion(txn.ID.Version()).WithClearWaitNoWriteIntent())
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
@@ -376,8 +375,9 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write record io task schedule failed: '%v'", err.Error()))
 		return err
 	}
-
 	txn.txnRecordTask = txnRecordTask
+
+	// Wait finish
 	txn.waitIOTasks(ctx, false)
 	var lastNonRollbackableIOErr error
 	for _, ioTask := range txn.getIOTasks() {

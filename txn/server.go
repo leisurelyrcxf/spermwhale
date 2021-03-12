@@ -37,7 +37,7 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 		return &txnpb.TxnGetResponse{
 			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
-	val, err := txn.Get(ctx, req.Key)
+	val, err := txn.Get(ctx, req.Key, types.NewTxnReadOptionFromPB(req.Opt))
 	if err != nil {
 		return &txnpb.TxnGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
 	}

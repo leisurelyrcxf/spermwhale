@@ -45,11 +45,8 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 func (c *SmartClient) DoTransactionRaw(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) (types.Txn, error) {
 	for i := 0; i < c.maxRetry; i++ {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-			break
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		tx, err := c.TxnManager.BeginTransaction(ctx)
 		if err != nil {
@@ -105,7 +102,7 @@ func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {
 
 func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ error) {
 	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
-		val, err = txn.Get(ctx, key)
+		val, err = txn.Get(ctx, key, types.NewTxnReadOption())
 		return
 	}); err != nil {
 		return types.EmptyValue, err
@@ -122,7 +119,7 @@ func (c *SmartClient) SetInt(ctx context.Context, key string, intVal int) error 
 func (c *SmartClient) GetInt(ctx context.Context, key string) (int, error) {
 	var val types.Value
 	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
-		val, err = txn.Get(ctx, key)
+		val, err = txn.Get(ctx, key, types.NewTxnReadOption())
 		return
 	}); err != nil {
 		return 0, err

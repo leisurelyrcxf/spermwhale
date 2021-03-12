@@ -20,6 +20,10 @@ message Txn {
     TxnState state = 2;
 }
 
+message TxnReadOption {
+    uint32 flag = 1;
+}
+
 message BeginRequest {
 }
 
@@ -31,6 +35,7 @@ message BeginResponse {
 message TxnGetRequest {
     string key = 1;
     uint64 txn_id = 2;
+    TxnReadOption opt = 3;
 }
 
 message TxnGetResponse {

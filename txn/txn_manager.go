@@ -24,11 +24,11 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
-const MaxTaskBuffered = 10000
+const MaxTaskBufferedPerPartition = 1000
 
 type Scheduler struct {
 	clearJobScheduler *scheduler.BasicScheduler
-	ioJobScheduler    *scheduler.ConcurrentListScheduler
+	ioJobScheduler    *scheduler.ConcurrentDynamicListScheduler
 }
 
 func (s *Scheduler) ScheduleClearJob(t *types.Task) error {
@@ -94,8 +94,8 @@ func NewTransactionManagerWithOracle(
 		cfg: cfg,
 
 		s: &Scheduler{
-			clearJobScheduler: scheduler.NewBasicScheduler(MaxTaskBuffered, clearWorkerNum),
-			ioJobScheduler:    scheduler.NewConcurrentListScheduler(MaxTaskBuffered, ioWorkerNum, 1),
+			clearJobScheduler: scheduler.NewBasicScheduler(MaxTaskBufferedPerPartition, clearWorkerNum),
+			ioJobScheduler:    scheduler.NewConcurrentDynamicListScheduler(ioWorkerNum, MaxTaskBufferedPerPartition, 1),
 		},
 	}).createStore()
 	tm.txns.Initialize(32)

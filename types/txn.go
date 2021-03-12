@@ -2,7 +2,13 @@ package types
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"strconv"
+	"strings"
+
+	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 )
@@ -65,10 +71,68 @@ func (s TxnState) IsTerminated() bool {
 	return s.IsAborted() || s == TxnStateCommitted
 }
 
+type TxnReadOption struct {
+	flag uint8
+}
+
+func NewTxnReadOption() TxnReadOption {
+	return TxnReadOption{}
+}
+
+func NewTxnReadOptionFromPB(x *txnpb.TxnReadOption) TxnReadOption {
+	if x == nil {
+		return NewTxnReadOption()
+	}
+	return TxnReadOption{
+		flag: x.GetFlagSafe(),
+	}
+}
+
+var TxnReadOptionDesc2BitMask = map[string]uint8{
+	"wait_no_write_intent": consts.ReadOptBitMaskWaitNoWriteIntent,
+}
+
+func GetTxnReadOptionDesc() string {
+	keys := make([]string, 0, len(TxnReadOptionDesc2BitMask))
+	for key, mask := range TxnReadOptionDesc2BitMask {
+		keys = append(keys, fmt.Sprintf("%s(%d)", key, mask))
+	}
+	return strings.Join(keys, "|")
+}
+
+func ParseTxnReadOption(str string) (opt TxnReadOption, _ error) {
+	parts := strings.Split(str, "|")
+	for _, part := range parts {
+		if mask, err := strconv.ParseInt(part, 10, 64); err == nil {
+			opt.flag |= uint8(mask)
+			continue
+		}
+		mask, ok := TxnReadOptionDesc2BitMask[part]
+		if !ok {
+			return opt, errors.ErrInvalidRequest
+		}
+		opt.flag |= mask
+	}
+	return opt, nil
+}
+
+func (opt TxnReadOption) ToPB() *txnpb.TxnReadOption {
+	return (&txnpb.TxnReadOption{}).SetFlagSafe(opt.flag)
+}
+
+func (opt TxnReadOption) WithWaitNoWriteIntent() TxnReadOption {
+	opt.flag |= consts.ReadOptBitMaskWaitNoWriteIntent
+	return opt
+}
+
+func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
+	return opt.flag&consts.ReadOptBitMaskWaitNoWriteIntent > 0
+}
+
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
-	Get(ctx context.Context, key string) (Value, error)
+	Get(ctx context.Context, key string, opt TxnReadOption) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
