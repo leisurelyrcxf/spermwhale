@@ -468,6 +468,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 
 	//txn.h.(*TransactionManager).rollbackedTxns.Set(txn.ID, txn)
 	txn.State = types.TxnStateRollbacking
+
 	for _, key := range txn.WrittenKeys {
 		if removeErr := txn.kv.Set(ctx, key,
 			types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
@@ -482,8 +483,10 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		}
 		return err
 	}
-	if err := txn.removeTxnRecord(ctx); err != nil {
-		return err
+	if callerTxn != txn.ID || txn.txnRecordTask != nil {
+		if err := txn.removeTxnRecord(ctx); err != nil {
+			return err
+		}
 	}
 	txn.State = types.TxnStateRollbacked
 	if callerTxn == txn.ID {
