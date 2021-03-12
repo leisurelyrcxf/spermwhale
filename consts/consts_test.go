@@ -19,6 +19,6 @@ func TestReadOptBitMask(t *testing.T) {
 
 	flag1 = InheritReadCommonFlag(flag1, flag2)
 	assert.Equal(uint8(0b00000101), flag1)
-	flag1 &= RevertReadOptBitMaskNoWaitNoWriteIntent
+	flag1 &= RevertReadOptBitMaskWaitNoWriteIntent
 	assert.Equal(uint8(0b00000001), flag1)
 }

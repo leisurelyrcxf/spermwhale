@@ -39,7 +39,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 10, 20)
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -879,6 +879,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						writeValues = map[string]types.Value{}
 					)
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+						// key1 += key1ExtraDelta
 						return func() error {
 							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
@@ -906,6 +907,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						})
 					}
 				} else if goRoutineIndex == 1 {
+					// key2 += key2ExtraDelta
 					var (
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
@@ -938,6 +940,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						})
 					}
 				} else if goRoutineIndex == 2 {
+					// key3 += key3ExtraDelta
 					var (
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
@@ -970,6 +973,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						})
 					}
 				} else if goRoutineIndex == 3 {
+					// read key1 key2 key3
 					var readValues = map[string]types.Value{}
 					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
 						return func() error {
@@ -999,6 +1003,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						})
 					}
 				} else {
+					// transfer delta from key1 to key2
 					var (
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}

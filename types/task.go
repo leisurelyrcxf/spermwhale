@@ -211,10 +211,7 @@ func NewTreeTaskNoResult(
 		id, name, runTimeout,
 		parent,
 		func(ctx context.Context, childrenResult []interface{}) (i interface{}, err error) {
-			if err := g(ctx, childrenResult); err != nil {
-				return nil, err
-			}
-			return DummyTaskResult, nil
+			return nil, g(ctx, childrenResult)
 		})
 }
 
@@ -258,4 +255,16 @@ func (t *TreeTask) childDone() {
 
 func (t *TreeTask) Children() []*TreeTask {
 	return t.children
+}
+
+func (t *TreeTask) AllChildrenSuccess() bool {
+	for _, child := range t.children {
+		if !child.Finished() {
+			return false
+		}
+		if child.Err() != nil {
+			return false
+		}
+	}
+	return true
 }

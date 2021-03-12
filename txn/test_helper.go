@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 5
+	rounds             = 10
 )
 
 var (

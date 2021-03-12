@@ -63,14 +63,14 @@ func testTreeScheduler(t *testing.T, round int) (b bool) {
 
 		expInternalResult = 0
 		for i := 0; i < taskNumber; i++ {
-			j := i
-			expSuperResult += j
-			expInternalResult += j
-			key := strconv.Itoa(j)
+			expSuperResult += i
+			expInternalResult += i
+			key := strconv.Itoa(i)
+			k := i
 			_ = types.NewTreeTaskWithResult(
 				key, key, 0,
-				internal, func(ctx context.Context, prevResult []interface{}) (i interface{}, err error) {
-					return j, nil
+				internal, func(ctx context.Context, prevResult []interface{}) (interface{}, error) {
+					return k, nil
 				},
 			)
 		}
@@ -90,7 +90,6 @@ func testTreeScheduler(t *testing.T, round int) (b bool) {
 			return
 		}
 	}
-
 	return assert.Equal(expSuperResult, root.Result())
 }
 
