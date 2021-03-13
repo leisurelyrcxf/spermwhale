@@ -131,6 +131,12 @@ func (opt KVCCWriteOption) WithRemoveVersion() KVCCWriteOption {
 	return opt
 }
 
+func (opt KVCCWriteOption) WithRollbackVersion() KVCCWriteOption {
+	opt.flag |= WriteOptBitMaskRemoveVersion
+	opt.flag |= WriteOptBitMaskRemoveVersionRollback
+	return opt
+}
+
 func (opt KVCCWriteOption) CondReadForWrite(b bool) KVCCWriteOption {
 	if b {
 		opt.flag |= WriteOptBitMaskReadForWrite
@@ -151,11 +157,15 @@ func (opt KVCCWriteOption) CondFirstWrite(b bool) KVCCWriteOption {
 }
 
 func (opt KVCCWriteOption) IsClearWriteIntent() bool {
-	return opt.flag&WriteOptBitMaskClearWriteIntent == WriteOptBitMaskClearWriteIntent
+	return IsWriteOptClearWriteIntent(opt.flag)
 }
 
 func (opt KVCCWriteOption) IsRemoveVersion() bool {
-	return opt.flag&WriteOptBitMaskRemoveVersion == WriteOptBitMaskRemoveVersion
+	return IsWriteOptRemoveVersion(opt.flag)
+}
+
+func (opt KVCCWriteOption) IsRollbackVersion() bool {
+	return IsWriteOptRollbackVersion(opt.flag)
 }
 
 func (opt KVCCWriteOption) IsReadForWrite() bool {

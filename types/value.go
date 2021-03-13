@@ -31,7 +31,7 @@ func (m Meta) isEmpty() bool {
 }
 
 func (m Meta) HasWriteIntent() bool {
-	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent > 0
+	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
 }
 
 type Value struct {

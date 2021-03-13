@@ -21,14 +21,27 @@ const (
 	CommonReadOptBitMaskWaitNoWriteIntent       = 1 << commonReadOptBitOffset
 	RevertCommonReadOptBitMaskWaitNoWriteIntent = ^CommonReadOptBitMaskWaitNoWriteIntent & 0xff
 
-	WriteOptBitMaskClearWriteIntent = 1
-	WriteOptBitMaskRemoveVersion    = 1 << 1
-	WriteOptBitMaskReadForWrite     = 1 << 2
-	WriteOptBitMaskTxnRecord        = 1 << 3
-	WriteOptBitMaskFirstWrite       = 1 << 4
+	WriteOptBitMaskClearWriteIntent      = 1
+	WriteOptBitMaskRemoveVersion         = 1 << 1
+	WriteOptBitMaskRemoveVersionRollback = 1 << 2
+	WriteOptBitMaskReadForWrite          = 1 << 3
+	WriteOptBitMaskTxnRecord             = 1 << 4
+	WriteOptBitMaskFirstWrite            = 1 << 5
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )
+
+func IsWriteOptClearWriteIntent(flag uint8) bool {
+	return flag&WriteOptBitMaskClearWriteIntent == WriteOptBitMaskClearWriteIntent
+}
+
+func IsWriteOptRemoveVersion(flag uint8) bool {
+	return flag&WriteOptBitMaskRemoveVersion == WriteOptBitMaskRemoveVersion
+}
+
+func IsWriteOptRollbackVersion(flag uint8) bool {
+	return flag&WriteOptBitMaskRemoveVersionRollback == WriteOptBitMaskRemoveVersionRollback
+}
 
 const (
 	DefaultTabletServerPort = 20000
@@ -46,7 +59,7 @@ const (
 )
 
 const (
-	MaxRetryTxnGet                    = 2
+	MaxRetryTxnGet                    = 3
 	MaxRetryResolveFoundedWriteIntent = 2
 )
 

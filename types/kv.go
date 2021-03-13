@@ -67,11 +67,11 @@ func (opt KVWriteOption) WithRemoveVersion() KVWriteOption {
 }
 
 func (opt KVWriteOption) IsClearWriteIntent() bool {
-	return opt.flag&WriteOptBitMaskClearWriteIntent == WriteOptBitMaskClearWriteIntent
+	return IsWriteOptClearWriteIntent(opt.flag)
 }
 
 func (opt KVWriteOption) IsRemoveVersion() bool {
-	return opt.flag&WriteOptBitMaskRemoveVersion == WriteOptBitMaskRemoveVersion
+	return IsWriteOptRemoveVersion(opt.flag)
 }
 
 type KV interface {

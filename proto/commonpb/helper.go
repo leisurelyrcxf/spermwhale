@@ -11,7 +11,7 @@ func (x *Error) Error() string {
 }
 
 func (x *ValueMeta) HasWriteIntent() bool {
-	return x.Flag&consts.ValueMetaBitMaskHasWriteIntent > 0
+	return x.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
 }
 
 func (x *ValueMeta) GetFlagSafe() uint8 {

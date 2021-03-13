@@ -13,21 +13,31 @@ func (x *KVCCWriteOption) Validate() error {
 			Msg:  "WriteOption == nil",
 		}
 	}
-	if x.isClearWriteIntent() && x.isRemoveVersion() {
+	if x.IsClearWriteIntent() && x.IsRemoveVersion() {
 		return &commonpb.Error{
 			Code: consts.ErrCodeInvalidRequest,
 			Msg:  "x.isClearWriteIntent() && x.isRemoveVersion()",
 		}
 	}
+	if x.IsRollbackVersion() && !x.IsRemoveVersion() {
+		return &commonpb.Error{
+			Code: consts.ErrCodeInvalidRequest,
+			Msg:  "x.IsRollbackVersion() && !x.IsRemoveVersion()",
+		}
+	}
 	return nil
 }
 
-func (x *KVCCWriteOption) isClearWriteIntent() bool {
-	return x.Flag&consts.WriteOptBitMaskClearWriteIntent > 0
+func (x *KVCCWriteOption) IsClearWriteIntent() bool {
+	return consts.IsWriteOptClearWriteIntent(uint8(x.Flag))
 }
 
-func (x *KVCCWriteOption) isRemoveVersion() bool {
-	return x.Flag&consts.WriteOptBitMaskRemoveVersion > 0
+func (x *KVCCWriteOption) IsRemoveVersion() bool {
+	return consts.IsWriteOptRemoveVersion(uint8(x.Flag))
+}
+
+func (x *KVCCWriteOption) IsRollbackVersion() bool {
+	return consts.IsWriteOptRollbackVersion(uint8(x.Flag))
 }
 
 func (x *KVCCWriteOption) GetFlagSafe() uint8 {
@@ -52,8 +62,11 @@ func (x *KVCCSetRequest) Validate() error {
 	if err := x.Opt.Validate(); err != nil {
 		return err
 	}
-	if x.Opt.isClearWriteIntent() && x.Value.Meta.HasWriteIntent() {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.isClearWriteIntent() && x.Value.Meta.HasWriteIntent()")
+	if x.Opt.IsClearWriteIntent() && x.Value.Meta.HasWriteIntent() {
+		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsClearWriteIntent() && x.Value.Meta.HasWriteIntent()")
+	}
+	if x.Opt.IsRemoveVersion() && x.Value.Meta.HasWriteIntent() {
+		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsRemoveVersion() && x.Value.Meta.HasWriteIntent()")
 	}
 	return nil
 }

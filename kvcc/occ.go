@@ -108,6 +108,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			!errors.IsRetryableTabletGetErr(err) || i >= consts.MaxRetryTxnGet {
 			return val, errors.CASError(err, consts.ErrCodeTabletWriteTransactionNotFound, nil)
 		}
+		time.Sleep(time.Microsecond * 5)
 	}
 }
 
@@ -174,14 +175,18 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	txnId := types.TxnId(val.Version)
 	if !val.HasWriteIntent() {
 		// Don't care the result of kv.db.Set(), TODO needs test against kv.db.Set() failed.
+		var terminated bool
 		if opt.IsClearWriteIntent() {
 			kv.txnManager.Signal(txnId, transaction.Event(types.TxnStateCommitted))
-		} else if opt.IsRemoveVersion() && !opt.IsTxnRecord() {
+			terminated = true
+		} else if opt.IsRollbackVersion() {
+			assert.Must(!opt.IsTxnRecord())
 			kv.txnManager.Signal(txnId, transaction.Event(types.TxnStateRollbacking))
+			terminated = true
 		}
 		// TODO kv.writeIntentManager.GC(key, val.Version)
 		err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
-		if err == nil && !opt.IsTxnRecord() {
+		if err == nil && terminated {
 			//glog.Infof("done key %s, version: %d, state: %s", key, val.Version, kv.txnManager.GetTxnState(txnId))
 			kv.txnManager.DoneKeyUnsafe(txnId)
 		}

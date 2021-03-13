@@ -16,18 +16,18 @@ func (x *KVWriteOption) Validate() error {
 	if x.IsClearWriteIntent() && x.IsRemoveVersion() {
 		return &commonpb.Error{
 			Code: consts.ErrCodeInvalidRequest,
-			Msg:  "x.ClearWriteIntent && x.RemoveVersion",
+			Msg:  "x.IsClearWriteIntent && x.IsRemoveVersion",
 		}
 	}
 	return nil
 }
 
 func (x *KVWriteOption) IsClearWriteIntent() bool {
-	return x.Flag&consts.WriteOptBitMaskClearWriteIntent > 0
+	return consts.IsWriteOptClearWriteIntent(uint8(x.Flag))
 }
 
 func (x *KVWriteOption) IsRemoveVersion() bool {
-	return x.Flag&consts.WriteOptBitMaskRemoveVersion > 0
+	return consts.IsWriteOptRemoveVersion(uint8(x.Flag))
 }
 
 func (x *KVWriteOption) GetFlagSafe() uint8 {
@@ -45,6 +45,9 @@ func (x *KVSetRequest) Validate() error {
 	}
 	if x.Opt.IsClearWriteIntent() && x.Value.Meta.HasWriteIntent() {
 		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.isClearWriteIntent() && x.Value.Meta.HasWriteIntent()")
+	}
+	if x.Opt.IsRemoveVersion() && x.Value.Meta.HasWriteIntent() {
+		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsRemoveVersion() && x.Value.Meta.HasWriteIntent()")
 	}
 	return nil
 }

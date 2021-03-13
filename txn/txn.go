@@ -532,7 +532,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 				_ = reason
 				if removeErr := txn.kv.Set(ctx, key,
 					types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-					types.NewKVCCWriteOption().WithRemoveVersion().CondReadForWrite(txn.Type.IsReadForWrite())); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
+					types.NewKVCCWriteOption().WithRollbackVersion().CondReadForWrite(txn.Type.IsReadForWrite())); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 					glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 					return removeErr
 				}
