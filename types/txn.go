@@ -6,6 +6,9 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -28,6 +31,10 @@ type TxnId uint64
 
 func (i TxnId) Version() uint64 {
 	return uint64(i)
+}
+
+func (i TxnId) Age() time.Duration {
+	return time.Duration(utils.GetLocalTimestamp() - i.Version())
 }
 
 type TxnManager interface {

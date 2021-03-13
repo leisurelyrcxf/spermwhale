@@ -19,25 +19,7 @@ func (cmp *concurrentTxnMapPartition) get(key types.TxnId) (interface{}, bool) {
 }
 
 func (cmp *concurrentTxnMapPartition) getLazy(key types.TxnId, constructor func() interface{}) interface{} {
-	cmp.mutex.RLock()
-	val, ok := cmp.m[key]
-	if ok {
-		cmp.mutex.RUnlock()
-		return val
-	}
-	cmp.mutex.RUnlock()
-
-	cmp.mutex.Lock()
-	defer cmp.mutex.Unlock()
-
-	val, ok = cmp.m[key]
-	if ok {
-		return val
-	}
-
-	val = constructor()
-	cmp.m[key] = val
-
+	_, val := cmp.insertIfNotExists(key, constructor)
 	return val
 }
 
@@ -50,12 +32,53 @@ func (cmp *concurrentTxnMapPartition) set(key types.TxnId, val interface{}) {
 func (cmp *concurrentTxnMapPartition) setIf(key types.TxnId, val interface{}, pred func(prev interface{}, exist bool) bool) (bool, interface{}) {
 	cmp.mutex.Lock()
 	defer cmp.mutex.Unlock()
+
 	prev, ok := cmp.m[key]
 	if pred(prev, ok) {
 		cmp.m[key] = val
 		return true, prev
 	}
 	return false, prev
+}
+
+func (cmp *concurrentTxnMapPartition) insertIfNotExists(key types.TxnId, constructor func() interface{}) (success bool, newVal interface{}) {
+	cmp.mutex.RLock()
+	old, ok := cmp.m[key]
+	if ok {
+		cmp.mutex.RUnlock()
+		return false, old
+	}
+	cmp.mutex.RUnlock()
+
+	cmp.mutex.Lock()
+	defer cmp.mutex.Unlock()
+
+	old, ok = cmp.m[key]
+	if ok {
+		return false, old
+	}
+
+	val := constructor()
+	cmp.m[key] = val
+	return true, val
+}
+
+func (cmp *concurrentTxnMapPartition) insert(key types.TxnId, val interface{}) error {
+	cmp.mutex.RLock()
+	if _, ok := cmp.m[key]; ok {
+		cmp.mutex.RUnlock()
+		return ErrPrevExists
+	}
+	cmp.mutex.RUnlock()
+
+	cmp.mutex.Lock()
+	defer cmp.mutex.Unlock()
+
+	if _, ok := cmp.m[key]; ok {
+		return ErrPrevExists
+	}
+	cmp.m[key] = val
+	return nil
 }
 
 func (cmp *concurrentTxnMapPartition) del(key types.TxnId) {
@@ -131,6 +154,14 @@ func (cmp *ConcurrentTxnMap) Set(key types.TxnId, val interface{}) {
 
 func (cmp *ConcurrentTxnMap) SetIf(key types.TxnId, val interface{}, pred func(prev interface{}, exist bool) bool) (bool, interface{}) {
 	return cmp.partitions[cmp.hash(key)].setIf(key, val, pred)
+}
+
+func (cmp *ConcurrentTxnMap) InsertIfNotExists(key types.TxnId, constructor func() interface{}) (success bool, newVal interface{}) {
+	return cmp.partitions[cmp.hash(key)].insertIfNotExists(key, constructor)
+}
+
+func (cmp *ConcurrentTxnMap) Insert(key types.TxnId, val interface{}) error {
+	return cmp.partitions[cmp.hash(key)].insert(key, val)
 }
 
 func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {

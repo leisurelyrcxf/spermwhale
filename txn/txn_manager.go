@@ -4,24 +4,19 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
-
-	"github.com/leisurelyrcxf/spermwhale/topo"
-
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
-	"github.com/leisurelyrcxf/spermwhale/oracle"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/oracle"
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
-	scheduler "github.com/leisurelyrcxf/spermwhale/scheduler"
+	"github.com/leisurelyrcxf/spermwhale/scheduler"
+	"github.com/leisurelyrcxf/spermwhale/topo"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 const MaxTaskBufferedPerPartition = 10000
@@ -115,10 +110,8 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnTy
 		return nil, errors.ErrTxnExists
 	}
 	txn := m.newTxn(txnID, typ)
-	m.txns.SetIf(txnID, txn, func(prev interface{}, exist bool) bool {
-		assert.Must(!exist)
-		return !exist
-	})
+	err = m.txns.Insert(txnID, txn)
+	assert.MustNoError(err)
 	return txn, nil
 }
 

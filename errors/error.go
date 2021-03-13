@@ -15,7 +15,6 @@ var (
 		consts.ErrCodeReadAfterWriteFailed:   {},
 		consts.ErrCodeWriteIntentQueueFull:   {},
 		consts.ErrCodeReadForWriteWaitFailed: {},
-		consts.ErrCodeReadForWriteTooStale:   {},
 		consts.ErrCodeReadForWriteQueueFull:  {},
 	}
 
@@ -143,6 +142,11 @@ func IsNotSupportedErr(e error) bool {
 	return code == consts.ErrCodeNotSupported
 }
 
+func IsRetryableTabletGetErr(err error) bool {
+	code := GetErrorCode(err)
+	return code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked || code == consts.ErrCodeTabletWriteTransactionNotFound
+}
+
 func GetErrorCode(e error) int {
 	if ve, ok := e.(*Error); ok && ve != nil {
 		return ve.Code
@@ -171,4 +175,13 @@ func CASErrorCode(e error, oldCode, newCode int) {
 	if GetErrorCode(e) == oldCode {
 		SetErrorCode(e, newCode)
 	}
+}
+
+func CASError(e error, oldCode int, newErr error) error {
+	assert.Must(oldCode != consts.ErrCodeUnknown)
+
+	if GetErrorCode(e) == oldCode {
+		return newErr
+	}
+	return e
 }

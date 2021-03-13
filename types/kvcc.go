@@ -76,19 +76,19 @@ func (opt KVCCReadOption) IsGetExactVersion() bool {
 }
 
 func (opt KVCCReadOption) IsNotUpdateTimestampCache() bool {
-	return opt.flag&ReadOptBitMaskNotUpdateTimestampCache > 0
+	return opt.flag&ReadOptBitMaskNotUpdateTimestampCache == ReadOptBitMaskNotUpdateTimestampCache
 }
 
 func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
-	return opt.flag&ReadOptBitMaskNotGetMaxReadVersion > 0
+	return opt.flag&ReadOptBitMaskNotGetMaxReadVersion == ReadOptBitMaskNotGetMaxReadVersion
 }
 
 func (opt KVCCReadOption) IsWaitNoWriteIntent() bool {
-	return opt.flag&CommonReadOptBitMaskWaitNoWriteIntent > 0
+	return opt.flag&CommonReadOptBitMaskWaitNoWriteIntent == CommonReadOptBitMaskWaitNoWriteIntent
 }
 
 func (opt KVCCReadOption) IsReadForWriteFirstRead() bool {
-	return opt.flag&ReadOptBitMaskReadForWriteFirstRead > 0
+	return opt.flag&ReadOptBitMaskReadForWriteFirstRead == ReadOptBitMaskReadForWriteFirstRead
 }
 
 func (opt KVCCReadOption) ToKVReadOption() KVReadOption {
@@ -138,16 +138,36 @@ func (opt KVCCWriteOption) CondReadForWrite(b bool) KVCCWriteOption {
 	return opt
 }
 
+func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
+	opt.flag |= WriteOptBitMaskTxnRecord
+	return opt
+}
+
+func (opt KVCCWriteOption) CondFirstWrite(b bool) KVCCWriteOption {
+	if b {
+		opt.flag |= WriteOptBitMaskFirstWrite
+	}
+	return opt
+}
+
 func (opt KVCCWriteOption) IsClearWriteIntent() bool {
-	return opt.flag&WriteOptBitMaskClearWriteIntent > 0
+	return opt.flag&WriteOptBitMaskClearWriteIntent == WriteOptBitMaskClearWriteIntent
 }
 
 func (opt KVCCWriteOption) IsRemoveVersion() bool {
-	return opt.flag&WriteOptBitMaskRemoveVersion > 0
+	return opt.flag&WriteOptBitMaskRemoveVersion == WriteOptBitMaskRemoveVersion
 }
 
 func (opt KVCCWriteOption) IsReadForWrite() bool {
-	return opt.flag&WriteOptBitMaskReadForWrite > 0
+	return opt.flag&WriteOptBitMaskReadForWrite == WriteOptBitMaskReadForWrite
+}
+
+func (opt KVCCWriteOption) IsTxnRecord() bool {
+	return opt.flag&WriteOptBitMaskTxnRecord == WriteOptBitMaskTxnRecord
+}
+
+func (opt KVCCWriteOption) IsFirstWrite() bool {
+	return opt.flag&WriteOptBitMaskFirstWrite == WriteOptBitMaskFirstWrite
 }
 
 func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {

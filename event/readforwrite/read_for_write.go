@@ -2,7 +2,7 @@ package readforwrite
 
 import (
 	"container/heap"
-	goContext "context"
+	"context"
 	"sync"
 	"time"
 
@@ -34,11 +34,8 @@ func newReader(readerVersion uint64) *Reader {
 	}
 }
 
-func (w *Reader) Wait(ctx goContext.Context, timeout time.Duration) error {
-	if w == nil {
-		return nil
-	}
-	waitCtx, cancel := goContext.WithTimeout(ctx, timeout)
+func (w *Reader) Wait(ctx context.Context, timeout time.Duration) error {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	select {
@@ -89,24 +86,25 @@ func (ws *priorityQueue) minReader() *Reader {
 	return ws.waiters[0]
 }
 
-func (ws *priorityQueue) appendReader(w *Reader) (*Reader, error) {
+func (ws *priorityQueue) appendReader(readerVersion uint64) (*Reader, error) {
 	ws.Lock()
 	defer ws.Unlock()
 
-	if minReader := ws.minReader(); minReader != nil && w.version <= minReader.version {
-		assert.Must(w.version < minReader.version)
-		return nil, errors.ErrReadForWriteTooStale
+	if minReader := ws.minReader(); minReader != nil && readerVersion <= minReader.version {
+		assert.Must(readerVersion < minReader.version)
+		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "priorityQueue::appendReader: readerVersion <= minReader.version")
 	}
 
 	if ws.Len()+1 > consts.MaxReadForWriteQueueCapacityPerKey {
 		return nil, errors.ErrReadForWriteQueueFull
 	}
 
-	heap.Push(ws, w)
+	reader := newReader(readerVersion)
+	heap.Push(ws, reader)
 	if ws.Len() == 1 {
-		w.signal()
+		reader.signal()
 	}
-	return w, nil
+	return reader, nil
 }
 
 func (ws *priorityQueue) signal(writerVersion uint64) {
@@ -139,10 +137,10 @@ func NewManager() *Manager {
 func (wm *Manager) AppendReader(key string, readerVersion uint64) (*Reader, error) {
 	return wm.m.GetLazy(key, func() interface{} {
 		return newPriorityQueue()
-	}).(*priorityQueue).appendReader(newReader(readerVersion))
+	}).(*priorityQueue).appendReader(readerVersion)
 }
 
-func (wm *Manager) Signal(key string, writeVersion uint64, _ Type) {
+func (wm *Manager) Signal(key string, writeVersion uint64) {
 	wm.m.GetLazy(key, func() interface{} {
 		return newPriorityQueue()
 	}).(*priorityQueue).signal(writeVersion)

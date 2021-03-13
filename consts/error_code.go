@@ -22,10 +22,10 @@ const (
 	ErrCodeWriteIntentQueueFull = 70
 
 	ErrCodeReadForWriteWaitFailed = 80
-	ErrCodeReadForWriteTooStale   = 81
-	ErrCodeReadForWriteQueueFull  = 82
+	ErrCodeReadForWriteQueueFull  = 81
 
 	ErrCodeCantRemoveCommittedValue                       = 90
+	ErrCodeTabletWriteTransactionNotFound                 = 91
 	ErrCodeNilResponse                                    = 99
 	ErrCodeTxnRetriedTooManyTimes                         = 100
 	ErrCodeNotSupported                                   = 111
@@ -40,4 +40,6 @@ const (
 	ErrCodeInject                                         = 11111
 	ErrCodeDummy                                          = 12222
 	ErrCodeAssertFailed                                   = 22222
+
+	ErrCodePrevExists = 33333
 )

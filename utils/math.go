@@ -1,5 +1,7 @@
 package utils
 
+import "time"
+
 func MinInt(a, b int) int {
 	if a > b {
 		return b
@@ -8,6 +10,13 @@ func MinInt(a, b int) int {
 }
 
 func MaxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func MaxDuration(a, b time.Duration) time.Duration {
 	if a > b {
 		return a
 	}

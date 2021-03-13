@@ -4,13 +4,15 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
+
+	"github.com/leisurelyrcxf/spermwhale/event/readforwrite"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/event/readforwrite"
-	"github.com/leisurelyrcxf/spermwhale/event/writeintent"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -45,18 +47,17 @@ func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (s
 	return b, v.(uint64)
 }
 
-// KV with concurrent control
+// KV with concurrency control
 type KVCC struct {
 	types.TabletTxnConfig
 
-	lm *concurrency.LockManager
-
-	tsCache *TimestampCache
-
-	writeIntentManager  *writeintent.Manager
-	readForWriteManager *readforwrite.Manager
-
 	db types.KV
+
+	txnManager *transaction.Manager
+	lm         *concurrency.LockManager
+	tsCache    *TimestampCache
+
+	readForWriteManager *readforwrite.Manager
 }
 
 func NewKVCC(db types.KV, cfg types.TabletTxnConfig) *KVCC {
@@ -77,11 +78,11 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 
 	return &KVCC{
 		TabletTxnConfig:     cfg,
+		db:                  db,
+		txnManager:          transaction.NewManager(cfg.StaleWriteThreshold + utils.MaxDuration(time.Second*5, cfg.MaxClockDrift*3)),
 		lm:                  concurrency.NewLockManager(),
 		tsCache:             NewTimestampCache(),
-		writeIntentManager:  writeintent.NewManager(),
 		readForWriteManager: readforwrite.NewManager(),
-		db:                  db,
 	}
 }
 
@@ -104,9 +105,8 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	for i := 0; ; i++ {
 		if val, err := kv.get(ctx, key, opt); err == nil ||
-			errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked ||
-			i >= consts.MaxRetryTxnGet {
-			return val, err
+			!errors.IsRetryableTabletGetErr(err) || i >= consts.MaxRetryTxnGet {
+			return val, errors.CASError(err, consts.ErrCodeTabletWriteTransactionNotFound, nil)
 		}
 	}
 }
@@ -145,46 +145,59 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	kv.lm.RUnlock(key)
 
-	waiter, err := kv.writeIntentManager.RegisterWaiter(key, valCC.Version)
+	waiter, event, err := kv.txnManager.RegisterWaiter(types.TxnId(valCC.Version))
 	if err != nil {
 		glog.V(8).Infof("KVCC:get register waiter failed '%s'@version%d: %v", key, valCC.Version, err)
+		if errors.GetErrorCode(err) == consts.ErrCodeTabletWriteTransactionNotFound {
+			return valCC, err
+		}
 		return valCC, nil
 	}
-	e, waitErr := waiter.Wait(ctx, consts.DefaultReadTimeout/100)
-	if waitErr != nil {
-		glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, valCC.Version, waitErr)
-		return valCC, nil // Let upper layer handle this.
+	if waiter != nil {
+		var waitErr error
+		if event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/100); waitErr != nil {
+			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, valCC.Version, waitErr)
+			return valCC, nil // Let upper layer handle this.
+		}
 	}
-	switch e {
-	case writeintent.Removed:
-		return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
-	case writeintent.Cleared:
+	switch event.GetTxnState() {
+	case types.TxnStateCommitted:
 		return valCC.WithNoWriteIntent(), nil
+	case types.TxnStateRollbacking:
+		return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
 	default:
 		panic("impossible code")
 	}
 }
 
 func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
+	txnId := types.TxnId(val.Version)
 	if !val.HasWriteIntent() {
 		// Don't care the result of kv.db.Set(), TODO needs test against kv.db.Set() failed.
 		if opt.IsClearWriteIntent() {
-			kv.writeIntentManager.FireEvent(key, val.Version, writeintent.Cleared)
-		} else if opt.IsRemoveVersion() {
-			kv.writeIntentManager.FireEvent(key, val.Version, writeintent.Removed)
+			kv.txnManager.Signal(txnId, transaction.Event(types.TxnStateCommitted))
+		} else if opt.IsRemoveVersion() && !opt.IsTxnRecord() {
+			kv.txnManager.Signal(txnId, transaction.Event(types.TxnStateRollbacking))
 		}
 		// TODO kv.writeIntentManager.GC(key, val.Version)
 		err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+		if err == nil && !opt.IsTxnRecord() {
+			//glog.Infof("done key %s, version: %d, state: %s", key, val.Version, kv.txnManager.GetTxnState(txnId))
+			kv.txnManager.DoneKeyUnsafe(txnId)
+		}
 		if opt.IsReadForWrite() {
 			if opt.IsClearWriteIntent() {
-				kv.readForWriteManager.Signal(key, val.Version, readforwrite.WriteIntentCleared)
+				kv.readForWriteManager.Signal(key, val.Version)
 			} else if opt.IsRemoveVersion() {
-				kv.readForWriteManager.Signal(key, val.Version, readforwrite.VersionRemoved)
+				kv.readForWriteManager.Signal(key, val.Version)
 			}
 		}
 		return err
 	}
 
+	if !opt.IsTxnRecord() && opt.IsFirstWrite() {
+		kv.txnManager.AddWrittenKey(txnId)
+	}
 	// cache may lost after restarted, so ignore too stale write
 	if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
 		return err
@@ -209,7 +222,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 func (kv *KVCC) Close() error {
 	kv.tsCache.m.Clear()
-	kv.writeIntentManager.Close()
+	kv.txnManager.Close()
 	kv.readForWriteManager.Close()
 	return kv.db.Close()
 }

@@ -56,10 +56,10 @@ func TestKV_Get(t *testing.T) {
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.KVCCWriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.NewKVCCWriteOption())) {
 		return
 	}
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.KVCCWriteOption{})) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.NewKVCCWriteOption())) {
 		return
 	}
 
@@ -119,10 +119,10 @@ func TestKV_Get2(t *testing.T) {
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.KVCCWriteOption{})) {
+	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.NewKVCCWriteOption())) {
 		return
 	}
-	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.KVCCWriteOption{})) {
+	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.NewKVCCWriteOption())) {
 		return
 	}
 
@@ -156,7 +156,7 @@ func TestKV_Get2(t *testing.T) {
 		assert.Equal(true, vv.HasWriteIntent())
 	}
 
-	err = cli.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.KVCCWriteOption{})
+	err = cli.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.NewKVCCWriteOption())
 	assert.Error(err)
 	assert.Contains(err.Error(), errors.ErrWriteReadConflict.Msg)
 }

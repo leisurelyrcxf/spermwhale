@@ -24,6 +24,8 @@ const (
 	WriteOptBitMaskClearWriteIntent = 1
 	WriteOptBitMaskRemoveVersion    = 1 << 1
 	WriteOptBitMaskReadForWrite     = 1 << 2
+	WriteOptBitMaskTxnRecord        = 1 << 3
+	WriteOptBitMaskFirstWrite       = 1 << 4
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )
@@ -57,6 +59,6 @@ func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
 }
 
 const (
-	MaxReadForWriteQueueCapacityPerKey            = 500
-	MaxWriteIntentWaitersCapacityPerKeyAndVersion = 50
+	MaxReadForWriteQueueCapacityPerKey  = 500
+	MaxWriteIntentWaitersCapacityPerTxn = 100
 )

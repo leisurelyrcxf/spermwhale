@@ -121,10 +121,6 @@ var (
 		Code: consts.ErrCodeReadForWriteWaitFailed,
 		Msg:  "read for write wait failed",
 	}
-	ErrReadForWriteTooStale = &Error{
-		Code: consts.ErrCodeReadForWriteTooStale,
-		Msg:  "read for write too stale",
-	}
 	ErrReadForWriteQueueFull = &Error{
 		Code: consts.ErrCodeReadForWriteQueueFull,
 		Msg:  "read for write queue full, retry later",
@@ -132,5 +128,9 @@ var (
 	ErrWriteIntentQueueFull = &Error{
 		Code: consts.ErrCodeWriteIntentQueueFull,
 		Msg:  "write intent queue full, retry later",
+	}
+	ErrTabletWriteTransactionNotFound = &Error{
+		Code: consts.ErrCodeTabletWriteTransactionNotFound,
+		Msg:  "tablet write transaction not found, probably removed",
 	}
 )
