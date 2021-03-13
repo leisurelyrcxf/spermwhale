@@ -69,8 +69,8 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				readValue, writeValue types.Value
 				readOpt               = types.NewTxnReadOption()
 			)
-			//readOpt = readOpt.WithWaitNoWriteIntent()
-			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
+			readOpt = readOpt.WithWaitNoWriteIntent()
+			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
