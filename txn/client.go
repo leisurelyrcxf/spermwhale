@@ -28,8 +28,8 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Begin(ctx context.Context) (TransactionInfo, error) {
-	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{})
+func (c *Client) Begin(ctx context.Context, typ types.TxnType) (TransactionInfo, error) {
+	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{Type: typ.ToPB()})
 	if err != nil {
 		return InvalidTransactionInfo(0), err
 	}
@@ -138,11 +138,12 @@ func NewClientTxnManager(c *Client) *ClientTxnManager {
 	return &ClientTxnManager{c: c}
 }
 
-func (m *ClientTxnManager) BeginTransaction(ctx context.Context) (types.Txn, error) {
-	txnInfo, err := m.c.Begin(ctx)
+func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnType) (types.Txn, error) {
+	txnInfo, err := m.c.Begin(ctx, typ)
 	if err != nil {
 		return nil, err
 	}
+	assert.Must(txnInfo.Type == typ)
 	return &ClientTxn{
 		TransactionInfo: txnInfo,
 		c:               m.c,

@@ -45,7 +45,14 @@ func (opt KVCCReadOption) WithNotGetMaxReadVersion() KVCCReadOption {
 }
 
 func (opt KVCCReadOption) WithClearWaitNoWriteIntent() KVCCReadOption {
-	opt.flag &= RevertReadOptBitMaskWaitNoWriteIntent
+	opt.flag &= RevertCommonReadOptBitMaskWaitNoWriteIntent
+	return opt
+}
+
+func (opt KVCCReadOption) CondReadForWriteFirstRead(b bool) KVCCReadOption {
+	if b {
+		opt.flag |= ReadOptBitMaskReadForWriteFirstRead
+	}
 	return opt
 }
 
@@ -77,7 +84,11 @@ func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
 }
 
 func (opt KVCCReadOption) IsWaitNoWriteIntent() bool {
-	return opt.flag&ReadOptBitMaskWaitNoWriteIntent > 0
+	return opt.flag&CommonReadOptBitMaskWaitNoWriteIntent > 0
+}
+
+func (opt KVCCReadOption) IsReadForWriteFirstRead() bool {
+	return opt.flag&ReadOptBitMaskReadForWriteFirstRead > 0
 }
 
 func (opt KVCCReadOption) ToKVReadOption() KVReadOption {
@@ -120,12 +131,23 @@ func (opt KVCCWriteOption) WithRemoveVersion() KVCCWriteOption {
 	return opt
 }
 
+func (opt KVCCWriteOption) CondReadForWrite(b bool) KVCCWriteOption {
+	if b {
+		opt.flag |= WriteOptBitMaskReadForWrite
+	}
+	return opt
+}
+
 func (opt KVCCWriteOption) IsClearWriteIntent() bool {
 	return opt.flag&WriteOptBitMaskClearWriteIntent > 0
 }
 
 func (opt KVCCWriteOption) IsRemoveVersion() bool {
 	return opt.flag&WriteOptBitMaskRemoveVersion > 0
+}
+
+func (opt KVCCWriteOption) IsReadForWrite() bool {
+	return opt.flag&WriteOptBitMaskReadForWrite > 0
 }
 
 func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {

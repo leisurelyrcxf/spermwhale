@@ -4,11 +4,43 @@ import (
 	"fmt"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 )
+
+var (
+	mustRollbackGetErrs = map[int]struct{}{
+		consts.ErrCodeWriteReadConflict:      {},
+		consts.ErrCodeStaleWrite:             {},
+		consts.ErrCodeReadAfterWriteFailed:   {},
+		consts.ErrCodeWriteIntentQueueFull:   {},
+		consts.ErrCodeReadForWriteWaitFailed: {},
+		consts.ErrCodeReadForWriteTooStale:   {},
+		consts.ErrCodeReadForWriteQueueFull:  {},
+	}
+
+	retryableTxnErrs = mergeSet(mustRollbackGetErrs, map[int]struct{}{
+		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
+		consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked: {},
+		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
+	})
+)
+
+func mergeSet(codes1, codes2 map[int]struct{}) map[int]struct{} {
+	m := make(map[int]struct{})
+	for code := range codes1 {
+		m[code] = struct{}{}
+	}
+	for code := range codes2 {
+		m[code] = struct{}{}
+	}
+	return m
+}
+
+func in(code int, codes map[int]struct{}) bool {
+	_, ok := codes[code]
+	return ok
+}
 
 type Error struct {
 	Code int
@@ -72,13 +104,7 @@ func IsNotExistsErr(e error) bool {
 }
 
 func IsRetryableTransactionErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeWriteReadConflict ||
-		code == consts.ErrCodeStaleWrite ||
-		code == consts.ErrCodeReadAfterWriteFailed ||
-		code == consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined ||
-		code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked ||
-		code == consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked
+	return in(GetErrorCode(e), retryableTxnErrs)
 }
 
 func IsRetryableTransactionManagerErr(e error) bool {
@@ -92,16 +118,18 @@ func IsRetryableGetErr(e error) bool {
 }
 
 func IsMustRollbackGetErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadAfterWriteFailed ||
-		code == consts.ErrCodeWriteReadConflict ||
-		code == consts.ErrCodeStaleWrite
+	return in(GetErrorCode(e), mustRollbackGetErrs)
 }
 
 func IsMustRollbackWriteKeyErr(e error) bool {
 	code := GetErrorCode(e)
 	return code == consts.ErrCodeWriteReadConflict ||
 		code == consts.ErrCodeStaleWrite
+}
+
+func IsQueueFullErr(e error) bool {
+	code := GetErrorCode(e)
+	return code == consts.ErrCodeReadForWriteQueueFull || code == consts.ErrCodeWriteIntentQueueFull
 }
 
 func IsMustRollbackCommitErr(e error) bool {

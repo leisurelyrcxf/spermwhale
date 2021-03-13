@@ -258,7 +258,11 @@ func (t *TreeTask) Children() []*TreeTask {
 }
 
 func (t *TreeTask) AllChildrenSuccess() bool {
-	for _, child := range t.children {
+	return t.ChildrenSuccess(t.children)
+}
+
+func (t *TreeTask) ChildrenSuccess(children []*TreeTask) bool {
+	for _, child := range children {
 		if !child.Finished() {
 			return false
 		}

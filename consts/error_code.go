@@ -19,18 +19,25 @@ const (
 	ErrCodeTransactionNotFound       = 63
 	ErrCodeTransactionStateCorrupted = 64
 
-	ErrCodeCantRemoveCommittedValue      = 90
-	ErrCodeNilResponse                   = 99
-	ErrCodeTxnRetriedTooManyTimes        = 100
-	ErrCodeNotSupported                  = 111
-	ErrCodeInvalidRequest                = 222
-	ErrCodeSchedulerClosed               = 333
-	ErrCodeDontUseThisBeforeTaskFinished = 666
-	ErrCodeInvalidTopoData               = 777
-	ErrCodeCantGetOracle                 = 888
-	ErrCodeInvalidConfig                 = 999
-	ErrCodeUnknown                       = 1111
-	ErrCodeInject                        = 11111
-	ErrCodeDummy                         = 12222
-	ErrCodeAssertFailed                  = 22222
+	ErrCodeWriteIntentQueueFull = 70
+
+	ErrCodeReadForWriteWaitFailed = 80
+	ErrCodeReadForWriteTooStale   = 81
+	ErrCodeReadForWriteQueueFull  = 82
+
+	ErrCodeCantRemoveCommittedValue                       = 90
+	ErrCodeNilResponse                                    = 99
+	ErrCodeTxnRetriedTooManyTimes                         = 100
+	ErrCodeNotSupported                                   = 111
+	ErrCodeInvalidRequest                                 = 222
+	ErrCodeSchedulerClosed                                = 333
+	ErrCodeDontUseThisBeforeTaskFinished                  = 666
+	ErrCodeInvalidTopoData                                = 777
+	ErrCodeCantGetOracle                                  = 888
+	ErrCodeInvalidConfig                                  = 999
+	ErrCodeReadForWriteTransactionCommitWithNoWrittenKeys = 1000
+	ErrCodeUnknown                                        = 1111
+	ErrCodeInject                                         = 11111
+	ErrCodeDummy                                          = 12222
+	ErrCodeAssertFailed                                   = 22222
 )

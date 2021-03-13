@@ -22,9 +22,9 @@ import (
 
 func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 1))
+	_ = flag.Set("v", fmt.Sprintf("%d", 2))
 
-	for _, threshold := range []int{10} {
+	for _, threshold := range []int{1000} {
 		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -70,7 +70,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				readOpt               = types.NewTxnReadOption()
 			)
 			//readOpt = readOpt.WithWaitNoWriteIntent()
-			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
@@ -82,6 +82,9 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				}
 				v1 += delta
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
+				if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
+					return err, true
+				}
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{
@@ -188,44 +191,44 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 				readValues  = map[string]types.Value{}
 				writeValues = map[string]types.Value{}
 			)
-			if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
 				{
 					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
-						return err, true
+						return err
 					}
 					readValues["k1"] = val
 					v1, err := val.Int()
 					if !assert.NoError(err) {
-						return err, false
+						return err
 					}
 					g1, v1 = selector(i, v1)
 					writeValue := types.IntValue(v1).WithVersion(txn.GetId().Version())
 					writeValues["k1"] = writeValue
 					if err := txn.Set(ctx, "k1", writeValue.V); err != nil {
-						return err, true
+						return err
 					}
 				}
 
 				{
 					val, err := txn.Get(ctx, "k22", types.NewTxnReadOption())
 					if err != nil {
-						return err, true
+						return err
 					}
 					readValues["k22"] = val
 					v2, err := val.Int()
 					if !assert.NoError(err) {
-						return err, false
+						return err
 					}
 					g2, v2 = selector(i+1, v2)
 					writeValue := types.IntValue(v2).WithVersion(txn.GetId().Version())
 					writeValues["k22"] = writeValue
 					if err := txn.Set(ctx, "k22", writeValue.V); err != nil {
-						return err, true
+						return err
 					}
 				}
-				return nil, true
-			}, nil, nil); assert.NoError(err) {
+				return nil
+			}); assert.NoError(err) {
 				txns[i] = ExecuteInfo{
 					ID:             tx.GetId().Version(),
 					State:          tx.GetState(),
@@ -413,7 +416,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 			defer wg.Done()
 
 			if i%100 == 0 {
-				assert.Equal(errors.ErrInject, sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+				_, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
 					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
@@ -427,7 +430,8 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 					return txn.Set(ctx, "k1", types.IntValue(v1).V), true
 				}, func() error {
 					return errors.ErrInject
-				}, nil))
+				}, nil)
+				assert.Equal(errors.ErrInject, err)
 			} else {
 				goodTxns.Add(1)
 				assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
@@ -511,7 +515,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 			defer wg.Done()
 
 			if i%100 == 0 {
-				err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+				_, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
 					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
@@ -652,7 +656,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 
 func TestDistributedTxnReadConsistency(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+	_ = flag.Set("v", fmt.Sprintf("%d", 6))
 
 	for _, threshold := range []int{10000} {
 		for i := 0; i < rounds; i++ {
@@ -693,7 +697,8 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 		return
 	}
 	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
-	sc := smart_txn_client.NewSmartClient(tm, 0)
+	sc := smart_txn_client.NewSmartClient(tm, 10000)
+	defer sc.Close()
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
 	}
@@ -740,8 +745,8 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 						}
 						return nil
 					}))
-				} else {
-					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+				} else if goRoutineIndex&1 == 1 {
+					assert.NoError(sc.DoTransactionOfType(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
 						{
 							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
 							if err != nil {
@@ -768,6 +773,39 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 							}
 							v2 += delta
 							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+								return err
+							}
+						}
+						return nil
+					}))
+				} else {
+					assert.NoError(sc.DoTransactionOfType(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
+						{
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+							if err != nil {
+								return err
+							}
+							v2, err := key2Val.Int()
+							if !assert.NoError(err) {
+								return err
+							}
+							v2 += delta
+							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+								return err
+							}
+						}
+
+						{
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+							if err != nil {
+								return err
+							}
+							v1, err := key1Val.Int()
+							if !assert.NoError(err) {
+								return err
+							}
+							v1 -= delta
+							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -878,27 +916,25 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
 					)
-					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
+					if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
 						// key1 += key1ExtraDelta
-						return func() error {
-							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							v1, err := key1Val.Int()
-							if !assert.NoError(err) {
-								return err
-							}
-							readValues[key1] = key1Val
-							v1 += key1ExtraDelta
-							writtenVal1 := types.IntValue(v1)
-							if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
-								return err
-							}
-							writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
-							return nil
-						}(), true
-					}, nil, nil); assert.NoError(err) {
+						key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						v1, err := key1Val.Int()
+						if !assert.NoError(err) {
+							return err
+						}
+						readValues[key1] = key1Val
+						v1 += key1ExtraDelta
+						writtenVal1 := types.IntValue(v1)
+						if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
+							return err
+						}
+						writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
+						return nil
+					}); assert.NoError(err) {
 						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
@@ -912,26 +948,24 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
 					)
-					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-						return func() error {
-							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							v2, err := key2Val.Int()
-							if !assert.NoError(err) {
-								return err
-							}
-							readValues[key2] = key2Val
-							v2 += key2ExtraDelta
-							writtenVal2 := types.IntValue(v2)
-							if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
-								return err
-							}
-							writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
-							return nil
-						}(), true
-					}, nil, nil); assert.NoError(err) {
+					if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
+						key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						v2, err := key2Val.Int()
+						if !assert.NoError(err) {
+							return err
+						}
+						readValues[key2] = key2Val
+						v2 += key2ExtraDelta
+						writtenVal2 := types.IntValue(v2)
+						if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
+							return err
+						}
+						writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
+						return nil
+					}); assert.NoError(err) {
 						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
@@ -945,26 +979,24 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
 					)
-					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-						return func() error {
-							key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							v3, err := key3Val.Int()
-							if !assert.NoError(err) {
-								return err
-							}
-							readValues[key3] = key3Val
-							v3 += key3ExtraDelta
-							writtenVal3 := types.IntValue(v3)
-							if err := txn.Set(ctx, key3, writtenVal3.V); err != nil {
-								return err
-							}
-							writeValues[key3] = writtenVal3.WithVersion(txn.GetId().Version())
-							return nil
-						}(), true
-					}, nil, nil); assert.NoError(err) {
+					if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
+						key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						v3, err := key3Val.Int()
+						if !assert.NoError(err) {
+							return err
+						}
+						readValues[key3] = key3Val
+						v3 += key3ExtraDelta
+						writtenVal3 := types.IntValue(v3)
+						if err := txn.Set(ctx, key3, writtenVal3.V); err != nil {
+							return err
+						}
+						writeValues[key3] = writtenVal3.WithVersion(txn.GetId().Version())
+						return nil
+					}); assert.NoError(err) {
 						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
@@ -975,26 +1007,24 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 				} else if goRoutineIndex == 3 {
 					// read key1 key2 key3
 					var readValues = map[string]types.Value{}
-					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-						return func() error {
-							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							readValues[key1] = key1Val
-							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							readValues[key2] = key2Val
-							key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
-							if err != nil {
-								return err
-							}
-							readValues[key3] = key3Val
-							return nil
-						}(), true
-					}, nil, nil); assert.NoError(err) {
+					if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
+						key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						readValues[key1] = key1Val
+						key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						readValues[key2] = key2Val
+						key3Val, err := txn.Get(ctx, key3, types.NewTxnReadOption())
+						if err != nil {
+							return err
+						}
+						readValues[key3] = key3Val
+						return nil
+					}); assert.NoError(err) {
 						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),
@@ -1008,46 +1038,44 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						readValues  = map[string]types.Value{}
 						writeValues = map[string]types.Value{}
 					)
-					if tx, err := sc.DoTransactionRaw(ctx, func(ctx context.Context, txn types.Txn) (error, bool) {
-						return func() error {
-							{
-								key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
-								if err != nil {
-									return err
-								}
-								v1, err := key1Val.Int()
-								if !assert.NoError(err) {
-									return err
-								}
-								readValues[key1] = key1Val
-								v1 -= delta
-								writtenVal1 := types.IntValue(v1)
-								if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
-									return err
-								}
-								writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
+					if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
+						{
+							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption().WithWaitNoWriteIntent())
+							if err != nil {
+								return err
 							}
+							v1, err := key1Val.Int()
+							if !assert.NoError(err) {
+								return err
+							}
+							readValues[key1] = key1Val
+							v1 -= delta
+							writtenVal1 := types.IntValue(v1)
+							if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
+								return err
+							}
+							writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
+						}
 
-							{
-								key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
-								if err != nil {
-									return err
-								}
-								v2, err := key2Val.Int()
-								if !assert.NoError(err) {
-									return err
-								}
-								readValues[key2] = key2Val
-								v2 += delta
-								writtenVal2 := types.IntValue(v2)
-								if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
-									return err
-								}
-								writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
+						{
+							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption().WithWaitNoWriteIntent())
+							if err != nil {
+								return err
 							}
-							return nil
-						}(), true
-					}, nil, nil); assert.NoError(err) {
+							v2, err := key2Val.Int()
+							if !assert.NoError(err) {
+								return err
+							}
+							readValues[key2] = key2Val
+							v2 += delta
+							writtenVal2 := types.IntValue(v2)
+							if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
+								return err
+							}
+							writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
+						}
+						return nil
+					}); assert.NoError(err) {
 						txns[goRoutineIndex] = append(txns[goRoutineIndex], ExecuteInfo{
 							ID:          tx.GetId().Version(),
 							State:       tx.GetState(),

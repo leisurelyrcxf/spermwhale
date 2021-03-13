@@ -19,7 +19,7 @@ type TransactionStore struct {
 	retryWaitPeriod time.Duration
 
 	txnInitializer func(txn *Txn)
-	txnConstructor func(txnId types.TxnId) *Txn
+	txnConstructor func(txnId types.TxnId, state types.TxnState, writtenKeys []string) *Txn
 }
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
@@ -144,9 +144,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	if keyExists {
 		if !vv.HasWriteIntent() {
 			// case 1
-			txn := s.txnConstructor(txnId)
-			txn.WrittenKeys = allKeys
-			txn.State = types.TxnStateCommitted
+			txn := s.txnConstructor(txnId, types.TxnStateCommitted, allKeys)
 			if txnId == callerTxn.ID {
 				txn.h.RemoveTxn(txn)
 			}
@@ -163,8 +161,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// 2. key exists & vv.HasWriteIntent() && preventFutureTxnRecordWrite, since we've updated timestamp cache of txn record,
 	//	  guaranteed commit won't succeed in the future (because it needs to write transaction record with intent),
 	//	  hence safe to rollback.
-	txn = s.txnConstructor(txnId)
-	txn.WrittenKeys = allKeys
+	txn = s.txnConstructor(txnId, types.TxnStateRollbacking, allKeys)
 	if !keyExists && len(txn.WrittenKeys) == 1 {
 		txn.State = types.TxnStateRollbacked // nothing to rollback
 		if txnId == callerTxn.ID {
@@ -172,7 +169,6 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		}
 		return txn, nil
 	}
-	txn.State = types.TxnStateRollbacking
 	_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
 	return txn, nil
 }

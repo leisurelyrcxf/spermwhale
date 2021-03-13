@@ -15,9 +15,15 @@ enum TxnState {
     StateRollbacked  = 5;
 }
 
+enum TxnType {
+    TypeDefault = 0;
+    TypeReadForWrite = 1;
+}
+
 message Txn {
     uint64 id = 1;
     TxnState state = 2;
+    TxnType type = 3;
 }
 
 message TxnReadOption {
@@ -25,6 +31,7 @@ message TxnReadOption {
 }
 
 message BeginRequest {
+    TxnType type = 1;
 }
 
 message BeginResponse {

@@ -113,4 +113,24 @@ var (
 		Code: consts.ErrCodeInvalidConfig,
 		Msg:  "invalid config",
 	}
+	ErrReadForWriteTransactionCommitWithNoWrittenKeys = &Error{
+		Code: consts.ErrCodeReadForWriteTransactionCommitWithNoWrittenKeys,
+		Msg:  "read for write transaction commit with no written keys",
+	}
+	ErrReadForWriteWaitFailed = &Error{
+		Code: consts.ErrCodeReadForWriteWaitFailed,
+		Msg:  "read for write wait failed",
+	}
+	ErrReadForWriteTooStale = &Error{
+		Code: consts.ErrCodeReadForWriteTooStale,
+		Msg:  "read for write too stale",
+	}
+	ErrReadForWriteQueueFull = &Error{
+		Code: consts.ErrCodeReadForWriteQueueFull,
+		Msg:  "read for write queue full, retry later",
+	}
+	ErrWriteIntentQueueFull = &Error{
+		Code: consts.ErrCodeWriteIntentQueueFull,
+		Msg:  "write intent queue full, retry later",
+	}
 )

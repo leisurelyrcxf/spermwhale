@@ -27,28 +27,38 @@ func NewSmartClient(tm types.TxnManager, maxRetry int) *SmartClient {
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
-	err := c.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
-		return f(ctx, txn), true
-	}, nil, nil)
+	_, err := c.DoTransactionExOfType(ctx, types.TxnTypeDefault, f)
 	if err != nil {
 		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
 	}
 	return err
 }
 
-func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
-	beforeCommit, beforeRollback func() error) error {
-	_, err := c.DoTransactionRaw(ctx, f, beforeCommit, beforeRollback)
+func (c *SmartClient) DoTransactionOfType(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) error {
+	_, err := c.DoTransactionExOfType(ctx, typ, f)
+	if err != nil {
+		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
+	}
 	return err
 }
 
-func (c *SmartClient) DoTransactionRaw(ctx context.Context, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
+func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) (types.Txn, error) {
+	return c.DoTransactionExOfType(ctx, types.TxnTypeDefault, f)
+}
+
+func (c *SmartClient) DoTransactionExOfType(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (types.Txn, error) {
+	return c.DoTransactionRaw(ctx, typ, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+		return f(ctx, txn), true
+	}, nil, nil)
+}
+
+func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) (types.Txn, error) {
 	for i := 0; i < c.maxRetry; i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		tx, err := c.TxnManager.BeginTransaction(ctx)
+		tx, err := c.TxnManager.BeginTransaction(ctx, typ)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue

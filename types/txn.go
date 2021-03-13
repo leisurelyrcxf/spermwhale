@@ -31,7 +31,7 @@ func (i TxnId) Version() uint64 {
 }
 
 type TxnManager interface {
-	BeginTransaction(ctx context.Context) (Txn, error)
+	BeginTransaction(ctx context.Context, typ TxnType) (Txn, error)
 	Close() error
 }
 
@@ -71,6 +71,21 @@ func (s TxnState) IsTerminated() bool {
 	return s.IsAborted() || s == TxnStateCommitted
 }
 
+type TxnType int
+
+const (
+	TxnTypeDefault      TxnType = 0
+	TxnTypeReadForWrite TxnType = 1
+)
+
+func (t TxnType) ToPB() txnpb.TxnType {
+	return txnpb.TxnType(t)
+}
+
+func (t TxnType) IsReadForWrite() bool {
+	return t == TxnTypeReadForWrite
+}
+
 type TxnReadOption struct {
 	flag uint8
 }
@@ -89,7 +104,7 @@ func NewTxnReadOptionFromPB(x *txnpb.TxnReadOption) TxnReadOption {
 }
 
 var TxnReadOptionDesc2BitMask = map[string]uint8{
-	"wait_no_write_intent": consts.ReadOptBitMaskWaitNoWriteIntent,
+	"wait_no_write_intent": consts.CommonReadOptBitMaskWaitNoWriteIntent,
 }
 
 func GetTxnReadOptionDesc() string {
@@ -121,17 +136,14 @@ func (opt TxnReadOption) ToPB() *txnpb.TxnReadOption {
 }
 
 func (opt TxnReadOption) WithWaitNoWriteIntent() TxnReadOption {
-	opt.flag |= consts.ReadOptBitMaskWaitNoWriteIntent
+	opt.flag |= consts.CommonReadOptBitMaskWaitNoWriteIntent
 	return opt
-}
-
-func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
-	return opt.flag&consts.ReadOptBitMaskWaitNoWriteIntent > 0
 }
 
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
+	GetType() TxnType
 	Get(ctx context.Context, key string, opt TxnReadOption) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error

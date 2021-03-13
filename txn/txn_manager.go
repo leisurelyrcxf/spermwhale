@@ -105,7 +105,7 @@ func NewTransactionManagerWithOracle(
 	return tm
 }
 
-func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, error) {
+func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnType) (types.Txn, error) {
 	ts, err := utils.FetchTimestampWithRetry(m)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (m *TransactionManager) BeginTransaction(_ context.Context) (types.Txn, err
 	if _, ok := m.txns.Get(txnID); ok {
 		return nil, errors.ErrTxnExists
 	}
-	txn := m.newTxn(txnID)
+	txn := m.newTxn(txnID, typ)
 	m.txns.SetIf(txnID, txn, func(prev interface{}, exist bool) bool {
 		assert.Must(!exist)
 		return !exist
@@ -139,8 +139,8 @@ func (m *TransactionManager) Close() error {
 	return m.kv.Close()
 }
 
-func (m *TransactionManager) newTxn(id types.TxnId) *Txn {
-	return NewTxn(id, m.kv, m.cfg, m.store, m, m.s)
+func (m *TransactionManager) newTxn(id types.TxnId, typ types.TxnType) *Txn {
+	return NewTxn(id, typ, m.kv, m.cfg, m.store, m, m.s)
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
@@ -149,17 +149,25 @@ func (m *TransactionManager) createStore() *TransactionManager {
 		cfg:             m.cfg,
 		retryWaitPeriod: consts.DefaultRetryWaitPeriod,
 
-		txnInitializer: func(txn *Txn) {
-			txn.lastWriteKeyTasks = make(map[string]*types.ListTask)
-			txn.preventWriteFlags = make(map[string]bool)
-			txn.cfg = m.cfg
-			txn.kv = m.kv
-			txn.store = m.store
-			txn.s = m.s
-			txn.h = m
+		txnInitializer: func(record *Txn) {
+			record.lastWriteKeyTasks = make(map[string]*types.ListTask)
+			for _, key := range record.WrittenKeys {
+				record.lastWriteKeyTasks[key] = nil
+			}
+			record.cfg = m.cfg
+			record.kv = m.kv
+			record.store = m.store
+			record.s = m.s
+			record.h = m
 		},
-		txnConstructor: func(txnId types.TxnId) *Txn {
-			return m.newTxn(txnId)
+		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys []string) *Txn {
+			txn := m.newTxn(txnId, types.TxnTypeDefault)
+			txn.State = state
+			txn.WrittenKeys = writtenKeys
+			for _, key := range txn.WrittenKeys {
+				txn.lastWriteKeyTasks[key] = nil
+			}
+			return txn
 		},
 	}
 	return m

@@ -9,7 +9,8 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/event"
+	"github.com/leisurelyrcxf/spermwhale/event/readforwrite"
+	"github.com/leisurelyrcxf/spermwhale/event/writeintent"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -52,7 +53,8 @@ type KVCC struct {
 
 	tsCache *TimestampCache
 
-	writeIntentWaiterManager *event.WriteIntentWaiterManager
+	writeIntentManager  *writeintent.Manager
+	readForWriteManager *readforwrite.Manager
 
 	db types.KV
 }
@@ -74,11 +76,12 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	}
 
 	return &KVCC{
-		TabletTxnConfig:          cfg,
-		lm:                       concurrency.NewLockManager(),
-		tsCache:                  NewTimestampCache(),
-		writeIntentWaiterManager: event.NewWriteIntentWaiterManager(),
-		db:                       db,
+		TabletTxnConfig:     cfg,
+		lm:                  concurrency.NewLockManager(),
+		tsCache:             NewTimestampCache(),
+		writeIntentManager:  writeintent.NewManager(),
+		readForWriteManager: readforwrite.NewManager(),
+		db:                  db,
 	}
 }
 
@@ -89,9 +92,20 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return val.WithMaxReadVersion(0), err
 	}
 
+	const readForWriteWaitTimeout = consts.DefaultReadTimeout * 3
+	if opt.IsReadForWriteFirstRead() {
+		w, err := kv.readForWriteManager.AppendReader(key, opt.ReaderVersion)
+		if err != nil {
+			return types.EmptyValueCC, err
+		}
+		if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
+			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
+		}
+	}
 	for i := 0; ; i++ {
-		val, err := kv.get(ctx, key, opt)
-		if err == nil || errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked || i >= consts.MaxRetryTxnGet {
+		if val, err := kv.get(ctx, key, opt); err == nil ||
+			errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked ||
+			i >= consts.MaxRetryTxnGet {
 			return val, err
 		}
 	}
@@ -103,6 +117,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		updateTimestampCache = !opt.IsNotUpdateTimestampCache()
 		getMaxReadVersion    = !opt.IsNotGetMaxReadVersion()
 	)
+
 	// guarantee mutual exclusion with set,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
@@ -130,19 +145,20 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	kv.lm.RUnlock(key)
 
-	waiter := kv.writeIntentWaiterManager.RegisterWaiter(key, valCC.Version)
-	waitCtx, waitCancel := context.WithTimeout(ctx, consts.DefaultReadTimeout/100)
-	defer waitCancel()
-
-	e, waitErr := waiter.Wait(waitCtx)
+	waiter, err := kv.writeIntentManager.RegisterWaiter(key, valCC.Version)
+	if err != nil {
+		glog.V(8).Infof("KVCC:get register waiter failed '%s'@version%d: %v", key, valCC.Version, err)
+		return valCC, nil
+	}
+	e, waitErr := waiter.Wait(ctx, consts.DefaultReadTimeout/100)
 	if waitErr != nil {
-		glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d", key, valCC.Version)
+		glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, valCC.Version, waitErr)
 		return valCC, nil // Let upper layer handle this.
 	}
 	switch e {
-	case event.VersionRemoved:
+	case writeintent.Removed:
 		return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
-	case event.WriteIntentCleared:
+	case writeintent.Cleared:
 		return valCC.WithNoWriteIntent(), nil
 	default:
 		panic("impossible code")
@@ -153,12 +169,20 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if !val.HasWriteIntent() {
 		// Don't care the result of kv.db.Set(), TODO needs test against kv.db.Set() failed.
 		if opt.IsClearWriteIntent() {
-			kv.writeIntentWaiterManager.FireEvent(key, val.Version, event.WriteIntentCleared)
+			kv.writeIntentManager.FireEvent(key, val.Version, writeintent.Cleared)
 		} else if opt.IsRemoveVersion() {
-			kv.writeIntentWaiterManager.FireEvent(key, val.Version, event.VersionRemoved)
+			kv.writeIntentManager.FireEvent(key, val.Version, writeintent.Removed)
 		}
-		// TODO kv.writeIntentWaiterManager.GC(key, val.Version)
-		return kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+		// TODO kv.writeIntentManager.GC(key, val.Version)
+		err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+		if opt.IsReadForWrite() {
+			if opt.IsClearWriteIntent() {
+				kv.readForWriteManager.Signal(key, val.Version, readforwrite.WriteIntentCleared)
+			} else if opt.IsRemoveVersion() {
+				kv.readForWriteManager.Signal(key, val.Version, readforwrite.VersionRemoved)
+			}
+		}
+		return err
 	}
 
 	// cache may lost after restarted, so ignore too stale write
@@ -178,10 +202,14 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	return kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+	//if err == nil && opt.IsReadForWrite() {
+	//	TODO signal earlier?
+	//}
 }
 
 func (kv *KVCC) Close() error {
 	kv.tsCache.m.Clear()
-	kv.writeIntentWaiterManager.Close()
+	kv.writeIntentManager.Close()
+	kv.readForWriteManager.Close()
 	return kv.db.Close()
 }

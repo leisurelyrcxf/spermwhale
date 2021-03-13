@@ -14,12 +14,16 @@ const (
 const (
 	ReadOptBitMaskNotUpdateTimestampCache = 1
 	ReadOptBitMaskNotGetMaxReadVersion    = 1 << 1
-	readOptBitMaskCommon                  = uint8((0xffff << 2) & 0xff)
-	ReadOptBitMaskWaitNoWriteIntent       = 1 << 2
-	RevertReadOptBitMaskWaitNoWriteIntent = ^ReadOptBitMaskWaitNoWriteIntent & 0xff
+	ReadOptBitMaskReadForWriteFirstRead   = 1 << 2
+
+	commonReadOptBitOffset                      = 6
+	commonReadOptBitMask                        = uint8((0xffff << commonReadOptBitOffset) & 0xff)
+	CommonReadOptBitMaskWaitNoWriteIntent       = 1 << commonReadOptBitOffset
+	RevertCommonReadOptBitMaskWaitNoWriteIntent = ^CommonReadOptBitMaskWaitNoWriteIntent & 0xff
 
 	WriteOptBitMaskClearWriteIntent = 1
 	WriteOptBitMaskRemoveVersion    = 1 << 1
+	WriteOptBitMaskReadForWrite     = 1 << 2
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )
@@ -49,5 +53,10 @@ const (
 )
 
 func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
-	return flag1 | (flag2 & readOptBitMaskCommon)
+	return flag1 | (flag2 & commonReadOptBitMask)
 }
+
+const (
+	MaxReadForWriteQueueCapacityPerKey            = 500
+	MaxWriteIntentWaitersCapacityPerKeyAndVersion = 50
+)
