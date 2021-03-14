@@ -80,7 +80,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	return &KVCC{
 		TabletTxnConfig:     cfg,
 		db:                  db,
-		txnManager:          transaction.NewManager(cfg.StaleWriteThreshold + utils.MaxDuration(time.Second*5, cfg.MaxClockDrift*3)),
+		txnManager:          transaction.NewManager(),
 		lm:                  concurrency.NewLockManager(),
 		tsCache:             NewTimestampCache(),
 		readForWriteManager: readforwrite.NewManager(),
@@ -106,9 +106,8 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	for i := 0; ; i++ {
 		if val, err := kv.get(ctx, key, opt); err == nil ||
-			!errors.IsRetryableTabletGetErr(err) || i >= 1 {
-			assert.Must(errors.NotError(err, consts.ErrCodeTabletWriteTransactionNotFound))
-			assert.Must(errors.NotError(err, consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked))
+			!errors.IsRetryableTabletGetErr(err) || i >= consts.MaxRetryTxnGet {
+			assert.Must(i < consts.MaxRetryTxnGet)
 			return val, err // TODO
 			//return val, errors.CASError(err, consts.ErrCodeTabletWriteTransactionNotFound, nil)
 		}

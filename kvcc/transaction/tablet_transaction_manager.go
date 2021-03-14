@@ -5,19 +5,30 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/scheduler"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-const EstimatedMaxQPS = 100000
+const (
+	EstimatedMaxQPS        = 1000000
+	RemoveTxnDelay         = time.Millisecond * 200
+	EstimateMaxBufferedTxn = int(EstimatedMaxQPS * (float64(RemoveTxnDelay) / float64(time.Second)))
+	TimerPartitionNum      = 8
+	TimerPartitionChSize   = EstimateMaxBufferedTxn / TimerPartitionNum
+)
 
 type Manager struct {
 	writeTxns concurrency.ConcurrentTxnMap
+	timer     scheduler.ConcurrentBasicTimer
 }
 
-func NewManager(_ time.Duration) *Manager {
+func NewManager() *Manager {
 	tm := &Manager{}
 	tm.writeTxns.Initialize(64)
+	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(TimerPartitionChSize, 100))
+	tm.timer.Start()
 	return tm
 }
 
@@ -38,6 +49,7 @@ func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
 func (tm *Manager) RegisterKeyEventWaiter(waitForWriteTxnId types.TxnId, key string) (*KeyEventWaiter, KeyEvent, error) {
 	waitFor := tm.getTxn(waitForWriteTxnId)
 	if waitFor == nil {
+		assert.Must(false) // TODO remove in product
 		return nil, InvalidKeyEvent, errors.Annotatef(errors.ErrTabletWriteTransactionNotFound, "key: %s", key)
 	}
 	return waitFor.registerKeyEventWaiter(key)
@@ -73,13 +85,18 @@ func (tm *Manager) getTxn(txnId types.TxnId) *transaction {
 
 func (tm *Manager) removeTxn(txn *transaction) {
 	// TODO remove this in product
-	//assert.Must(txn.writtenKeyCount.Get() == 2)
 	assert.Must(txn.GetState().IsTerminated())
 	waiterCount, waiterKeyCount := txn.getWaiterCounts()
 	assert.Must(waiterCount == 0)
 	assert.Must(waiterKeyCount <= int(txn.writtenKeyCount.Get()))
 
-	tm.writeTxns.Del(txn.id)
+	tm.timer.Schedule(
+		scheduler.NewTimerTask(
+			time.Now().Add(RemoveTxnDelay), func() {
+				tm.writeTxns.Del(txn.id)
+			},
+		),
+	)
 }
 
 func (tm *Manager) Close() {
