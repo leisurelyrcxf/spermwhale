@@ -97,7 +97,21 @@ func main() {
 
 				var t = cmds[i]
 				if strings.HasPrefix(t, "begin") {
-					if tx, err = tm.BeginTransaction(ctx); err != nil {
+					remain := strings.TrimPrefix(t, "begin")
+					typ := types.TxnTypeDefault
+					if remain != "" {
+						if !strings.HasPrefix(remain, " ") {
+							fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
+							continue
+						}
+						remain = strings.TrimPrefix(remain, " ")
+						parts := strings.Split(remain, " ")
+						if typ, err = types.ParseTxnType(parts[0]); err != nil {
+							fmt.Printf("invalid txn type, supported transaction types: %s\n", strings.Join(types.SupportedTransactionTypesDesc, ", "))
+							continue
+						}
+					}
+					if tx, err = tm.BeginTransaction(ctx, typ); err != nil {
 						fmt.Printf("BEGIN failed: %v\n", err)
 						continue
 					}
@@ -123,7 +137,7 @@ func main() {
 							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
-						if tx, err = tm.BeginTransaction(ctx); err != nil {
+						if tx, err = tm.BeginTransaction(ctx, types.TxnTypeDefault); err != nil {
 							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}
@@ -163,7 +177,7 @@ func main() {
 							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
-						if tx, err = tm.BeginTransaction(ctx); err != nil {
+						if tx, err = tm.BeginTransaction(ctx, types.TxnTypeDefault); err != nil {
 							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}

@@ -81,9 +81,37 @@ func (s TxnState) IsTerminated() bool {
 type TxnType int
 
 const (
-	TxnTypeDefault      TxnType = 0
-	TxnTypeReadForWrite TxnType = 1
+	TxnTypeInvalid      TxnType = 0
+	TxnTypeDefault      TxnType = 1
+	TxnTypeReadForWrite TxnType = 2
+
+	TxnTypeDefaultDesc      = "default"
+	TxnTypeReadForWriteDesc = "read_for_write"
 )
+
+var SupportedTransactionTypesDesc = []string{"'" + TxnTypeDefaultDesc + "'", "'" + TxnTypeReadForWriteDesc + "'"}
+
+func ParseTxnType(str string) (TxnType, error) {
+	switch str {
+	case TxnTypeDefaultDesc, fmt.Sprintf("%d", TxnTypeDefault):
+		return TxnTypeDefault, nil
+	case TxnTypeReadForWriteDesc, fmt.Sprintf("%d", TxnTypeReadForWrite):
+		return TxnTypeReadForWrite, nil
+	default:
+		return TxnTypeInvalid, errors.Annotatef(errors.ErrInvalidRequest, "unknown txn type %s", str)
+	}
+}
+
+func (t TxnType) String() string {
+	switch t {
+	case TxnTypeDefault:
+		return TxnTypeDefaultDesc
+	case TxnTypeReadForWrite:
+		return TxnTypeReadForWriteDesc
+	default:
+		return "invalid"
+	}
+}
 
 func (t TxnType) ToPB() txnpb.TxnType {
 	return txnpb.TxnType(t)

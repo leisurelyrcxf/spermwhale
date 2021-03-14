@@ -2,7 +2,9 @@ package transaction
 
 import (
 	"container/heap"
+	"context"
 	"sync"
+	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -19,14 +21,54 @@ import (
 //	VersionWritten
 //)
 
+type readForWriteCond struct {
+	waitress chan struct{}
+}
+
+func newReadForWriteCond() *readForWriteCond {
+	return &readForWriteCond{waitress: make(chan struct{})}
+}
+
+func (t *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	select {
+	case <-waitCtx.Done():
+		return waitCtx.Err()
+	case <-t.waitress:
+		return nil
+	}
+}
+
+func (t *readForWriteCond) notify() {
+	close(t.waitress)
+}
+
+type readForWriteConds map[string]*readForWriteCond
+
+func (conds *readForWriteConds) add(key string, cond *readForWriteCond) {
+	if *conds == nil {
+		*conds = make(map[string]*readForWriteCond)
+	}
+	(*conds)[key] = cond
+}
+
+func (conds readForWriteConds) mustGet(key string) *readForWriteCond {
+	cond := conds[key]
+	assert.Must(cond != nil)
+	return cond
+}
+
 type priorityQueue struct {
 	sync.Mutex
 
+	key            string
 	pendingReaders []*transaction
 }
 
-func newPriorityQueue() *priorityQueue {
-	return &priorityQueue{}
+func newPriorityQueue(key string) *priorityQueue {
+	return &priorityQueue{key: key}
 }
 
 // Heap Interface
@@ -68,12 +110,13 @@ func (pq *priorityQueue) pushReader(reader *transaction) (*readForWriteCond, err
 		return nil, errors.ErrReadForWriteQueueFull
 	}
 
-	reader.readForWriteCond = newReadForWriteCond()
+	cond := newReadForWriteCond()
+	reader.readForWriteConds.add(pq.key, cond)
 	heap.Push(pq, reader)
 	if pq.Len() == 1 {
 		return nil, nil
 	}
-	return reader.readForWriteCond, nil
+	return cond, nil
 }
 
 func (pq *priorityQueue) notifyKeyDone(writerVersion uint64) {
@@ -89,7 +132,7 @@ func (pq *priorityQueue) notifyKeyDone(writerVersion uint64) {
 	}
 	heap.Pop(pq)
 	if newMinReader := pq.minReader(); newMinReader != nil {
-		newMinReader.readForWriteCond.notify()
+		newMinReader.readForWriteConds.mustGet(pq.key).notify()
 	}
 }
 
@@ -103,7 +146,7 @@ func (wm *readForWriteQueues) Initialize(partitionNum int) {
 
 func (wm *readForWriteQueues) pushReaderOnKey(key string, reader *transaction) (*readForWriteCond, error) {
 	return wm.m.GetLazy(key, func() interface{} {
-		return newPriorityQueue()
+		return newPriorityQueue(key)
 	}).(*priorityQueue).pushReader(reader)
 }
 

@@ -1,10 +1,8 @@
 package transaction
 
 import (
-	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -14,37 +12,13 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-type readForWriteCond struct {
-	waitress chan struct{}
-}
-
-func newReadForWriteCond() *readForWriteCond {
-	return &readForWriteCond{waitress: make(chan struct{})}
-}
-
-func (t *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	select {
-	case <-waitCtx.Done():
-		return waitCtx.Err()
-	case <-t.waitress:
-		return nil
-	}
-}
-
-func (t *readForWriteCond) notify() {
-	close(t.waitress)
-}
-
 type transaction struct {
 	sync.RWMutex
 
 	id    types.TxnId
 	state types.TxnState
 
-	readForWriteCond *readForWriteCond
+	readForWriteConds readForWriteConds
 
 	writtenKeyCount concurrency.AtomicUint64
 	doneKeys        concurrency.ConcurrentSet

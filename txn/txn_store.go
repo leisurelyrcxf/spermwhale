@@ -2,6 +2,7 @@ package txn
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -169,6 +170,12 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		}
 		return txn, nil
 	}
-	_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
+	if preventFutureTxnRecordWrite {
+		_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
+	} else {
+		assert.Must(len(allKeys) == 1)
+		assert.Must(len(keysWithWriteIntent) == 1)
+		_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("write intent of key %s disappeared", allKeys[0])) // help rollback if original txn coordinator was gone
+	}
 	return txn, nil
 }
