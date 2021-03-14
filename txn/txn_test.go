@@ -41,6 +41,7 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 20)
 	sc := smart_txn_client.NewSmartClient(m, 0)
+	defer sc.Close()
 	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -52,6 +53,10 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 		delta           = 6
 	)
 	err := sc.SetInt(ctx, "k1", initialValue)
+	if !assert.NoError(err) {
+		return
+	}
+	err = sc.SetInt(ctx, "k2", initialValue)
 	if !assert.NoError(err) {
 		return
 	}
@@ -75,19 +80,22 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				if err != nil {
 					return err, true
 				}
+				if _, err := txn.Get(ctx, "k2", readOpt); err != nil {
+					return err, true
+				}
 				readValue = val
 				v1, err := val.Int()
 				if !assert.NoError(err) {
 					return err, false
 				}
 				v1 += delta
+				if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
+					return err, true
+				}
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
 				if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
 					return err, true
 				}
-				//if err := txn.Set(ctx, "k1", writeValue.V); err != nil {
-				//	return err, true
-				//}
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{

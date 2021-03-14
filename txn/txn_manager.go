@@ -93,7 +93,7 @@ func NewTransactionManagerWithOracle(
 			ioJobScheduler:    scheduler.NewConcurrentDynamicListScheduler(ioWorkerNum, MaxTaskBufferedPerPartition, 1),
 		},
 	}).createStore()
-	tm.txns.Initialize(32)
+	tm.txns.Initialize(32, false, 0, 0)
 	if oracle != nil {
 		tm.oracle.Store(oracle)
 	}
@@ -128,7 +128,7 @@ func (m *TransactionManager) RemoveTxn(txn *Txn) {
 
 func (m *TransactionManager) Close() error {
 	m.s.Close()
-	m.txns.Clear()
+	m.txns.Close()
 	return m.kv.Close()
 }
 

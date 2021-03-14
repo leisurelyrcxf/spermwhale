@@ -97,6 +97,9 @@ func Wrap(err, other error) error {
 }
 
 func Annotatef(err error, format string, args ...interface{}) error {
+	if err == nil {
+		return nil
+	}
 	if ve, ok := err.(*Error); ok {
 		return &Error{
 			Code: ve.Code,

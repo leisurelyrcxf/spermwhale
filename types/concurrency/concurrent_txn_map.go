@@ -2,6 +2,9 @@ package concurrency
 
 import (
 	"sync"
+	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
@@ -9,6 +12,40 @@ import (
 type concurrentTxnMapPartition struct {
 	mutex sync.RWMutex
 	m     map[types.TxnId]interface{}
+
+	toClearTxns    chan types.TxnId
+	minClearTxnAge time.Duration
+	closed         chan struct{}
+	wg             *sync.WaitGroup
+}
+
+func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, closed chan struct{}, wg *sync.WaitGroup, minClearTxnAge time.Duration) {
+	cmp.toClearTxns = make(chan types.TxnId, channelSize)
+	cmp.minClearTxnAge = minClearTxnAge
+	cmp.closed = closed
+	cmp.wg = wg
+
+	go func() {
+		defer cmp.wg.Done()
+
+		for {
+			select {
+			case toClearTxn := <-cmp.toClearTxns:
+				if age := toClearTxn.Age(); age < cmp.minClearTxnAge {
+					select {
+					case <-time.After(cmp.minClearTxnAge - age):
+						break
+					case <-cmp.closed:
+						return
+					}
+				}
+				assert.Must(toClearTxn.Age() >= cmp.minClearTxnAge)
+				cmp.del(toClearTxn)
+			case <-cmp.closed:
+				return
+			}
+		}
+	}()
 }
 
 func (cmp *concurrentTxnMapPartition) get(key types.TxnId) (interface{}, bool) {
@@ -83,8 +120,8 @@ func (cmp *concurrentTxnMapPartition) insert(key types.TxnId, val interface{}) e
 
 func (cmp *concurrentTxnMapPartition) del(key types.TxnId) {
 	cmp.mutex.Lock()
-	defer cmp.mutex.Unlock()
 	delete(cmp.m, key)
+	cmp.mutex.Unlock()
 }
 
 func (cmp *concurrentTxnMapPartition) forEachLocked(cb func(types.TxnId, interface{})) {
@@ -95,13 +132,27 @@ func (cmp *concurrentTxnMapPartition) forEachLocked(cb func(types.TxnId, interfa
 
 type ConcurrentTxnMap struct {
 	partitions []*concurrentTxnMapPartition
+
+	gcClosed chan struct{}
+	gcDone   sync.WaitGroup
 }
 
-func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
+func (cmp *ConcurrentTxnMap) Initialize(partitionNum int, startGCThreads bool, estimatedMaxQPS int, minClearTxnAge time.Duration) {
 	cmp.partitions = make([]*concurrentTxnMapPartition, partitionNum)
 	for i := range cmp.partitions {
 		cmp.partitions[i] = &concurrentTxnMapPartition{m: make(map[types.TxnId]interface{})}
 	}
+	if startGCThreads {
+		cmp.gcClosed = make(chan struct{})
+		cmp.gcDone.Add(len(cmp.partitions))
+		for _, p := range cmp.partitions {
+			p.startGCThread(estimatedMaxQPS*(int(minClearTxnAge/time.Second)+2)/partitionNum, cmp.gcClosed, &cmp.gcDone, minClearTxnAge)
+		}
+	}
+}
+
+func (cmp *ConcurrentTxnMap) GCLater(txn types.TxnId) {
+	cmp.partitions[cmp.hash(txn)].toClearTxns <- txn
 }
 
 func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {
@@ -184,12 +235,19 @@ func (cmp *ConcurrentTxnMap) ForEachStrict(cb func(types.TxnId, interface{})) {
 	cmp.RUnlock()
 }
 
-func (cmp *ConcurrentTxnMap) Clear() {
+func (cmp *ConcurrentTxnMap) Close() {
 	cmp.Lock()
 	for _, partition := range cmp.partitions {
 		partition.m = nil
 	}
+
+	if cmp.gcClosed != nil {
+		close(cmp.gcClosed)
+		cmp.gcClosed = nil
+	}
 	cmp.Unlock()
+
+	cmp.gcDone.Wait()
 }
 
 func (cmp *ConcurrentTxnMap) Size() (sz int) {

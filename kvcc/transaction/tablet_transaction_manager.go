@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -14,29 +13,32 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
-const (
-	doneKeyMask    = 0xffffffff00000000
-	writtenKeyMask = 0x00000000ffffffff
-)
+type Event struct {
+	Key   string
+	State types.TxnState
+}
 
-type Event types.TxnState
+var InvalidEvent = Event{State: types.TxnStateInvalid}
 
-var InvalidTxnEvent = Event(types.TxnStateInvalid)
-
-func (e Event) GetTxnState() types.TxnState {
-	return types.TxnState(e)
+func NewEvent(key string, state types.TxnState) Event {
+	return Event{
+		Key:   key,
+		State: state,
+	}
 }
 
 func (e Event) String() string {
-	return e.GetTxnState().String()
+	return fmt.Sprintf("key: %s, state: %s", e.Key, e.State.String())
 }
 
 type Waiter struct {
+	key      string
 	waitress chan Event
 }
 
-func newWaiter() *Waiter {
+func newWaiter(key string) *Waiter {
 	return &Waiter{
+		key:      key,
 		waitress: make(chan Event, 1),
 	}
 }
@@ -47,8 +49,9 @@ func (w *Waiter) Wait(ctx context.Context, timeout time.Duration) (Event, error)
 
 	select {
 	case <-waitCtx.Done():
-		return InvalidTxnEvent, waitCtx.Err()
+		return InvalidEvent, waitCtx.Err()
 	case event := <-w.waitress:
+		assert.Must(event.Key == w.key)
 		return event, nil
 	}
 }
@@ -63,53 +66,35 @@ type transaction struct {
 	id    types.TxnId
 	state types.TxnState
 
-	keyInfo uint64
-
 	waitersMu sync.Mutex
-	waiters   []*Waiter
+	waiters   map[string][]*Waiter
 }
 
 func newTransaction(id types.TxnId) *transaction {
 	return &transaction{
-		id:    id,
-		state: types.TxnStateUncommitted,
+		id:      id,
+		state:   types.TxnStateUncommitted,
+		waiters: make(map[string][]*Waiter),
 	}
 }
 
-func (t *transaction) setStateUnsafe(state types.TxnState) {
-	t.state = state
+var invalidKeyWaiters = make([]*Waiter, 0, 0)
+
+func isInvalidKeyWaiters(waiters []*Waiter) bool {
+	return len(waiters) == 0 && waiters != nil
 }
 
-func (t *transaction) getStateUnsafe() types.TxnState {
-	return t.state
-}
-
-func (t *transaction) addWrittenKey() {
-	atomic.AddUint64(&t.keyInfo, 1)
-}
-
-func (t *transaction) doneWrittenKey() bool {
-	for {
-		old := atomic.LoadUint64(&t.keyInfo)
-		writtenKey, doneKey := old&writtenKeyMask, (old&doneKeyMask)>>32
-		newV := ((doneKey + 1) << 32) | writtenKey
-		if atomic.CompareAndSwapUint64(&t.keyInfo, old, newV) {
-			if doneKey+1 >= writtenKey {
-				return true
-			}
-			return false
-		}
-	}
-}
-
-func (t *transaction) appendWaiter(w *Waiter) (*Waiter, error) {
+func (t *transaction) registerWaiterOnKey(key string) (*Waiter, error) {
 	t.waitersMu.Lock()
 	defer t.waitersMu.Unlock()
 
-	if len(t.waiters)+1 > consts.MaxWriteIntentWaitersCapacityPerTxn {
+	oldWaiters := t.waiters[key]
+	assert.Must(!isInvalidKeyWaiters(oldWaiters)) // not invalidKeyWaiters
+	if len(oldWaiters)+1 > consts.MaxWriteIntentWaitersCapacityPerTxnPerKey {
 		return nil, errors.ErrWriteIntentQueueFull
 	}
-	t.waiters = append(t.waiters, w)
+	w := newWaiter(key)
+	t.waiters[key] = append(t.waiters[key], w)
 	return w, nil
 }
 
@@ -117,125 +102,84 @@ func (t *transaction) signal(event Event) {
 	t.waitersMu.Lock()
 	defer t.waitersMu.Unlock()
 
-	for _, w := range t.waiters {
+	for _, w := range t.waiters[event.Key] {
 		w.signal(event)
 	}
-	t.waiters = nil
+	t.waiters[event.Key] = invalidKeyWaiters
+	// TODO change to
+	// delete(t.waiters, event.Key)
+	// in product
 }
 
-func (t *transaction) getWaiters() []*Waiter {
+func (t *transaction) getWaiterCounts() (waiterCount, waiterKeyCount int) {
 	t.waitersMu.Lock()
 	defer t.waitersMu.Unlock()
 
-	return t.waiters
+	for _, ws := range t.waiters {
+		waiterCount += len(ws)
+	}
+	return waiterCount, len(t.waiters)
 }
 
 type Manager struct {
 	*concurrency.TxnLockManager
 
 	writeTxns concurrency.ConcurrentTxnMap
-
-	toClearTxns    chan types.TxnId
-	toClearClosed  bool
-	toClearMu      sync.RWMutex
-	minClearTxnAge time.Duration
-	gcDone         chan struct{}
 }
 
-const EstimatedQPS = 100000
+const EstimatedMaxQPS = 100000
 
 func NewManager(minClearTxnAge time.Duration) *Manager {
 	tm := &Manager{
 		TxnLockManager: concurrency.NewTxnLockManager(),
-		toClearTxns:    make(chan types.TxnId, EstimatedQPS*(minClearTxnAge/time.Second*2)),
-		minClearTxnAge: minClearTxnAge,
-		gcDone:         make(chan struct{}),
 	}
-	tm.writeTxns.Initialize(64)
-	go tm.gc()
+	tm.writeTxns.Initialize(64, true, EstimatedMaxQPS, minClearTxnAge)
 	return tm
 }
 
-func (tm *Manager) AddWrittenKey(id types.TxnId) {
-	tm.writeTxns.GetLazy(id, func() interface{} {
+func (tm *Manager) InsertWriteTransaction(id types.TxnId) {
+	if inserted, _ := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
 		return newTransaction(id)
-	}).(*transaction).addWrittenKey()
+	}); inserted {
+		tm.writeTxns.GCLater(id)
+	}
 }
 
-func (tm *Manager) RegisterWaiter(waitForTxnId types.TxnId) (*Waiter, Event, error) {
-	tm.RLock(waitForTxnId)
-	defer tm.RUnlock(waitForTxnId)
+func (tm *Manager) RegisterWaiter(waitForWriteTxnId types.TxnId, key string) (*Waiter, Event, error) {
+	tm.RLock(waitForWriteTxnId)
+	defer tm.RUnlock(waitForWriteTxnId)
 
-	waitFor := tm.getTxn(waitForTxnId)
+	waitFor := tm.getTxn(waitForWriteTxnId)
 	if waitFor == nil {
-		return nil, InvalidTxnEvent, errors.ErrTabletWriteTransactionNotFound
+		return nil, InvalidEvent, errors.Annotatef(errors.ErrTabletWriteTransactionNotFound, "key: %s", key)
 	}
-	switch waitFor.getStateUnsafe() {
-	case types.TxnStateCommitted:
-		return nil, Event(types.TxnStateCommitted), nil
-	case types.TxnStateRollbacking:
-		return nil, Event(types.TxnStateRollbacking), nil
+	switch waitFor.state {
+	case types.TxnStateCommitted, types.TxnStateRollbacking, types.TxnStateRollbacked:
+		return nil, NewEvent(key, waitFor.state), nil
 	case types.TxnStateUncommitted:
-		w, err := waitFor.appendWaiter(newWaiter())
-		return w, InvalidTxnEvent, err
+		w, err := waitFor.registerWaiterOnKey(key)
+		return w, InvalidEvent, errors.Annotatef(err, "key: %s", key)
 	default:
-		panic(fmt.Sprintf("impossible state %s", waitFor.getStateUnsafe()))
+		panic(fmt.Sprintf("impossible state %s", waitFor.state))
 	}
 }
 
-func (tm *Manager) Signal(txnId types.TxnId, event Event) {
-	tm.Lock(txnId)
-	defer tm.Unlock(txnId)
-
-	txn := tm.getTxn(txnId)
+func (tm *Manager) Signal(writeTxnId types.TxnId, event Event) {
+	tm.Lock(writeTxnId)
+	txn := tm.getTxn(writeTxnId)
 	if txn == nil {
+		tm.Unlock(writeTxnId)
 		return
 	}
-
-	switch event.GetTxnState() {
-	case types.TxnStateCommitted:
-		txn.setStateUnsafe(types.TxnStateCommitted)
-	case types.TxnStateRollbacking:
-		txn.setStateUnsafe(types.TxnStateRollbacking)
-	default:
-		panic(fmt.Sprintf("invalid event %s", event))
-	}
+	assert.Must(event.State.IsTerminated())
+	txn.state = event.State
+	tm.Unlock(writeTxnId)
 
 	txn.signal(event)
 }
 
-// DoneKeyUnsafe mark the key done by adding done key count by 1.
-// The function is unsafe because commit and rollback may duplicate,
-// but the consequence is acceptable
-func (tm *Manager) DoneKeyUnsafe(txnId types.TxnId) {
-	txn := tm.getTxn(txnId)
-	if txn == nil {
-		return
-	}
-	if txn.doneWrittenKey() {
-		// TODO remove this in product
-		assert.Must(tm.getTxnState(txn).IsTerminated())
-		assert.Must(len(txn.getWaiters()) == 0)
-
-		tm.toClearMu.RLock()
-		defer tm.toClearMu.RUnlock()
-
-		if !tm.toClearClosed {
-			tm.toClearTxns <- txnId
-		}
-	}
-}
-
 func (tm *Manager) Close() {
-	tm.toClearMu.Lock()
-	defer tm.toClearMu.Unlock()
-
-	if !tm.toClearClosed {
-		close(tm.toClearTxns)
-		<-tm.gcDone
-		tm.toClearClosed = true
-	}
-	tm.writeTxns.Clear()
+	tm.writeTxns.Close()
 }
 
 func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
@@ -246,18 +190,6 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 	return tm.getTxnState(txn)
 }
 
-func (tm *Manager) gc() {
-	defer close(tm.gcDone)
-
-	for toClearTxn := range tm.toClearTxns {
-		if age := toClearTxn.Age(); age < tm.minClearTxnAge {
-			time.Sleep(tm.minClearTxnAge - age)
-		}
-		assert.Must(toClearTxn.Age() >= tm.minClearTxnAge)
-		tm.writeTxns.Del(toClearTxn)
-	}
-}
-
 func (tm *Manager) getTxn(txnId types.TxnId) *transaction {
 	i, ok := tm.writeTxns.Get(txnId)
 	if !ok {
@@ -266,9 +198,13 @@ func (tm *Manager) getTxn(txnId types.TxnId) *transaction {
 	return i.(*transaction)
 }
 
+func (tm *Manager) removeTxn(txnId types.TxnId) {
+	tm.writeTxns.Del(txnId)
+}
+
 func (tm *Manager) getTxnState(txn *transaction) types.TxnState {
 	tm.RLock(txn.id)
 	defer tm.RUnlock(txn.id)
 
-	return txn.getStateUnsafe()
+	return txn.state
 }

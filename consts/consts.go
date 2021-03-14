@@ -59,7 +59,7 @@ const (
 )
 
 const (
-	MaxRetryTxnGet                    = 3
+	MaxRetryTxnGet                    = 2
 	MaxRetryResolveFoundedWriteIntent = 2
 )
 
@@ -72,6 +72,6 @@ func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
 }
 
 const (
-	MaxReadForWriteQueueCapacityPerKey  = 500
-	MaxWriteIntentWaitersCapacityPerTxn = 100
+	MaxReadForWriteQueueCapacityPerKey        = 500
+	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )
