@@ -49,9 +49,9 @@ func (opt KVCCReadOption) WithClearWaitNoWriteIntent() KVCCReadOption {
 	return opt
 }
 
-func (opt KVCCReadOption) CondReadForWriteFirstRead(b bool) KVCCReadOption {
+func (opt KVCCReadOption) CondReadForWriteFirstReadOfKey(b bool) KVCCReadOption {
 	if b {
-		opt.flag |= ReadOptBitMaskReadForWriteFirstRead
+		opt.flag |= ReadOptBitMaskReadForWriteFirstReadOfKey
 	}
 	return opt
 }
@@ -87,8 +87,8 @@ func (opt KVCCReadOption) IsWaitNoWriteIntent() bool {
 	return opt.flag&CommonReadOptBitMaskWaitNoWriteIntent == CommonReadOptBitMaskWaitNoWriteIntent
 }
 
-func (opt KVCCReadOption) IsReadForWriteFirstRead() bool {
-	return opt.flag&ReadOptBitMaskReadForWriteFirstRead == ReadOptBitMaskReadForWriteFirstRead
+func (opt KVCCReadOption) IsReadForWriteFirstReadOfKey() bool {
+	return opt.flag&ReadOptBitMaskReadForWriteFirstReadOfKey == ReadOptBitMaskReadForWriteFirstReadOfKey
 }
 
 func (opt KVCCReadOption) ToKVReadOption() KVReadOption {
@@ -137,9 +137,24 @@ func (opt KVCCWriteOption) WithRollbackVersion() KVCCWriteOption {
 	return opt
 }
 
+func (opt KVCCWriteOption) WithRemoveVersionCondRollback(isRollback bool) KVCCWriteOption {
+	opt.flag |= WriteOptBitMaskRemoveVersion
+	if isRollback {
+		opt.flag |= WriteOptBitMaskRemoveVersionRollback
+	}
+	return opt
+}
+
 func (opt KVCCWriteOption) CondReadForWrite(b bool) KVCCWriteOption {
 	if b {
 		opt.flag |= WriteOptBitMaskReadForWrite
+	}
+	return opt
+}
+
+func (opt KVCCWriteOption) CondWriteByDifferentTransaction(b bool) KVCCWriteOption {
+	if b {
+		opt.flag |= WriteOptBitMaskWriteByDifferentTxn
 	}
 	return opt
 }
@@ -149,9 +164,9 @@ func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
 	return opt
 }
 
-func (opt KVCCWriteOption) CondFirstWrite(b bool) KVCCWriteOption {
+func (opt KVCCWriteOption) CondFirstWriteOfKey(b bool) KVCCWriteOption {
 	if b {
-		opt.flag |= WriteOptBitMaskFirstWrite
+		opt.flag |= WriteOptBitMaskFirstWriteOfKey
 	}
 	return opt
 }
@@ -164,7 +179,7 @@ func (opt KVCCWriteOption) IsRemoveVersion() bool {
 	return IsWriteOptRemoveVersion(opt.flag)
 }
 
-func (opt KVCCWriteOption) IsRollbackVersion() bool {
+func (opt KVCCWriteOption) isRollbackVersion() bool {
 	return IsWriteOptRollbackVersion(opt.flag)
 }
 
@@ -176,8 +191,16 @@ func (opt KVCCWriteOption) IsTxnRecord() bool {
 	return opt.flag&WriteOptBitMaskTxnRecord == WriteOptBitMaskTxnRecord
 }
 
-func (opt KVCCWriteOption) IsFirstWrite() bool {
-	return opt.flag&WriteOptBitMaskFirstWrite == WriteOptBitMaskFirstWrite
+func (opt KVCCWriteOption) IsFirstWriteOfKey() bool {
+	return opt.flag&WriteOptBitMaskFirstWriteOfKey == WriteOptBitMaskFirstWriteOfKey
+}
+
+func (opt KVCCWriteOption) IsWriteByDifferentTransaction() bool {
+	return opt.flag&WriteOptBitMaskWriteByDifferentTxn == WriteOptBitMaskWriteByDifferentTxn
+}
+
+func (opt KVCCWriteOption) IsRollbackKey() bool {
+	return !opt.IsTxnRecord() && opt.isRollbackVersion()
 }
 
 func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {

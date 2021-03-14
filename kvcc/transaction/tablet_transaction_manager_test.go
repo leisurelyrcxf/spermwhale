@@ -9,6 +9,6 @@ import (
 func TestInvalidWaiters(t *testing.T) {
 	assert.Must(invalidKeyWaiters != nil)
 	assert.Must(isInvalidKeyWaiters(invalidKeyWaiters))
-	assert.Must(isInvalidKeyWaiters([]*Waiter{}))
+	assert.Must(isInvalidKeyWaiters([]*KeyEventWaiter{}))
 	assert.Must(!isInvalidKeyWaiters(nil))
 }

@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -110,6 +112,7 @@ func (t *Task) Cancel() {
 
 func (t *Task) Run() error {
 	defer func() {
+		t.err = errors.CASError(t.err, consts.ErrCodeDontUseThisBeforeTaskFinished, errors.ErrGoRoutineExited)
 		close(t.done)
 
 		if t.onFinished != nil {

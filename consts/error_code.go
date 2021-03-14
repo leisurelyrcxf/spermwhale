@@ -32,6 +32,7 @@ const (
 	ErrCodeInvalidRequest                                 = 222
 	ErrCodeSchedulerClosed                                = 333
 	ErrCodeDontUseThisBeforeTaskFinished                  = 666
+	ErrCodeGoRoutineExited                                = 667
 	ErrCodeInvalidTopoData                                = 777
 	ErrCodeCantGetOracle                                  = 888
 	ErrCodeInvalidConfig                                  = 999
