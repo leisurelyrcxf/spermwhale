@@ -14,7 +14,8 @@ const (
 const (
 	ReadOptBitMaskNotUpdateTimestampCache    = 1
 	ReadOptBitMaskNotGetMaxReadVersion       = 1 << 1
-	ReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 2
+	ReadOptBitMaskReadForWrite               = 1 << 2
+	ReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 3
 
 	commonReadOptBitOffset                      = 6
 	commonReadOptBitMask                        = uint8((0xffff << commonReadOptBitOffset) & 0xff)

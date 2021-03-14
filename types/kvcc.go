@@ -49,6 +49,13 @@ func (opt KVCCReadOption) WithClearWaitNoWriteIntent() KVCCReadOption {
 	return opt
 }
 
+func (opt KVCCReadOption) CondReadForWrite(b bool) KVCCReadOption {
+	if b {
+		opt.flag |= ReadOptBitMaskReadForWrite
+	}
+	return opt
+}
+
 func (opt KVCCReadOption) CondReadForWriteFirstReadOfKey(b bool) KVCCReadOption {
 	if b {
 		opt.flag |= ReadOptBitMaskReadForWriteFirstReadOfKey
@@ -85,6 +92,10 @@ func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
 
 func (opt KVCCReadOption) IsWaitNoWriteIntent() bool {
 	return opt.flag&CommonReadOptBitMaskWaitNoWriteIntent == CommonReadOptBitMaskWaitNoWriteIntent
+}
+
+func (opt KVCCReadOption) IsReadForWrite() bool {
+	return opt.flag&ReadOptBitMaskReadForWrite == ReadOptBitMaskReadForWrite
 }
 
 func (opt KVCCReadOption) IsReadForWriteFirstReadOfKey() bool {

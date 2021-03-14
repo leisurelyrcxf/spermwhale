@@ -24,7 +24,7 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 4))
 
-	for _, threshold := range []int{10} {
+	for _, threshold := range []int{1000} {
 		for i := 0; i < rounds; i++ {
 			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
@@ -74,28 +74,28 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				readValue, writeValue types.Value
 				readOpt               = types.NewTxnReadOption()
 			)
-			readOpt = readOpt.WithWaitNoWriteIntent()
-			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
+			//readOpt = readOpt.WithWaitNoWriteIntent()
+			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
 				}
-				if _, err := txn.Get(ctx, "k2", readOpt); err != nil {
-					return err, true
-				}
-				readValue = val
+				//if _, err := txn.Get(ctx, "k2", readOpt); err != nil {
+				//	return err, true
+				//}
 				v1, err := val.Int()
 				if !assert.NoError(err) {
 					return err, false
 				}
+				readValue = val
 				v1 += delta
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
-				if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
-					return err, true
-				}
-				if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
-					return err, true
-				}
+				//if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
+				//	return err, true
+				//}
+				//if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
+				//	return err, true
+				//}
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{

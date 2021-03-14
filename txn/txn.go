@@ -182,8 +182,8 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 			return types.EmptyValue, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
 		}
 	}
-	var readOpt = types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt).
-		CondReadForWriteFirstReadOfKey(txn.Type.IsReadForWrite() && !utils.Contains(txn.readForWriteReadKeys, key))
+	var readOpt = types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt).CondReadForWrite(txn.Type.IsReadForWrite()).
+		CondReadForWriteFirstReadOfKey(!utils.Contains(txn.readForWriteReadKeys, key))
 	if txn.Type.IsReadForWrite() {
 		if txn.readForWriteReadKeys == nil {
 			txn.readForWriteReadKeys = make(map[string]struct{})

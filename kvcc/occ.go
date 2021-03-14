@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
-
-	"github.com/leisurelyrcxf/spermwhale/event/readforwrite"
-
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -57,8 +54,6 @@ type KVCC struct {
 	txnManager *transaction.Manager
 	lm         *concurrency.LockManager
 	tsCache    *TimestampCache
-
-	readForWriteManager *readforwrite.Manager
 }
 
 func NewKVCC(db types.KV, cfg types.TabletTxnConfig) *KVCC {
@@ -78,12 +73,11 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	}
 
 	return &KVCC{
-		TabletTxnConfig:     cfg,
-		db:                  db,
-		txnManager:          transaction.NewManager(),
-		lm:                  concurrency.NewLockManager(),
-		tsCache:             NewTimestampCache(),
-		readForWriteManager: readforwrite.NewManager(),
+		TabletTxnConfig: cfg,
+		db:              db,
+		txnManager:      transaction.NewManager(),
+		lm:              concurrency.NewLockManager(),
+		tsCache:         NewTimestampCache(),
 	}
 }
 
@@ -94,14 +88,21 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return val.WithMaxReadVersion(0), err
 	}
 
-	const readForWriteWaitTimeout = consts.DefaultReadTimeout * 3
-	if opt.IsReadForWriteFirstReadOfKey() {
-		w, err := kv.readForWriteManager.AppendReader(key, opt.ReaderVersion)
-		if err != nil {
-			return types.EmptyValueCC, err
+	const readForWriteWaitTimeout = consts.DefaultReadTimeout / 3
+	if opt.IsReadForWrite() {
+		if opt.ReaderVersion < kv.tsCache.GetMaxReadVersion(key) {
+			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReadVersion(key)")
 		}
-		if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
-			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
+		if opt.IsReadForWriteFirstReadOfKey() {
+			w, err := kv.txnManager.PushReadForWriteReaderOnKey(key, types.TxnId(opt.ReaderVersion))
+			if err != nil {
+				return types.EmptyValueCC, err
+			}
+			if w != nil {
+				if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
+					return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
+				}
+			}
 		}
 	}
 	for i := 0; ; i++ {
@@ -184,7 +185,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if !val.HasWriteIntent() {
 		// Don't care the result of kv.db.Set(), TODO needs test against kv.db.Set() failed.
 		if opt.IsClearWriteIntent() {
-			kv.txnManager.Signal(txnId, transaction.NewKeyEvent(key, transaction.KeyEventTypeClearWriteIntent), false)
+			kv.txnManager.SignalKeyEvent(txnId, transaction.NewKeyEvent(key, transaction.KeyEventTypeClearWriteIntent), false)
 		}
 		// TODO kv.writeIntentManager.GC(key, val.Version)
 		err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
@@ -200,13 +201,13 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 				//vv, _ := kv.db.Get(ctx, key, types.NewKVReadOption(val.Version+1))
 				//assert.Must(vv.Version < val.Version)
 			}
-			kv.txnManager.Signal(txnId, transaction.NewKeyEvent(key, keyEventType), checkDone)
+			kv.txnManager.SignalKeyEvent(txnId, transaction.NewKeyEvent(key, keyEventType), checkDone)
 		}
 		if opt.IsReadForWrite() {
 			if opt.IsClearWriteIntent() {
-				kv.readForWriteManager.Signal(key, val.Version)
+				kv.txnManager.NotifyReadForWriteKeyDone(key, val.Version)
 			} else if opt.IsRemoveVersion() {
-				kv.readForWriteManager.Signal(key, val.Version)
+				kv.txnManager.NotifyReadForWriteKeyDone(key, val.Version)
 			}
 		}
 		return err
@@ -241,6 +242,5 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 func (kv *KVCC) Close() error {
 	kv.tsCache.m.Clear()
 	kv.txnManager.Close()
-	kv.readForWriteManager.Close()
 	return kv.db.Close()
 }

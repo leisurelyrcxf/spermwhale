@@ -20,13 +20,15 @@ const (
 )
 
 type Manager struct {
-	writeTxns concurrency.ConcurrentTxnMap
-	timer     scheduler.ConcurrentBasicTimer
+	writeTxns          concurrency.ConcurrentTxnMap
+	readForWriteQueues readForWriteQueues
+	timer              scheduler.ConcurrentBasicTimer
 }
 
 func NewManager() *Manager {
 	tm := &Manager{}
 	tm.writeTxns.Initialize(64)
+	tm.readForWriteQueues.Initialize(64)
 	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(TimerPartitionChSize, 100))
 	tm.timer.Start()
 	return tm
@@ -38,6 +40,13 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 		return types.TxnStateInvalid
 	}
 	return txn.GetState()
+}
+
+func (tm *Manager) PushReadForWriteReaderOnKey(key string, id types.TxnId) (*readForWriteCond, error) {
+	_, txn := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
+		return newTransaction(id)
+	})
+	return tm.readForWriteQueues.pushReaderOnKey(key, txn.(*transaction))
 }
 
 func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
@@ -55,14 +64,18 @@ func (tm *Manager) RegisterKeyEventWaiter(waitForWriteTxnId types.TxnId, key str
 	return waitFor.registerKeyEventWaiter(key)
 }
 
-func (tm *Manager) Signal(writeTxnId types.TxnId, event KeyEvent, checkDone bool) {
+func (tm *Manager) SignalKeyEvent(writeTxnId types.TxnId, event KeyEvent, checkDone bool) {
 	txn := tm.getTxn(writeTxnId)
 	if txn == nil {
 		return
 	}
-	if txn.signal(event, checkDone) {
+	if txn.signalKeyEvent(event, checkDone) {
 		tm.removeTxn(txn)
 	}
+}
+
+func (tm *Manager) NotifyReadForWriteKeyDone(key string, writeVersion uint64) {
+	tm.readForWriteQueues.notifyKeyDone(key, writeVersion)
 }
 
 func (tm *Manager) DoneKey(txnId types.TxnId, key string) {
@@ -101,4 +114,6 @@ func (tm *Manager) removeTxn(txn *transaction) {
 
 func (tm *Manager) Close() {
 	tm.writeTxns.Close()
+	tm.readForWriteQueues.Close()
+	tm.timer.Close()
 }
