@@ -97,6 +97,10 @@ var (
 		Code: consts.ErrCodeDontUseThisBeforeTaskFinished,
 		Msg:  "don't use this before task finish",
 	}
+	ErrGoRoutineExited = &Error{
+		Code: consts.ErrCodeGoRoutineExited,
+		Msg:  "go routine exited",
+	}
 	ErrCantRemoveCommittedValue = &Error{
 		Code: consts.ErrCodeCantRemoveCommittedValue,
 		Msg:  "can't remove committed value",

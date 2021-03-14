@@ -137,17 +137,20 @@ type ConcurrentTxnMap struct {
 	gcDone   sync.WaitGroup
 }
 
-func (cmp *ConcurrentTxnMap) Initialize(partitionNum int, startGCThreads bool, estimatedMaxQPS int, minClearTxnAge time.Duration) {
+func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
 	cmp.partitions = make([]*concurrentTxnMapPartition, partitionNum)
 	for i := range cmp.partitions {
 		cmp.partitions[i] = &concurrentTxnMapPartition{m: make(map[types.TxnId]interface{})}
 	}
-	if startGCThreads {
-		cmp.gcClosed = make(chan struct{})
-		cmp.gcDone.Add(len(cmp.partitions))
-		for _, p := range cmp.partitions {
-			p.startGCThread(estimatedMaxQPS*(int(minClearTxnAge/time.Second)+2)/partitionNum, cmp.gcClosed, &cmp.gcDone, minClearTxnAge)
-		}
+}
+
+func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, estimatedMaxQPS int, minClearTxnAge time.Duration) {
+	cmp.Initialize(partitionNum)
+
+	cmp.gcClosed = make(chan struct{})
+	cmp.gcDone.Add(len(cmp.partitions))
+	for _, p := range cmp.partitions {
+		p.startGCThread(estimatedMaxQPS*(int(minClearTxnAge/time.Second)+2)/partitionNum, cmp.gcClosed, &cmp.gcDone, minClearTxnAge)
 	}
 }
 

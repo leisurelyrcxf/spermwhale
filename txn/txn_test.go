@@ -89,11 +89,11 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 					return err, false
 				}
 				v1 += delta
-				if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
-					return err, true
-				}
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
 				if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
+					return err, true
+				}
+				if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
 					return err, true
 				}
 				return txn.Set(ctx, "k1", writeValue.V), true

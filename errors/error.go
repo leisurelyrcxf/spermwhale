@@ -169,6 +169,10 @@ func SetErrorCode(e error, code int) {
 	panic("impossible")
 }
 
+func NotError(e error, code int) bool {
+	return GetErrorCode(e) != code
+}
+
 func CASErrorCode(e error, oldCode, newCode int) {
 	assert.Must(oldCode != consts.ErrCodeUnknown)
 

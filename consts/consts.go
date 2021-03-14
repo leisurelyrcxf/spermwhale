@@ -12,9 +12,9 @@ const (
 )
 
 const (
-	ReadOptBitMaskNotUpdateTimestampCache = 1
-	ReadOptBitMaskNotGetMaxReadVersion    = 1 << 1
-	ReadOptBitMaskReadForWriteFirstRead   = 1 << 2
+	ReadOptBitMaskNotUpdateTimestampCache    = 1
+	ReadOptBitMaskNotGetMaxReadVersion       = 1 << 1
+	ReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 2
 
 	commonReadOptBitOffset                      = 6
 	commonReadOptBitMask                        = uint8((0xffff << commonReadOptBitOffset) & 0xff)
@@ -26,7 +26,8 @@ const (
 	WriteOptBitMaskRemoveVersionRollback = 1 << 2
 	WriteOptBitMaskReadForWrite          = 1 << 3
 	WriteOptBitMaskTxnRecord             = 1 << 4
-	WriteOptBitMaskFirstWrite            = 1 << 5
+	WriteOptBitMaskFirstWriteOfKey       = 1 << 5
+	WriteOptBitMaskWriteByDifferentTxn   = 1 << 6
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )
