@@ -205,9 +205,9 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		}
 		if opt.IsReadForWrite() {
 			if opt.IsClearWriteIntent() {
-				kv.txnManager.NotifyReadForWriteKeyDone(key, val.Version)
+				kv.txnManager.NotifyReadForWriteKeyDone(key, txnId)
 			} else if opt.IsRemoveVersion() {
-				kv.txnManager.NotifyReadForWriteKeyDone(key, val.Version)
+				kv.txnManager.NotifyReadForWriteKeyDone(key, txnId)
 			}
 		}
 		return err

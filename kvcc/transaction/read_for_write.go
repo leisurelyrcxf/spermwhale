@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -117,13 +119,13 @@ func (pq *priorityQueue) pushReader(reader *transaction) (*readForWriteCond, err
 	return cond, nil
 }
 
-func (pq *priorityQueue) notifyKeyDone(writerVersion uint64) {
+func (pq *priorityQueue) notifyKeyDone(readForWriteTxnId types.TxnId) {
 	pq.RLock()
 	if len(pq.pendingReaders) == 0 {
 		pq.RUnlock()
 		return
 	}
-	if writerVersion != pq.pendingReaders[0].id.Version() {
+	if readForWriteTxnId != pq.pendingReaders[0].id {
 		pq.RUnlock()
 		return
 	}
@@ -135,7 +137,7 @@ func (pq *priorityQueue) notifyKeyDone(writerVersion uint64) {
 	if len(pq.pendingReaders) == 0 {
 		return
 	}
-	if writerVersion != pq.pendingReaders[0].id.Version() {
+	if readForWriteTxnId != pq.pendingReaders[0].id {
 		return
 	}
 	heap.Pop(pq)
@@ -163,12 +165,12 @@ func (wm *readForWriteQueues) pushReaderOnKey(key string, reader *transaction) (
 	}).(*priorityQueue).pushReader(reader)
 }
 
-func (wm *readForWriteQueues) notifyKeyDone(key string, writeVersion uint64) {
+func (wm *readForWriteQueues) notifyKeyDone(key string, readForWriteTxnId types.TxnId) {
 	pq, ok := wm.m.Get(key)
 	if !ok {
 		return
 	}
-	pq.(*priorityQueue).notifyKeyDone(writeVersion)
+	pq.(*priorityQueue).notifyKeyDone(readForWriteTxnId)
 }
 
 func (wm *readForWriteQueues) Close() {

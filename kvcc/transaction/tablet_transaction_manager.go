@@ -74,8 +74,8 @@ func (tm *Manager) SignalKeyEvent(writeTxnId types.TxnId, event KeyEvent, checkD
 	}
 }
 
-func (tm *Manager) NotifyReadForWriteKeyDone(key string, writeVersion uint64) {
-	tm.readForWriteQueues.notifyKeyDone(key, writeVersion)
+func (tm *Manager) NotifyReadForWriteKeyDone(key string, readForWriteTxnId types.TxnId) {
+	tm.readForWriteQueues.notifyKeyDone(key, readForWriteTxnId)
 }
 
 func (tm *Manager) DoneKey(txnId types.TxnId, key string) {
