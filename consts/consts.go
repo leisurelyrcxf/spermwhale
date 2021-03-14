@@ -22,13 +22,14 @@ const (
 	CommonReadOptBitMaskWaitNoWriteIntent       = 1 << commonReadOptBitOffset
 	RevertCommonReadOptBitMaskWaitNoWriteIntent = ^CommonReadOptBitMaskWaitNoWriteIntent & 0xff
 
-	WriteOptBitMaskClearWriteIntent      = 1
-	WriteOptBitMaskRemoveVersion         = 1 << 1
-	WriteOptBitMaskRemoveVersionRollback = 1 << 2
-	WriteOptBitMaskReadForWrite          = 1 << 3
-	WriteOptBitMaskTxnRecord             = 1 << 4
-	WriteOptBitMaskFirstWriteOfKey       = 1 << 5
-	WriteOptBitMaskWriteByDifferentTxn   = 1 << 6
+	WriteOptBitMaskClearWriteIntent                   = 1
+	WriteOptBitMaskRemoveVersion                      = 1 << 1
+	WriteOptBitMaskRemoveVersionRollback              = 1 << 2
+	WriteOptBitMaskReadForWrite                       = 1 << 3
+	WriteOptBitMaskReadForWriteRollbackOrClearReadKey = 1 << 4
+	WriteOptBitMaskTxnRecord                          = 1 << 5
+	WriteOptBitMaskFirstWriteOfKey                    = 1 << 6
+	WriteOptBitMaskWriteByDifferentTxn                = 1 << 7
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )

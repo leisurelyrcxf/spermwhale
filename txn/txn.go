@@ -524,15 +524,16 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		}
 	}()
 
-	for key := range toClearKeys {
-		key := key
+	for key, isWrittenKey := range toClearKeys {
+		key, isWrittenKey := key, isWrittenKey
 		child := types.NewTreeTaskNoResult(
 			txn.Key()+key, "rollback-key", defaultClearTimeout,
 			root, func(ctx context.Context, _ []interface{}) error {
 				_ = reason
 				if removeErr := txn.kv.Set(ctx, key,
 					types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-					types.NewKVCCWriteOption().WithRollbackVersion().CondReadForWrite(txn.Type.IsReadForWrite()).
+					types.NewKVCCWriteOption().WithRollbackVersion().
+						CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
 						CondWriteByDifferentTransaction(callerTxn != txn.ID)); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 					glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 					return removeErr
@@ -540,7 +541,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 				return nil
 			},
 		)
-		if txn.hasWritten(key) {
+		if isWrittenKey {
 			writtenKeyChildren = append(writtenKeyChildren, child)
 		}
 	}
@@ -596,14 +597,15 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 		},
 	)
 
-	for key := range txn.getClearKeys() {
-		key := key
+	for key, isWrittenKey := range txn.getClearKeys() {
+		key, isWrittenKey := key, isWrittenKey
 		_ = types.NewTreeTaskNoResult(
 			txn.Key()+key, "clear-key", defaultClearTimeout,
 			root, func(ctx context.Context, _ []interface{}) error {
 				if clearErr := txn.kv.Set(ctx, key,
 					types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-					types.NewKVCCWriteOption().WithClearWriteIntent().CondReadForWrite(txn.Type.IsReadForWrite()).
+					types.NewKVCCWriteOption().WithClearWriteIntent().
+						CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
 						CondWriteByDifferentTransaction(callerTxn != txn.ID)); clearErr != nil {
 					if errors.IsNotExistsErr(clearErr) {
 						glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, clearErr)
@@ -620,15 +622,15 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	_ = txn.s.ScheduleClearJobTree(root)
 }
 
-func (txn *Txn) getClearKeys() map[string]struct{} {
-	m := make(map[string]struct{})
-	for _, writtenKey := range txn.WrittenKeys {
-		m[writtenKey] = struct{}{}
-	}
+func (txn *Txn) getClearKeys() map[string]bool /* map[key]isWritten */ {
+	m := make(map[string]bool)
 	if txn.Type.IsReadForWrite() {
 		for readKey := range txn.readForWriteReadKeys {
-			m[readKey] = struct{}{}
+			m[readKey] = false
 		}
+	}
+	for _, writtenKey := range txn.WrittenKeys {
+		m[writtenKey] = true
 	}
 	return m
 }

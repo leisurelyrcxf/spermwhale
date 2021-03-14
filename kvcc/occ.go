@@ -188,7 +188,10 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 			kv.txnManager.SignalKeyEvent(txnId, transaction.NewKeyEvent(key, transaction.KeyEventTypeClearWriteIntent), false)
 		}
 		// TODO kv.writeIntentManager.GC(key, val.Version)
-		err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+		var err error
+		if !opt.IsReadForWriteRollbackOrClearReadKey() {
+			err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+		}
 		checkDone := err == nil && !opt.IsWriteByDifferentTransaction()
 		if opt.IsClearWriteIntent() {
 			if checkDone {
