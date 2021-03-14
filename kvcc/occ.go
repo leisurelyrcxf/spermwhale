@@ -88,7 +88,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return val.WithMaxReadVersion(0), err
 	}
 
-	const readForWriteWaitTimeout = consts.DefaultReadTimeout / 3
+	const readForWriteWaitTimeout = consts.DefaultReadTimeout / 10
 	if opt.IsReadForWrite() {
 		if opt.ReaderVersion < kv.tsCache.GetMaxReadVersion(key) {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReadVersion(key)")

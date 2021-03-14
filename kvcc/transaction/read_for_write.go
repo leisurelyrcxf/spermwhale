@@ -22,7 +22,8 @@ import (
 //)
 
 type readForWriteCond struct {
-	waitress chan struct{}
+	waitress  chan struct{}
+	timeouted concurrency.AtomicBool
 }
 
 func newReadForWriteCond() *readForWriteCond {
@@ -35,6 +36,7 @@ func (t *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) erro
 
 	select {
 	case <-waitCtx.Done():
+		t.timeouted.Set(true)
 		return waitCtx.Err()
 	case <-t.waitress:
 		return nil
@@ -61,7 +63,7 @@ func (conds readForWriteConds) mustGet(key string) *readForWriteCond {
 }
 
 type priorityQueue struct {
-	sync.Mutex
+	sync.RWMutex
 
 	key            string
 	pendingReaders []*transaction
@@ -90,20 +92,15 @@ func (pq *priorityQueue) Pop() interface{} {
 	return last
 }
 
-func (pq *priorityQueue) minReader() *transaction {
-	if len(pq.pendingReaders) == 0 {
-		return nil
-	}
-	return pq.pendingReaders[0]
-}
-
 func (pq *priorityQueue) pushReader(reader *transaction) (*readForWriteCond, error) {
 	pq.Lock()
 	defer pq.Unlock()
 
-	if minReader := pq.minReader(); minReader != nil && reader.id.Version() <= minReader.id.Version() {
-		assert.Must(reader.id.Version() < minReader.id.Version())
-		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "priorityQueue::pushReaderOnKey: readerVersion <= minReader.version")
+	if len(pq.pendingReaders) > 0 {
+		if minReader := pq.pendingReaders[0]; reader.id.Version() <= minReader.id.Version() {
+			assert.Must(reader.id.Version() < minReader.id.Version())
+			return nil, errors.Annotatef(errors.ErrWriteReadConflict, "priorityQueue::pushReaderOnKey: readerVersion <= minReader.version")
+		}
 	}
 
 	if pq.Len()+1 > consts.MaxReadForWriteQueueCapacityPerKey {
@@ -114,25 +111,41 @@ func (pq *priorityQueue) pushReader(reader *transaction) (*readForWriteCond, err
 	reader.readForWriteConds.add(pq.key, cond)
 	heap.Push(pq, reader)
 	if pq.Len() == 1 {
+		cond.notify()
 		return nil, nil
 	}
 	return cond, nil
 }
 
 func (pq *priorityQueue) notifyKeyDone(writerVersion uint64) {
+	pq.RLock()
+	if len(pq.pendingReaders) == 0 {
+		pq.RUnlock()
+		return
+	}
+	if writerVersion != pq.pendingReaders[0].id.Version() {
+		pq.RUnlock()
+		return
+	}
+	pq.RUnlock()
+
 	pq.Lock()
 	defer pq.Unlock()
 
-	minReader := pq.minReader()
-	if minReader == nil {
+	if len(pq.pendingReaders) == 0 {
 		return
 	}
-	if writerVersion != minReader.id.Version() {
+	if writerVersion != pq.pendingReaders[0].id.Version() {
 		return
 	}
 	heap.Pop(pq)
-	if newMinReader := pq.minReader(); newMinReader != nil {
-		newMinReader.readForWriteConds.mustGet(pq.key).notify()
+	for len(pq.pendingReaders) > 0 {
+		cond := pq.pendingReaders[0].readForWriteConds.mustGet(pq.key)
+		cond.notify()
+		if !cond.timeouted.Get() {
+			break
+		}
+		heap.Pop(pq)
 	}
 }
 
@@ -156,9 +169,6 @@ func (wm *readForWriteQueues) notifyKeyDone(key string, writeVersion uint64) {
 		return
 	}
 	pq.(*priorityQueue).notifyKeyDone(writeVersion)
-	//wm.m.GetLazy(key, func() interface{} {
-	//	return newPriorityQueue()
-	//}).(*priorityQueue).notifyKeyDone(writeVersion)
 }
 
 func (wm *readForWriteQueues) Close() {
