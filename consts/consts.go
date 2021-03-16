@@ -75,6 +75,6 @@ func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
 }
 
 const (
-	MaxReadForWriteQueueCapacityPerKey        = 500
+	MaxReadForWriteQueueCapacityPerKey        = 200
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )

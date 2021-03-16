@@ -111,7 +111,6 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 	rand.Shuffle(len(txnIds), func(i, j int) {
 		txnIds[i], txnIds[j] = txnIds[j], txnIds[i]
 	})
-	t.Logf("txn ids: %v", txnIds)
 
 	var (
 		executedTxns = make(chan types.TxnId, 10)

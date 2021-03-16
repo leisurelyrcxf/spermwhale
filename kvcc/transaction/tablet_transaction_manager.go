@@ -43,10 +43,7 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 }
 
 func (tm *Manager) PushReadForWriteReaderOnKey(key string, id types.TxnId) (*readForWriteCond, error) {
-	_, txn := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-		return newTransaction(id)
-	})
-	return tm.readForWriteQueues.pushReaderOnKey(key, txn.(*transaction))
+	return tm.readForWriteQueues.pushReaderOnKey(key, id)
 }
 
 func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {

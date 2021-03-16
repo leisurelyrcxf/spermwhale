@@ -6,6 +6,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -35,6 +36,39 @@ func (i TxnId) Version() uint64 {
 
 func (i TxnId) Age() time.Duration {
 	return time.Duration(utils.GetLocalTimestamp() - i.Version())
+}
+
+func (i TxnId) Max(another TxnId) TxnId {
+	if i > another {
+		return i
+	}
+	return another
+}
+
+// AtomicTxnId is a wrapper with a simpler interface around atomic.(Add|Store|Load|CompareAndSwap)TxnId functions.
+type AtomicTxnId struct {
+	uint64
+}
+
+// NewAtomicTxnId initializes a new AtomicTxnId with a given value.
+func NewAtomicTxnId(n uint64) AtomicTxnId {
+	return AtomicTxnId{n}
+}
+
+// Set atomically sets n as new value.
+func (i *AtomicTxnId) Set(id TxnId) {
+	atomic.StoreUint64(&i.uint64, uint64(id))
+}
+
+// Get atomically returns the current value.
+func (i *AtomicTxnId) Get() TxnId {
+	return TxnId(atomic.LoadUint64(&i.uint64))
+}
+
+func (i *AtomicTxnId) SetIfBiggerUnsafe(id TxnId) {
+	if id > i.Get() {
+		i.Set(id)
+	}
 }
 
 type TxnManager interface {

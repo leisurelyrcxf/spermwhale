@@ -53,7 +53,7 @@ type KeyEventWaiter struct {
 	waitress chan KeyEvent
 }
 
-func newkeyEventWaiter(key string) *KeyEventWaiter {
+func newKeyEventWaiter(key string) *KeyEventWaiter {
 	return &KeyEventWaiter{
 		key:      key,
 		waitress: make(chan KeyEvent, 1),

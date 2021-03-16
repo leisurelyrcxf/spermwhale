@@ -18,8 +18,6 @@ type transaction struct {
 	id    types.TxnId
 	state types.TxnState
 
-	readForWriteConds readForWriteConds
-
 	writtenKeyCount concurrency.AtomicUint64
 	doneKeys        concurrency.ConcurrentSet
 	rollbackedKeys  map[string]struct{}
@@ -83,7 +81,7 @@ func (t *transaction) registerKeyEventWaiter(key string) (*KeyEventWaiter, KeyEv
 		if len(oldWaiters)+1 > consts.MaxWriteIntentWaitersCapacityPerTxnPerKey {
 			return nil, InvalidKeyEvent, errors.Annotatef(errors.ErrWriteIntentQueueFull, "key: %s", key)
 		}
-		w := newkeyEventWaiter(key)
+		w := newKeyEventWaiter(key)
 		t.keyEventWaiters[key] = append(t.keyEventWaiters[key], w)
 		return w, InvalidKeyEvent, nil
 	default:
