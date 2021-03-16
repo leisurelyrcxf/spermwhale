@@ -3,6 +3,8 @@ package transaction
 import (
 	"container/heap"
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,33 +15,42 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type readForWriteCond struct {
-	waitress  chan struct{}
-	timeouted concurrency.AtomicBool
+	waitress   chan struct{}
+	timeouted  concurrency.AtomicBool
+	notifyTime int64
 }
 
-func (t *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
+func (cond *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
+	if cond.notifyTime > 0 {
+		return nil
+	}
+
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	select {
 	case <-waitCtx.Done():
-		t.timeouted.Set(true)
+		cond.timeouted.Set(true)
 		return waitCtx.Err()
-	case <-t.waitress:
+	case <-cond.waitress:
 		return nil
 	}
 }
 
-func (t *readForWriteCond) notify() {
-	close(t.waitress)
+func (cond *readForWriteCond) notify() {
+	cond.notifyTime = time.Now().UnixNano()
+	close(cond.waitress)
 }
 
 type reader struct {
 	id types.TxnId
 	readForWriteCond
+
+	addTime uint64
 }
 
 func newReader(id types.TxnId) *reader {
@@ -48,13 +59,13 @@ func newReader(id types.TxnId) *reader {
 		readForWriteCond: readForWriteCond{
 			waitress: make(chan struct{}),
 		},
+		addTime: uint64(time.Now().UnixNano()),
 	}
 }
 
 type readers []*reader
 
-// Heap Interface
-//
+// Sort Interface
 func (rs readers) Len() int {
 	return len(rs)
 }
@@ -64,6 +75,8 @@ func (rs readers) Swap(i, j int) {
 func (rs readers) Less(i, j int) bool {
 	return rs[i].id < rs[j].id
 }
+
+// Heap interface
 func (rs *readers) Push(x interface{}) {
 	*rs = append(*rs, x.(*reader))
 }
@@ -74,6 +87,7 @@ func (rs *readers) Pop() interface{} {
 	return item
 }
 
+// Customized functions
 func (rs readers) SecondMin() *reader {
 	switch len(rs) {
 	case 0, 1:
@@ -87,17 +101,29 @@ func (rs readers) SecondMin() *reader {
 		return rs[2]
 	}
 }
+func (rs readers) PrintString() string {
+	strs := make([]string, len(rs))
+	for i := range rs {
+		strs[i] = fmt.Sprintf("%d", rs[i].id)
+	}
+	return strings.Join(strs, ",")
+}
 
 type readForWriteQueue struct {
 	sync.RWMutex
 
-	key            string
+	key          string
+	maxQueuedAge time.Duration
+
 	pendingReaders readers
 	maxMinReader   types.AtomicTxnId
 }
 
-func newReadForWriteQueue(key string) *readForWriteQueue {
-	return &readForWriteQueue{key: key}
+func newReadForWriteQueue(key string, maxQueuedAge time.Duration) *readForWriteQueue {
+	return &readForWriteQueue{
+		key:          key,
+		maxQueuedAge: maxQueuedAge,
+	}
 }
 
 func (pq *readForWriteQueue) pushReader(readerTxnId types.TxnId) (*readForWriteCond, error) {
@@ -119,20 +145,20 @@ func (pq *readForWriteQueue) pushReader(readerTxnId types.TxnId) (*readForWriteC
 		return nil, errors.ErrReadForWriteQueueFull
 	}
 
-	if len(pq.pendingReaders) >= 2 {
-		if quasiSecondMinReader := pq.pendingReaders[1]; quasiSecondMinReader.timeouted.Get() {
+	if len(pq.pendingReaders) > 0 {
+		if err := utils.CheckOldMan(pq.pendingReaders[0].addTime, pq.maxQueuedAge); err != nil {
 			pq.pendingReaders = nil
-			glog.V(8).Infof("quasi-second-min reader %d timeouted, cleared heap", quasiSecondMinReader.id)
+			glog.V(1).Infof("min reader too stale (%v), cleared heap", err)
 		}
 	}
+
 	reader := newReader(readerTxnId)
 	heap.Push(&pq.pendingReaders, reader)
 	if pq.pendingReaders.Len() == 1 {
-		//reader.notify()
+		reader.notify()
 		if reader.id > maxMinReaderId {
 			pq.maxMinReader.Set(reader.id)
 		}
-		return nil, nil
 	}
 	return &reader.readForWriteCond, nil
 }

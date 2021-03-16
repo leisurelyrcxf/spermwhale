@@ -75,7 +75,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	return &KVCC{
 		TabletTxnConfig: cfg,
 		db:              db,
-		txnManager:      transaction.NewManager(),
+		txnManager:      transaction.NewManager(utils.MaxDuration(5*time.Second, cfg.StaleWriteThreshold)),
 		lm:              concurrency.NewLockManager(),
 		tsCache:         NewTimestampCache(),
 	}
@@ -98,10 +98,8 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if err != nil {
 				return types.EmptyValueCC, err
 			}
-			if w != nil {
-				if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
-					return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
-				}
+			if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
+				return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -23,15 +24,15 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	const (
-		key1    = "k1"
-		key2    = "k2"
-		timeout = time.Second * 10
-		txnNum  = 5
+		key1         = "k1"
+		timeout      = time.Second * 10
+		taskDuration = time.Second
+		txnNum       = 5
 	)
 
 	ctx := context.Background()
 
-	tm := NewManager()
+	tm := NewManager(time.Minute)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -45,7 +46,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 	t.Logf("txn ids: %v", txnIds)
 
 	var (
-		executedTxns = make(chan types.TxnId, 10)
+		executedTxns = make(readers, txnNum)
 		wg           sync.WaitGroup
 	)
 	for i := 0; i < txnNum; i++ {
@@ -63,33 +64,37 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 				if !assert.NoError(err) {
 					return
 				}
-				if cond != nil {
-					if err := cond.Wait(ctx, timeout); !assert.NoError(err) {
-						return
-					}
+				if err := cond.Wait(ctx, timeout); !assert.NoError(err) {
+					return
 				}
-				time.Sleep(time.Second)
+				time.Sleep(taskDuration)
 				tm.NotifyReadForWriteKeyDone(key1, txnId)
-				executedTxns <- txnId
+				executedTxns[i] = &reader{
+					id:               txnId,
+					readForWriteCond: *cond,
+				}
 				break
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(executedTxns)
 
-	executedTxnArray := make([]types.TxnId, 0, txnNum)
-	for txn := range executedTxns {
-		executedTxnArray = append(executedTxnArray, txn)
+	sort.Sort(executedTxns)
+	for i := 1; i < len(executedTxns); i++ {
+		prev, cur := executedTxns[i-1], executedTxns[i]
+		if !assert.Less(prev.notifyTime, cur.notifyTime) {
+			t.Errorf("executed order violated: %v", executedTxns.PrintString())
+			return
+		}
 	}
-	t.Logf("executed order: %v", executedTxnArray)
+	t.Logf("executed order: %v", executedTxns.PrintString())
 }
 
 func TestPriorityQueue_Timeouted(t *testing.T) {
 	//_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
 	testifyassert.NoError(t, utils.MkdirIfNotExists(defaultLogDir))
-	_ = flag.Set("v", fmt.Sprintf("%d", 11))
+	_ = flag.Set("v", fmt.Sprintf("%d", 110))
 	_ = flag.Set("log_dir", defaultLogDir)
 
 	assert := types.NewAssertion(t)
@@ -106,7 +111,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager()
+	tm := NewManager(time.Second)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -119,7 +124,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 	})
 
 	var (
-		executedTxns = make(chan types.TxnId, 10)
+		executedTxns = make(readers, txnNum)
 		wg           sync.WaitGroup
 	)
 	for i := 0; i < txnNum; i++ {
@@ -138,46 +143,34 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 				if !assert.NoError(err) {
 					return
 				}
-				if cond != nil {
-					if err := cond.Wait(ctx, taskDuration); err != nil {
-						//t.Logf("txn %d wait timeouted, retrying...", txnId)
-						tm.NotifyReadForWriteKeyDone(key1, txnId)
-						//time.Sleep(time.Millisecond)
-						continue
-					}
+				if err := cond.Wait(ctx, taskDuration); err != nil {
+					//t.Logf("txn %d wait timeouted, retrying...", txnId)
+					tm.NotifyReadForWriteKeyDone(key1, txnId)
+					//time.Sleep(time.Millisecond)
+					continue
 				}
 				time.Sleep(taskDuration)
-				executedTxns <- txnId
 				tm.NotifyReadForWriteKeyDone(key1, txnId)
+				executedTxns[i] = &reader{
+					id:               txnId,
+					readForWriteCond: *cond,
+				}
 				break
 			}
 		}(i)
 	}
 
-	go func() {
-		wg.Wait()
-		close(executedTxns)
-	}()
+	wg.Wait()
 
-	executedTxnArray := make([]types.TxnId, 0, txnNum)
-	collectorDone := make(chan struct{})
-	go func() {
-		defer close(collectorDone)
-
-		for txn := range executedTxns {
-			executedTxnArray = append(executedTxnArray, txn)
-		}
-	}()
-	<-collectorDone
-
-	for i := 1; i < len(executedTxnArray); i++ {
-		prev, cur := executedTxnArray[i-1], executedTxnArray[i]
-		if !assert.Less(prev.Version(), cur.Version()) {
-			t.Errorf("executed order violated: %v", executedTxnArray)
+	sort.Sort(executedTxns)
+	for i := 1; i < len(executedTxns); i++ {
+		prev, cur := executedTxns[i-1], executedTxns[i]
+		if !assert.Less(prev.notifyTime, cur.notifyTime) {
+			t.Errorf("executed order violated: %v", executedTxns.PrintString())
 			return
 		}
 	}
-	t.Logf("executed order: %v", executedTxnArray)
+	t.Logf("executed order: %v", executedTxns.PrintString())
 }
 
 func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
@@ -187,15 +180,15 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	const (
-		key1    = "k1"
-		key2    = "k2"
-		timeout = time.Second * 4
-		txnNum  = 5
+		key1         = "k1"
+		timeout      = time.Second * 5
+		taskDuration = time.Second
+		txnNum       = 5
 	)
 
 	ctx := context.Background()
 
-	tm := NewManager()
+	tm := NewManager(timeout)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -209,7 +202,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 	t.Logf("txn ids: %v", txnIds)
 
 	var (
-		executedTxns = make(chan types.TxnId, 10)
+		executedTxns = make(readers, txnNum)
 		wg           sync.WaitGroup
 	)
 	for i := 0; i < txnNum; i++ {
@@ -227,29 +220,38 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				if !assert.NoError(err) {
 					return
 				}
-				if cond != nil {
-					if err := cond.Wait(ctx, timeout); err != nil {
-						t.Logf("txn %d wait timeouted, retrying...", txnId)
-						tm.NotifyReadForWriteKeyDone(key1, txnId)
-						continue
+				if cond.notifyTime > 0 {
+					executedTxns[i] = &reader{
+						id:               txnId,
+						readForWriteCond: *cond,
 					}
-				} else {
-					return
+					break
 				}
-				time.Sleep(time.Second)
+				if err := cond.Wait(ctx, timeout); err != nil {
+					t.Logf("txn %d wait timeouted, retrying...", txnId)
+					tm.NotifyReadForWriteKeyDone(key1, txnId)
+					continue
+				}
+				time.Sleep(taskDuration)
 				tm.NotifyReadForWriteKeyDone(key1, txnId)
-				executedTxns <- txnId
+				executedTxns[i] = &reader{
+					id:               txnId,
+					readForWriteCond: *cond,
+				}
 				break
 			}
 		}(i)
 	}
 
 	wg.Wait()
-	close(executedTxns)
 
-	executedTxnArray := make([]types.TxnId, 0, txnNum)
-	for txn := range executedTxns {
-		executedTxnArray = append(executedTxnArray, txn)
+	sort.Sort(executedTxns)
+	for i := 1; i < len(executedTxns); i++ {
+		prev, cur := executedTxns[i-1], executedTxns[i]
+		if !assert.Less(prev.notifyTime, cur.notifyTime) {
+			t.Errorf("executed order violated: %v", executedTxns.PrintString())
+			return
+		}
 	}
-	t.Logf("executed order: %v", executedTxnArray)
+	t.Logf("executed order: %v", executedTxns.PrintString())
 }

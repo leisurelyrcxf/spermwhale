@@ -20,16 +20,19 @@ const (
 )
 
 type Manager struct {
-	writeTxns          concurrency.ConcurrentTxnMap
-	readForWriteQueues concurrency.ConcurrentMap
-	timer              scheduler.ConcurrentBasicTimer
+	writeTxns                      concurrency.ConcurrentTxnMap
+	readForWriteQueues             concurrency.ConcurrentMap
+	readForWriteReaderMaxQueuedAge time.Duration
+	timer                          scheduler.ConcurrentBasicTimer
 }
 
-func NewManager() *Manager {
-	tm := &Manager{}
+func NewManager(readForWriteReaderMaxQueuedAge time.Duration) *Manager {
+	tm := &Manager{readForWriteReaderMaxQueuedAge: readForWriteReaderMaxQueuedAge}
+
 	tm.writeTxns.Initialize(64)
 	tm.readForWriteQueues.Initialize(64)
 	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(TimerPartitionChSize, 100))
+
 	tm.timer.Start()
 	return tm
 }
@@ -44,7 +47,7 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 
 func (tm *Manager) PushReadForWriteReaderOnKey(key string, readerTxnId types.TxnId) (*readForWriteCond, error) {
 	return tm.readForWriteQueues.GetLazy(key, func() interface{} {
-		return newReadForWriteQueue(key)
+		return newReadForWriteQueue(key, tm.readForWriteReaderMaxQueuedAge)
 	}).(*readForWriteQueue).pushReader(readerTxnId)
 }
 
