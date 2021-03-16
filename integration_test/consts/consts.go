@@ -16,8 +16,6 @@ const (
 
 	EPERM = syscall.Errno(0x1)
 
-	MaxPort = 65535
-
 	DefaultWorkDir = "/"
 )
 

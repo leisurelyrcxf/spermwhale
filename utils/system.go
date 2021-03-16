@@ -8,15 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/golang/glog"
-
-	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
-	"github.com/leisurelyrcxf/spermwhale/utils/trace"
 )
+
+const MaxPort = 65535
 
 func IsPortAvailable(port int) bool {
 	return nil == TryPort(port)
@@ -34,12 +32,12 @@ func TryPort(port int) error {
 }
 
 func FindAvailablePort(port int, isPortAvailable func(int) bool) int {
-	for i := port; i < testconsts.MaxPort+1; i++ {
+	for i := port; i < MaxPort+1; i++ {
 		if isPortAvailable(i) {
 			return i
 		}
 	}
-	return testconsts.MaxPort + 1
+	return MaxPort + 1
 }
 
 func PrepareEmptyDir(dir string) error {
@@ -96,21 +94,6 @@ func CatFile(filePath string, desc string) {
 		}
 		fmt.Println(string(l))
 	}
-}
-
-func getWithContextCaller() string {
-	s := trace.TraceN(2, 6)
-	for _, r := range s {
-		if (strings.Contains(r.Name, "utils.With") || strings.Contains(r.Name, "utils.with")) && strings.HasSuffix(r.File, "zero-copi/utils/utils.go") {
-			continue
-		}
-		r.Name = strings.ReplaceAll(r.Name, "/go/src/github.com/leisuelyrcxf/spermwhale/", "")
-		if idx := strings.Index(r.File, "zero-copi/"); idx != -1 {
-			r.File = r.File[idx+len("zero-copi/"):]
-		}
-		return fmt.Sprintf("%s(%s)", r.Name, r.File)
-	}
-	return "unknown"
 }
 
 func Now() *time.Time {

@@ -9,10 +9,15 @@ import (
 	"testing"
 	"time"
 
+	testifyassert "github.com/stretchr/testify/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
+
+const defaultLogDir = "/tmp/spermwhale"
 
 func TestPriorityQueue_PushNotify(t *testing.T) {
 	assert := types.NewAssertion(t)
@@ -83,8 +88,9 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 
 func TestPriorityQueue_Timeouted(t *testing.T) {
 	//_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	testifyassert.NoError(t, utils.MkdirIfNotExists(defaultLogDir))
 	_ = flag.Set("v", fmt.Sprintf("%d", 11))
-	_ = flag.Set("log_dir", "/tmp/spw")
+	_ = flag.Set("log_dir", defaultLogDir)
 
 	assert := types.NewAssertion(t)
 
@@ -105,7 +111,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 	txnIds := make([]int, txnNum)
 	for i := 0; i < txnNum; i++ {
-		txnIds[i] = i
+		txnIds[i] = i + 1
 	}
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(txnIds), func(i, j int) {
@@ -175,6 +181,9 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 }
 
 func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
+	_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", fmt.Sprintf("%d", 11))
+	_ = flag.Set("log_dir", "/tmp/spw")
 	assert := types.NewAssertion(t)
 
 	const (
@@ -191,7 +200,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 
 	txnIds := make([]int, txnNum)
 	for i := 0; i < txnNum; i++ {
-		txnIds[i] = i
+		txnIds[i] = i + 1
 	}
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(txnIds), func(i, j int) {

@@ -21,7 +21,7 @@ const (
 
 type Manager struct {
 	writeTxns          concurrency.ConcurrentTxnMap
-	readForWriteQueues readForWriteQueues
+	readForWriteQueues concurrency.ConcurrentMap
 	timer              scheduler.ConcurrentBasicTimer
 }
 
@@ -42,8 +42,18 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 	return txn.GetState()
 }
 
-func (tm *Manager) PushReadForWriteReaderOnKey(key string, id types.TxnId) (*readForWriteCond, error) {
-	return tm.readForWriteQueues.pushReaderOnKey(key, id)
+func (tm *Manager) PushReadForWriteReaderOnKey(key string, readerTxnId types.TxnId) (*readForWriteCond, error) {
+	return tm.readForWriteQueues.GetLazy(key, func() interface{} {
+		return newReadForWriteQueue(key)
+	}).(*readForWriteQueue).pushReader(readerTxnId)
+}
+
+func (tm *Manager) NotifyReadForWriteKeyDone(key string, readForWriteTxnId types.TxnId) {
+	pq, ok := tm.readForWriteQueues.Get(key)
+	if !ok {
+		return
+	}
+	pq.(*readForWriteQueue).notifyKeyDone(readForWriteTxnId)
 }
 
 func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
@@ -69,10 +79,6 @@ func (tm *Manager) SignalKeyEvent(writeTxnId types.TxnId, event KeyEvent, checkD
 	if txn.signalKeyEvent(event, checkDone) {
 		tm.removeTxn(txn)
 	}
-}
-
-func (tm *Manager) NotifyReadForWriteKeyDone(key string, readForWriteTxnId types.TxnId) {
-	tm.readForWriteQueues.notifyKeyDone(key, readForWriteTxnId)
 }
 
 func (tm *Manager) DoneKey(txnId types.TxnId, key string) {
@@ -111,6 +117,6 @@ func (tm *Manager) removeTxn(txn *transaction) {
 
 func (tm *Manager) Close() {
 	tm.writeTxns.Close()
-	tm.readForWriteQueues.Close()
+	tm.readForWriteQueues.Clear()
 	tm.timer.Close()
 }

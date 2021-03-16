@@ -15,15 +15,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
-//type Type int
-//
-//const (
-//	Invalid Type = iota
-//	WriteIntentCleared
-//	VersionRemoved
-//	VersionWritten
-//)
-
 type readForWriteCond struct {
 	waitress  chan struct{}
 	timeouted concurrency.AtomicBool
@@ -60,132 +51,110 @@ func newReader(id types.TxnId) *reader {
 	}
 }
 
-type priorityQueue struct {
+type readers []*reader
+
+// Heap Interface
+//
+func (rs readers) Len() int {
+	return len(rs)
+}
+func (rs readers) Swap(i, j int) {
+	rs[i], rs[j] = rs[j], rs[i]
+}
+func (rs readers) Less(i, j int) bool {
+	return rs[i].id < rs[j].id
+}
+func (rs *readers) Push(x interface{}) {
+	*rs = append(*rs, x.(*reader))
+}
+func (rs *readers) Pop() interface{} {
+	old, n := *rs, len(*rs)
+	item := old[n-1]
+	*rs = old[:n-1]
+	return item
+}
+
+func (rs readers) SecondMin() *reader {
+	switch len(rs) {
+	case 0, 1:
+		return nil
+	case 2:
+		return rs[1]
+	default:
+		if rs.Less(1, 2) {
+			return rs[1]
+		}
+		return rs[2]
+	}
+}
+
+type readForWriteQueue struct {
 	sync.RWMutex
 
 	key            string
-	pendingReaders []*reader
-	maxMinReader   types.TxnId
+	pendingReaders readers
+	maxMinReader   types.AtomicTxnId
 }
 
-func newPriorityQueue(key string) *priorityQueue {
-	return &priorityQueue{key: key}
+func newReadForWriteQueue(key string) *readForWriteQueue {
+	return &readForWriteQueue{key: key}
 }
 
-// Heap Interface
-func (pq *priorityQueue) Swap(i, j int) {
-	pq.pendingReaders[i], pq.pendingReaders[j] = pq.pendingReaders[j], pq.pendingReaders[i]
-}
-func (pq *priorityQueue) Less(i, j int) bool {
-	return pq.pendingReaders[i].id < pq.pendingReaders[j].id
-}
-func (pq *priorityQueue) Len() int {
-	return len(pq.pendingReaders)
-}
-func (pq *priorityQueue) Push(x interface{}) {
-	pq.pendingReaders = append(pq.pendingReaders, x.(*reader))
-}
-func (pq *priorityQueue) Pop() interface{} {
-	last := pq.pendingReaders[len(pq.pendingReaders)-1]
-	pq.pendingReaders = pq.pendingReaders[0 : len(pq.pendingReaders)-1]
-	return last
-}
-
-func (pq *priorityQueue) pushReader(readerTxnId types.TxnId) (*readForWriteCond, error) {
-	pq.RLock()
-	if readerTxnId <= pq.maxMinReader {
-		assert.Must(readerTxnId < pq.maxMinReader)
-		pq.RUnlock()
-		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "priorityQueue::pushReaderOnKey: readerVersion <= pq.maxMinReader")
+func (pq *readForWriteQueue) pushReader(readerTxnId types.TxnId) (*readForWriteCond, error) {
+	if maxMinReaderId := pq.maxMinReader.Get(); readerTxnId <= maxMinReaderId {
+		assert.Must(readerTxnId < maxMinReaderId)
+		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "readForWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxMinReader(%d)", readerTxnId, maxMinReaderId)
 	}
-
-	if pq.Len()+1 > consts.MaxReadForWriteQueueCapacityPerKey {
-		pq.RUnlock()
-		return nil, errors.ErrReadForWriteQueueFull
-	}
-	pq.RUnlock()
 
 	pq.Lock()
 	defer pq.Unlock()
 
-	if readerTxnId <= pq.maxMinReader {
-		assert.Must(readerTxnId < pq.maxMinReader)
-		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "priorityQueue::pushReaderOnKey: readerVersion <= pq.maxMinReader")
+	maxMinReaderId := pq.maxMinReader.Get()
+	if readerTxnId <= maxMinReaderId {
+		assert.Must(readerTxnId < maxMinReaderId)
+		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "readForWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxMinReader(%d)", readerTxnId, maxMinReaderId)
 	}
 
-	if pq.Len()+1 > consts.MaxReadForWriteQueueCapacityPerKey {
+	if pq.pendingReaders.Len()+1 > consts.MaxReadForWriteQueueCapacityPerKey {
 		return nil, errors.ErrReadForWriteQueueFull
 	}
 
+	if len(pq.pendingReaders) >= 2 {
+		if quasiSecondMinReader := pq.pendingReaders[1]; quasiSecondMinReader.timeouted.Get() {
+			pq.pendingReaders = nil
+			glog.V(8).Infof("quasi-second-min reader %d timeouted, cleared heap", quasiSecondMinReader.id)
+		}
+	}
 	reader := newReader(readerTxnId)
-	heap.Push(pq, reader)
-	if pq.Len() == 1 {
-		pq.maxMinReader = pq.maxMinReader.Max(readerTxnId)
-		reader.notify()
+	heap.Push(&pq.pendingReaders, reader)
+	if pq.pendingReaders.Len() == 1 {
+		//reader.notify()
+		if reader.id > maxMinReaderId {
+			pq.maxMinReader.Set(reader.id)
+		}
 		return nil, nil
 	}
 	return &reader.readForWriteCond, nil
 }
 
-func (pq *priorityQueue) notifyKeyDone(readForWriteTxnId types.TxnId) {
-	pq.RLock()
-	if len(pq.pendingReaders) == 0 {
-		pq.RUnlock()
-		return
-	}
-	if readForWriteTxnId != pq.pendingReaders[0].id {
-		pq.RUnlock()
-		return
-	}
-	pq.RUnlock()
-
+func (pq *readForWriteQueue) notifyKeyDone(readForWriteTxnId types.TxnId) {
 	pq.Lock()
 	defer pq.Unlock()
 
+	if len(pq.pendingReaders) == 0 || pq.pendingReaders[0].id != readForWriteTxnId {
+		return
+	}
+	x := heap.Pop(&pq.pendingReaders)
+	glog.V(50).Infof("popped %d, len: %d", x.(*reader).id, pq.pendingReaders.Len())
 	if len(pq.pendingReaders) == 0 {
 		return
 	}
-	if readForWriteTxnId != pq.pendingReaders[0].id {
+
+	minReader := pq.pendingReaders[0]
+	if minReader.notify(); !minReader.timeouted.Get() {
+		pq.maxMinReader.SetIfBiggerUnsafe(minReader.id)
 		return
 	}
-	x := heap.Pop(pq)
-	glog.V(50).Infof("popped %d, len: %d", x.(*reader).id, pq.Len())
-	for len(pq.pendingReaders) > 0 {
-		newMinReader := pq.pendingReaders[0]
-		pq.maxMinReader = pq.maxMinReader.Max(newMinReader.id)
-		newMinReader.notify()
-		if !newMinReader.timeouted.Get() {
-			break
-		}
-		pq.pendingReaders = nil
-		glog.V(50).Infof("%d timeouted, cleared heap", newMinReader.id)
-		//x := heap.Pop(pq)
-		//glog.V(10).Infof("popped %d, len: %d", x.(*reader).id, pq.Len())
-	}
-}
-
-type readForWriteQueues struct {
-	m concurrency.ConcurrentMap
-}
-
-func (wm *readForWriteQueues) Initialize(partitionNum int) {
-	wm.m.Initialize(partitionNum)
-}
-
-func (wm *readForWriteQueues) pushReaderOnKey(key string, readerTxnId types.TxnId) (*readForWriteCond, error) {
-	return wm.m.GetLazy(key, func() interface{} {
-		return newPriorityQueue(key)
-	}).(*priorityQueue).pushReader(readerTxnId)
-}
-
-func (wm *readForWriteQueues) notifyKeyDone(key string, readForWriteTxnId types.TxnId) {
-	pq, ok := wm.m.Get(key)
-	if !ok {
-		return
-	}
-	pq.(*priorityQueue).notifyKeyDone(readForWriteTxnId)
-}
-
-func (wm *readForWriteQueues) Close() {
-	wm.m.Clear()
+	pq.pendingReaders = nil
+	glog.V(15).Infof("%d timeouted, cleared heap", minReader.id)
 }
