@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"github.com/golang/glog"
@@ -57,4 +58,9 @@ func FetchTimestampWithRetry(oracleFac oracle.Factory) (ts uint64, err error) {
 	}
 	assert.Must(err != nil)
 	return ts, err
+}
+
+func RandomPeriod(unit time.Duration, min, max int) time.Duration {
+	rand.Seed(time.Now().UnixNano())
+	return unit * time.Duration(min+rand.Intn(max-min+1))
 }

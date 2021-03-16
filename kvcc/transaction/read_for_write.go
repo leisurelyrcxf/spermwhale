@@ -3,8 +3,6 @@ package transaction
 import (
 	"container/heap"
 	"context"
-	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -99,13 +97,6 @@ func (rs readers) SecondMin() *reader {
 		}
 		return rs[2]
 	}
-}
-func (rs readers) PrintString() string {
-	strs := make([]string, len(rs))
-	for i := range rs {
-		strs[i] = fmt.Sprintf("%d", rs[i].id)
-	}
-	return strings.Join(strs, ",")
 }
 
 type readForWriteQueue struct {
@@ -204,20 +195,22 @@ func (pq *readForWriteQueue) push(r *reader) {
 		pq.maxReaderId = r.id
 	}
 
-	{
-		// Update k max readers
-		if len(pq.kMaxReaders) < pq.maxReadersCount {
-			if r.id > pq.lastMaxReaderId {
-				heap.Push(&pq.kMaxReaders, r)
-			}
-			return
-		}
-		if pq.kMaxReaders.head().id >= r.id {
-			return
-		}
-		pq.kMaxReaders[0] = r
-		heap.Fix(&pq.kMaxReaders, 0)
+	// Update k max readers
+	if pq.maxReadersCount == 0 {
+		return
 	}
+	if len(pq.kMaxReaders) < pq.maxReadersCount {
+		if r.id > pq.lastMaxReaderId {
+			heap.Push(&pq.kMaxReaders, r)
+		}
+		return
+	}
+	assert.Must(pq.kMaxReaders.Len() == pq.maxReadersCount)
+	if r.id <= pq.kMaxReaders.head().id {
+		return
+	}
+	pq.kMaxReaders[0] = r
+	heap.Fix(&pq.kMaxReaders, 0)
 }
 
 func (pq *readForWriteQueue) pop() {
@@ -228,8 +221,9 @@ func (pq *readForWriteQueue) pop() {
 		assert.Must(r.id == pq.maxReaderId) // max reader id must be the last popped
 		pq.maxReaderId = 0
 	}
-	if len(pq.kMaxReaders) > 0 && r.id >= pq.kMaxReaders.head().id {
-		assert.Must(pq.Len() <= len(pq.kMaxReaders))
+	if pq.kMaxReaders.Len() > 0 && r.id >= pq.kMaxReaders.head().id {
+		assert.Must(r.id == pq.kMaxReaders.head().id)
+		assert.Must(pq.Len() == pq.kMaxReaders.Len()-1)
 		pq.kMaxReaders = nil // otherwise will violate kMaxReaders are top k
 		pq.lastMaxReaderId = pq.maxReaderId
 	}
@@ -268,11 +262,11 @@ func (pq *readForWriteQueue) updateMaxHeadId(maxHeadId types.TxnId) (newMaxHead 
 func (pq *readForWriteQueue) notify() {
 	pq.head().notify()
 	pq.notified++
-	glog.V(50).Infof("notified %d, total count: %d, queued: %d", pq.head().id, pq.notified, pq.Len())
+	glog.V(60).Infof("notified %d, total count: %d, queued: %d", pq.head().id, pq.notified, pq.Len())
 }
 
 func (pq *readForWriteQueue) verifyInvariant() {
-	//return // TODO change this
+	return // TODO change this
 	assert.Must(len(pq.kMaxReaders) <= pq.maxReadersCount)
 	if len(pq.kMaxReaders) == 0 {
 		return

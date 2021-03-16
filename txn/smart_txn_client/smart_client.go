@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -98,8 +100,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 		if !retry || !errors.IsRetryableTransactionErr(err) {
 			return tx, err
 		}
-		rand.Seed(time.Now().UnixNano())
-		time.Sleep(time.Millisecond * time.Duration(1+rand.Intn(9)))
+		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 	}
 	return nil, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }
