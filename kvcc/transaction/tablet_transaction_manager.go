@@ -20,14 +20,20 @@ const (
 )
 
 type Manager struct {
-	writeTxns                      concurrency.ConcurrentTxnMap
-	readForWriteQueues             concurrency.ConcurrentMap
-	readForWriteReaderMaxQueuedAge time.Duration
-	timer                          scheduler.ConcurrentBasicTimer
+	writeTxns                          concurrency.ConcurrentTxnMap
+	readForWriteQueues                 concurrency.ConcurrentMap
+	maxReadForWriteQueueCapacityPerKey int
+	readForWriteQueueMaxReadersRatio   float64
+	readForWriteReaderMaxQueuedAge     time.Duration
+	timer                              scheduler.ConcurrentBasicTimer
 }
 
-func NewManager(readForWriteReaderMaxQueuedAge time.Duration) *Manager {
-	tm := &Manager{readForWriteReaderMaxQueuedAge: readForWriteReaderMaxQueuedAge}
+func NewManager(maxReadForWriteQueueCapacityPerKey int, readForWriteQueueMaxReadersRatio float64, readForWriteReaderMaxQueuedAge time.Duration) *Manager {
+	tm := &Manager{
+		maxReadForWriteQueueCapacityPerKey: maxReadForWriteQueueCapacityPerKey,
+		readForWriteQueueMaxReadersRatio:   readForWriteQueueMaxReadersRatio,
+		readForWriteReaderMaxQueuedAge:     readForWriteReaderMaxQueuedAge,
+	}
 
 	tm.writeTxns.Initialize(64)
 	tm.readForWriteQueues.Initialize(64)
@@ -47,7 +53,7 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 
 func (tm *Manager) PushReadForWriteReaderOnKey(key string, readerTxnId types.TxnId) (*readForWriteCond, error) {
 	return tm.readForWriteQueues.GetLazy(key, func() interface{} {
-		return newReadForWriteQueue(key, tm.readForWriteReaderMaxQueuedAge)
+		return newReadForWriteQueue(key, tm.maxReadForWriteQueueCapacityPerKey, tm.readForWriteReaderMaxQueuedAge, tm.readForWriteQueueMaxReadersRatio)
 	}).(*readForWriteQueue).pushReader(readerTxnId)
 }
 

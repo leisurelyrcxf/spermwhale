@@ -75,9 +75,12 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	return &KVCC{
 		TabletTxnConfig: cfg,
 		db:              db,
-		txnManager:      transaction.NewManager(utils.MaxDuration(5*time.Second, cfg.StaleWriteThreshold)),
-		lm:              concurrency.NewLockManager(),
-		tsCache:         NewTimestampCache(),
+		txnManager: transaction.NewManager(
+			consts.MaxReadForWriteQueueCapacityPerKey,
+			consts.ReadForWriteQueueMaxReadersRatio,
+			utils.MaxDuration(5*time.Second, cfg.StaleWriteThreshold)),
+		lm:      concurrency.NewLockManager(),
+		tsCache: NewTimestampCache(),
 	}
 }
 

@@ -129,6 +129,10 @@ var (
 		Code: consts.ErrCodeReadForWriteQueueFull,
 		Msg:  "read for write queue full, retry later",
 	}
+	ErrReadForWriteReaderTimeouted = &Error{
+		Code: consts.ErrCodeReadForWriteReaderTimeouted,
+		Msg:  "read for write reader timeouted",
+	}
 	ErrWriteIntentQueueFull = &Error{
 		Code: consts.ErrCodeWriteIntentQueueFull,
 		Msg:  "write intent queue full, retry later",

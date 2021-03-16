@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
+
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -24,15 +26,16 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	const (
-		key1         = "k1"
-		timeout      = time.Second * 10
-		taskDuration = time.Second
-		txnNum       = 5
+		queueCapacity = 100
+		key1          = "k1"
+		timeout       = time.Second * 10
+		taskDuration  = time.Second
+		txnNum        = 5
 	)
 
 	ctx := context.Background()
 
-	tm := NewManager(time.Minute)
+	tm := NewManager(queueCapacity, consts.ReadForWriteQueueMaxReadersRatio, time.Minute)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -92,7 +95,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 }
 
 func TestPriorityQueue_Timeouted(t *testing.T) {
-	//_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
 	testifyassert.NoError(t, utils.MkdirIfNotExists(defaultLogDir))
 	_ = flag.Set("v", fmt.Sprintf("%d", 110))
 	_ = flag.Set("log_dir", defaultLogDir)
@@ -100,28 +103,21 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	const (
+		queueCapacity                    = 50
+		arriveInterval                   = time.Second * 5 / queueCapacity
+		readForWriteQueueMaxReadersRatio = 0.5
+
 		key1         = "k1"
 		txnNum       = 500
 		taskDuration = time.Millisecond * 100
-		txnIdDelta   = 1000
+		timeout      = taskDuration * 10
 	)
-	if !assert.Greater(txnIdDelta, txnNum) {
-		return
-	}
 
 	ctx := context.Background()
 
-	tm := NewManager(time.Second)
+	o := physical.NewOracle()
+	tm := NewManager(queueCapacity, readForWriteQueueMaxReadersRatio, time.Minute)
 	defer tm.Close()
-
-	txnIds := make([]int, txnNum)
-	for i := 0; i < txnNum; i++ {
-		txnIds[i] = i + 1
-	}
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(txnIds), func(i, j int) {
-		txnIds[i], txnIds[j] = txnIds[j], txnIds[i]
-	})
 
 	var (
 		executedTxns = make(readers, txnNum)
@@ -133,20 +129,21 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			for txnId := types.TxnId(txnIds[i]); ; txnId += txnIdDelta {
+			for {
+				txnId := types.TxnId(o.MustFetchTimestamp())
 				cond, err := tm.PushReadForWriteReaderOnKey(key1, txnId)
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict || errors.GetErrorCode(err) == consts.ErrCodeReadForWriteQueueFull {
 					//t.Logf("txn %d rollbacked due to %v, retrying...", txnId, err)
-					//time.Sleep(time.Millisecond)
+					time.Sleep(arriveInterval)
 					continue
 				}
 				if !assert.NoError(err) {
 					return
 				}
-				if err := cond.Wait(ctx, taskDuration); err != nil {
+				if err := cond.Wait(ctx, timeout); err != nil {
 					//t.Logf("txn %d wait timeouted, retrying...", txnId)
 					tm.NotifyReadForWriteKeyDone(key1, txnId)
-					//time.Sleep(time.Millisecond)
+					time.Sleep(arriveInterval)
 					continue
 				}
 				time.Sleep(taskDuration)
@@ -180,15 +177,16 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	const (
-		key1         = "k1"
-		timeout      = time.Second * 5
-		taskDuration = time.Second
-		txnNum       = 5
+		queueCapacity = 100
+		key1          = "k1"
+		timeout       = time.Second * 5
+		taskDuration  = time.Second
+		txnNum        = 5
 	)
 
 	ctx := context.Background()
 
-	tm := NewManager(timeout)
+	tm := NewManager(queueCapacity, consts.ReadForWriteQueueMaxReadersRatio, timeout)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)

@@ -37,6 +37,7 @@ const (
 	ErrCodeCantGetOracle                                  = 888
 	ErrCodeInvalidConfig                                  = 999
 	ErrCodeReadForWriteTransactionCommitWithNoWrittenKeys = 1000
+	ErrCodeReadForWriteReaderTimeouted                    = 1001
 	ErrCodeUnknown                                        = 1111
 	ErrCodeInject                                         = 11111
 	ErrCodeDummy                                          = 12222
