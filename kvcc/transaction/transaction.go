@@ -9,7 +9,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
-	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type transaction struct {
@@ -18,9 +17,9 @@ type transaction struct {
 	id    types.TxnId
 	state types.TxnState
 
-	writtenKeyCount concurrency.AtomicUint64
-	doneKeys        concurrency.ConcurrentSet
-	rollbackedKeys  map[string]struct{}
+	writtenKeyCount       concurrency.AtomicUint64
+	doneKeys              concurrency.ConcurrentSet
+	rollbackedKey2Success map[string]bool
 
 	keyEventWaitersMu sync.Mutex
 	keyEventWaiters   map[string][]*KeyEventWaiter
@@ -28,10 +27,10 @@ type transaction struct {
 
 func newTransaction(id types.TxnId) *transaction {
 	t := &transaction{
-		id:              id,
-		state:           types.TxnStateUncommitted,
-		keyEventWaiters: make(map[string][]*KeyEventWaiter),
-		rollbackedKeys:  make(map[string]struct{}),
+		id:                    id,
+		state:                 types.TxnStateUncommitted,
+		keyEventWaiters:       make(map[string][]*KeyEventWaiter),
+		rollbackedKey2Success: make(map[string]bool),
 	}
 	t.doneKeys.Initialize()
 	return t
@@ -68,8 +67,11 @@ func (t *transaction) registerKeyEventWaiter(key string) (*KeyEventWaiter, KeyEv
 	case types.TxnStateRollbacked:
 		return nil, NewKeyEvent(key, KeyEventTypeVersionRemoved), nil
 	case types.TxnStateRollbacking:
-		if utils.Contains(t.rollbackedKeys, key) {
-			return nil, NewKeyEvent(key, KeyEventTypeVersionRemoved), nil
+		if rollbackSuccess, ok := t.rollbackedKey2Success[key]; ok {
+			if rollbackSuccess {
+				return nil, NewKeyEvent(key, KeyEventTypeVersionRemoved), nil
+			}
+			return nil, NewKeyEvent(key, KeyEventTypeRemoveVersionFailed), nil
 		}
 		fallthrough
 	case types.TxnStateUncommitted:
@@ -100,8 +102,9 @@ func (t *transaction) signalKeyEvent(event KeyEvent, checkDone bool) (shouldRemo
 		t.state = types.TxnStateCommitted
 	case KeyEventTypeRemoveVersionFailed:
 		t.state = types.TxnStateRollbacking
+		t.rollbackedKey2Success[event.Key] = false
 	case KeyEventTypeVersionRemoved:
-		t.rollbackedKeys[event.Key] = struct{}{}
+		t.rollbackedKey2Success[event.Key] = true
 		t.state = types.TxnStateRollbacking
 		if checkDone && t.doneKey(event.Key) {
 			t.state = types.TxnStateRollbacked
