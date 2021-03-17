@@ -19,8 +19,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-const MaxTaskBufferedPerPartition = 10000
-
 type Scheduler struct {
 	clearJobScheduler *scheduler.ConcurrentStaticTreeScheduler
 	ioJobScheduler    *scheduler.ConcurrentDynamicListScheduler
@@ -56,19 +54,12 @@ type TransactionManager struct {
 	s *Scheduler
 }
 
-func NewTransactionManager(
-	kv types.KVCC,
-	cfg types.TxnManagerConfig,
-	clearWorkerNum, ioWorkerNum int) *TransactionManager {
-	return NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, physical.NewOracle())
+func NewTransactionManager(kv types.KVCC, cfg types.TxnManagerConfig) *TransactionManager {
+	return NewTransactionManagerWithOracle(kv, cfg, physical.NewOracle())
 }
 
-func NewTransactionManagerWithCluster(
-	kv types.KVCC,
-	cfg types.TxnManagerConfig,
-	clearWorkerNum, ioWorkerNum int,
-	store *topo.Store) (*TransactionManager, error) {
-	tm := NewTransactionManagerWithOracle(kv, cfg, clearWorkerNum, ioWorkerNum, nil)
+func NewTransactionManagerWithCluster(kv types.KVCC, cfg types.TxnManagerConfig, store *topo.Store) (*TransactionManager, error) {
+	tm := NewTransactionManagerWithOracle(kv, cfg, nil)
 	tm.topoStore = store
 	if err := tm.syncOracle(); err != nil {
 		glog.Warningf("can't initialize oracle: %v", err)
@@ -79,18 +70,14 @@ func NewTransactionManagerWithCluster(
 	return tm, nil
 }
 
-func NewTransactionManagerWithOracle(
-	kv types.KVCC,
-	cfg types.TxnManagerConfig,
-	clearWorkerNum, ioWorkerNum int,
-	oracle oracle.Oracle) *TransactionManager {
+func NewTransactionManagerWithOracle(kv types.KVCC, cfg types.TxnManagerConfig, oracle oracle.Oracle) *TransactionManager {
 	tm := (&TransactionManager{
 		kv:  kv,
 		cfg: cfg,
 
 		s: &Scheduler{
-			clearJobScheduler: scheduler.NewConcurrentStaticTreeScheduler(clearWorkerNum, MaxTaskBufferedPerPartition, 1),
-			ioJobScheduler:    scheduler.NewConcurrentDynamicListScheduler(ioWorkerNum, MaxTaskBufferedPerPartition, 1),
+			clearJobScheduler: scheduler.NewConcurrentStaticTreeScheduler(cfg.ClearWorkerNum, cfg.MaxTaskBufferedPerPartition, 1),
+			ioJobScheduler:    scheduler.NewConcurrentDynamicListScheduler(cfg.IOWorkerNum, cfg.MaxTaskBufferedPerPartition, 1),
 		},
 	}).createStore()
 	tm.txns.Initialize(32)

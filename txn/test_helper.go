@@ -1,7 +1,9 @@
 package txn
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -30,6 +32,28 @@ var (
 	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 1000).WithMaxClockDrift(0)
 )
 
+type MemoryDBWithLatency struct {
+	types.KV
+	latency time.Duration
+}
+
+func NewMemoryDBWithLatency(latency time.Duration) *MemoryDBWithLatency {
+	return &MemoryDBWithLatency{
+		KV:      memory.NewMemoryDB(),
+		latency: latency,
+	}
+}
+
+func (d *MemoryDBWithLatency) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+	time.Sleep(d.latency)
+	return d.KV.Get(ctx, key, opt)
+}
+
+func (d *MemoryDBWithLatency) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+	time.Sleep(d.latency)
+	return d.KV.Set(ctx, key, val, opt)
+}
+
 type ExecuteInfo struct {
 	ID                      uint64
 	State                   types.TxnState
@@ -41,16 +65,27 @@ func (info ExecuteInfo) String() string {
 	return fmt.Sprintf("Txn{id: %d, state: %s, read: %v, write: %v}", info.ID, info.State.String(), info.ReadValues, info.WriteValues)
 }
 
-type SortedTxnInfos []ExecuteInfo
+type ExecuteInfos []ExecuteInfo
 
-func (ss SortedTxnInfos) Len() int {
+func (ss ExecuteInfos) Len() int {
 	return len(ss)
 }
-func (ss SortedTxnInfos) Less(i, j int) bool {
+func (ss ExecuteInfos) Less(i, j int) bool {
 	return ss[i].ID < ss[j].ID
 }
-func (ss SortedTxnInfos) Swap(i, j int) {
+func (ss ExecuteInfos) Swap(i, j int) {
 	ss[i], ss[j] = ss[j], ss[i]
+}
+
+func (ss ExecuteInfos) Check(assert *testifyassert.Assertions) bool {
+	sort.Sort(ss)
+	for i := 1; i < len(ss); i++ {
+		prev, cur := ss[i-1], ss[i]
+		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
+			return false
+		}
+	}
+	return true
 }
 
 func createCluster(t *testing.T, txnManagerCfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
@@ -95,7 +130,7 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConf
 			return nil, nil, nil
 		}
 
-		s1, err := NewServer(txnServer1Port, g1, cfg, 10, 15, topo.NewStore(cli, defaultClusterName))
+		s1, err := NewServer(txnServer1Port, g1, cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}
@@ -122,7 +157,7 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConf
 			return nil, nil, nil
 		}
 
-		s2, err := NewServer(txnServer2Port, g2, cfg, 20, 25, topo.NewStore(cli, defaultClusterName))
+		s2, err := NewServer(txnServer2Port, g2, cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}

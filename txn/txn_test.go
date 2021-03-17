@@ -24,10 +24,10 @@ func TestTxnLostUpdate(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 4))
 
-	for _, threshold := range []int{1000} {
+	for _, staleWriteThresholdInMilliseconds := range []int{1000} {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
+			if !testifyassert.True(t, testTxnLostUpdate(t, i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
+				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
 				return
 			}
 		}
@@ -37,32 +37,25 @@ func TestTxnLostUpdate(t *testing.T) {
 func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
+	const (
+		initialValue    = 101
+		goRoutineNumber = 10000
+		delta           = 6
+	)
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 20)
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-
-	const (
-		initialValue    = 101
-		goRoutineNumber = 10000
-		delta           = 6
-	)
 	err := sc.SetInt(ctx, "k1", initialValue)
 	if !assert.NoError(err) {
 		return
 	}
-	err = sc.SetInt(ctx, "k2", initialValue)
-	if !assert.NoError(err) {
-		return
-	}
-
 	txns := make([]ExecuteInfo, goRoutineNumber)
-
 	var wg sync.WaitGroup
 	for i := 0; i < goRoutineNumber; i++ {
 		wg.Add(1)
@@ -80,9 +73,6 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				if err != nil {
 					return err, true
 				}
-				//if _, err := txn.Get(ctx, "k2", readOpt); err != nil {
-				//	return err, true
-				//}
 				v1, err := val.Int()
 				if !assert.NoError(err) {
 					return err, false
@@ -90,12 +80,6 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 				readValue = val
 				v1 += delta
 				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
-				//if _, err = txn.Get(ctx, "k1", readOpt); err != nil {
-				//	return err, true
-				//}
-				//if err := txn.Set(ctx, "k2", writeValue.V); err != nil {
-				//	return err, true
-				//}
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{
@@ -118,14 +102,13 @@ func testTxnLostUpdate(t *testing.T, round int, staleWriteThreshold time.Duratio
 		return
 	}
 
-	sort.Sort(SortedTxnInfos(txns))
+	sort.Sort(ExecuteInfos(txns))
 	for i := 1; i < len(txns); i++ {
 		prev, cur := txns[i-1], txns[i]
 		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
 			return
 		}
 	}
-
 	return true
 }
 
@@ -148,7 +131,7 @@ func testTxnReadForWrite2Keys(t *testing.T, round int, staleWriteThreshold time.
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 20)
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
@@ -253,7 +236,7 @@ func testTxnReadForWrite2Keys(t *testing.T, round int, staleWriteThreshold time.
 		}
 	}
 
-	sort.Sort(SortedTxnInfos(txns))
+	sort.Sort(ExecuteInfos(txns))
 	for i := 1; i < len(txns); i++ {
 		prev, cur := txns[i-1], txns[i]
 		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
@@ -285,7 +268,7 @@ func testTxnReadForWrite2KeysDeadlock(t *testing.T, round int, staleWriteThresho
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 20)
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
@@ -425,7 +408,7 @@ func testTxnReadForWrite2KeysDeadlock(t *testing.T, round int, staleWriteThresho
 		}
 	}
 
-	sort.Sort(SortedTxnInfos(txns))
+	sort.Sort(ExecuteInfos(txns))
 	for i := 1; i < len(txns); i++ {
 		prev, cur := txns[i-1], txns[i]
 		for _, key := range []string{"k1", "k2"} {
@@ -461,7 +444,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 
 	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 10, 20)
+	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -574,7 +557,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 	}
 	t.Logf("res_v1: %d, res_v2: %d", val1, val2)
 
-	sort.Sort(SortedTxnInfos(txns))
+	sort.Sort(ExecuteInfos(txns))
 	for i := 1; i < len(txns); i++ {
 		prev, cur := txns[i-1], txns[i]
 		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
@@ -614,7 +597,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 
 	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold), 20, 30)
+	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -711,7 +694,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 		tabletCfg     = defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold)
 	)
 	kvc := kvcc.NewKVCCForTesting(db, tabletCfg)
-	m := NewTransactionManager(kvc, txnManagerCfg, 20, 30)
+	m := NewTransactionManager(kvc, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -810,7 +793,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 	)
 	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, tabletCfg)
-	m := NewTransactionManager(kvcc, txnManagerCfg, 20, 30)
+	m := NewTransactionManager(kvcc, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -926,7 +909,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
+	tm := NewTransactionManager(gAte, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, "k1", initialValue); !assert.NoError(err) {
 		return
@@ -1018,7 +1001,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
+	tm := NewTransactionManager(gAte, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(tm, 10000)
 	defer sc.Close()
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
@@ -1169,7 +1152,7 @@ func testDistributedTxnReadConsistencyDeadlock(t *testing.T, round int, staleWri
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
+	tm := NewTransactionManager(gAte, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(tm, 10000)
 	defer sc.Close()
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
@@ -1353,7 +1336,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
+	tm := NewTransactionManager(gAte, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(tm, 10000)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return
@@ -1592,7 +1575,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 	for _, txnsOneGoRoutine := range txns {
 		allTxns = append(allTxns, txnsOneGoRoutine...)
 	}
-	sort.Sort(SortedTxnInfos(allTxns))
+	sort.Sort(ExecuteInfos(allTxns))
 	for i := 0; i < len(allTxns); i++ {
 		findWriteVersion := func(cur int, key string, readVal types.Value) types.Value {
 			for j := i - 1; j > 0; j-- {
@@ -1662,7 +1645,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 	if !assert.NotNil(gAte) {
 		return
 	}
-	tm := NewTransactionManager(gAte, txnManagerCfg, 20, 30)
+	tm := NewTransactionManager(gAte, txnManagerCfg)
 	sc := smart_txn_client.NewSmartClient(tm, 0)
 	if err := sc.SetInt(ctx, key1, k1InitialValue); !assert.NoError(err) {
 		return

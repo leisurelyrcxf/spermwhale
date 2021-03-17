@@ -695,7 +695,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 func (txn *Txn) removeTxnRecord(ctx context.Context, rollback bool) error {
 	err := txn.kv.Set(ctx, txn.Key(),
 		types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-		types.NewKVCCWriteOption().WithRemoveVersionCondRollback(rollback).WithTxnRecord())
+		types.NewKVCCWriteOption().WithRemoveTxnRecordCondRollback(rollback))
 	if err != nil && !errors.IsNotExistsErr(err) {
 		glog.Warningf("clear transaction record failed: %v", err)
 		return err

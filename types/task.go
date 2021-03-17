@@ -249,7 +249,7 @@ func (t *TreeTask) childDone() {
 		return
 	}
 
-	if newVal := atomic.AddInt64(&t.childrenDone, 1); newVal == int64(len(t.children)) {
+	if atomic.AddInt64(&t.childrenDone, 1) == int64(len(t.children)) {
 		if err := t.Run(); err != nil {
 			glog.Errorf("parent task %s(%s) failed: %v", t.ID, t.Name, err)
 		}

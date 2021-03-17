@@ -10,10 +10,32 @@ import (
 
 type TxnManagerConfig struct {
 	WoundUncommittedTxnThreshold time.Duration
+	ClearWorkerNum, IOWorkerNum  int
+	MaxTaskBufferedPerPartition  int
 }
 
 func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
-	return TxnManagerConfig{WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold}
+	return TxnManagerConfig{
+		WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold,
+		ClearWorkerNum:               consts.DefaultTxnManagerClearWorkerNumber,
+		IOWorkerNum:                  consts.DefaultTxnManagerIOWorkerNumber,
+		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxIOTaskBufferedPerPartition,
+	}
+}
+
+func (cfg TxnManagerConfig) WithClearWorkNum(clearWorkerNum int) TxnManagerConfig {
+	cfg.ClearWorkerNum = clearWorkerNum
+	return cfg
+}
+
+func (cfg TxnManagerConfig) WithIOWorkerNum(ioWorkerNum int) TxnManagerConfig {
+	cfg.IOWorkerNum = ioWorkerNum
+	return cfg
+}
+
+func (cfg TxnManagerConfig) WithMaxTaskBufferedPerPartition(maxTaskBufferedPerPartition int) TxnManagerConfig {
+	cfg.MaxTaskBufferedPerPartition = maxTaskBufferedPerPartition
+	return cfg
 }
 
 func (cfg TxnManagerConfig) Validate() error {

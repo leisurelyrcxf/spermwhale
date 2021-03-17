@@ -55,7 +55,7 @@ func (rs ExecuteInfos) Check() {
 	sort.Sort(rs)
 	for i := 1; i < len(rs.infos); i++ {
 		prev, cur := rs.infos[i-1], rs.infos[i]
-		if !rs.Assertions.Less(prev.notifyTime, cur.notifyTime) {
+		if !rs.Assertions.Less(prev.NotifyTime, cur.NotifyTime) {
 			rs.t.Errorf("executed order violated: %v", rs.PrintString())
 			return
 		}
@@ -120,13 +120,13 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					//t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.NotifyReadForWriteKeyDone(key1, txnId)
+					tm.SignalReadForWriteKeyEvent(key1, txnId)
 					rand.Seed(time.Now().UnixNano())
 					time.Sleep(arriveIntervalUnit * time.Duration(1+rand.Intn(10)))
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.NotifyReadForWriteKeyDone(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(key1, txnId)
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
 						id:               txnId,
@@ -192,7 +192,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 					return
 				}
 				time.Sleep(taskDuration)
-				tm.NotifyReadForWriteKeyDone(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(key1, txnId)
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
 						id:               txnId,
@@ -256,7 +256,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				if !testifyassert.NoError(t, err) {
 					return
 				}
-				if cond.notifyTime > 0 {
+				if cond.NotifyTime > 0 {
 					executedTxns.infos[i] = ExecuteInfo{
 						reader: reader{
 							id:               txnId,
@@ -268,11 +268,11 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.NotifyReadForWriteKeyDone(key1, txnId)
+					tm.SignalReadForWriteKeyEvent(key1, txnId)
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.NotifyReadForWriteKeyDone(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(key1, txnId)
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
 						id:               txnId,

@@ -51,18 +51,18 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 	return txn.GetState()
 }
 
-func (tm *Manager) PushReadForWriteReaderOnKey(key string, readerTxnId types.TxnId) (*readForWriteCond, error) {
+func (tm *Manager) PushReadForWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readForWriteCond, error) {
 	return tm.readForWriteQueues.GetLazy(key, func() interface{} {
 		return newReadForWriteQueue(key, tm.maxReadForWriteQueueCapacityPerKey, tm.readForWriteReaderMaxQueuedAge, tm.readForWriteQueueMaxReadersRatio)
-	}).(*readForWriteQueue).pushReader(readerTxnId)
+	}).(*readForWriteQueue).pushReader(readOpt)
 }
 
-func (tm *Manager) NotifyReadForWriteKeyDone(key string, readForWriteTxnId types.TxnId) {
-	pq, ok := tm.readForWriteQueues.Get(key)
+func (tm *Manager) SignalReadForWriteKeyEvent(readForWriteTxnId types.TxnId, event ReadForWriteKeyEvent) {
+	pq, ok := tm.readForWriteQueues.Get(event.Key)
 	if !ok {
 		return
 	}
-	pq.(*readForWriteQueue).notifyKeyDone(readForWriteTxnId)
+	pq.(*readForWriteQueue).notifyKeyEvent(readForWriteTxnId, event.Type)
 }
 
 func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
@@ -90,7 +90,7 @@ func (tm *Manager) SignalKeyEvent(writeTxnId types.TxnId, event KeyEvent, checkD
 	}
 }
 
-func (tm *Manager) DoneKey(txnId types.TxnId, key string) {
+func (tm *Manager) DoneWrittenKeyWriteIntentCleared(txnId types.TxnId, key string) {
 	txn := tm.getTxn(txnId)
 	if txn == nil {
 		return

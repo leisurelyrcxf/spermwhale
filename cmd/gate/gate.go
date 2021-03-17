@@ -22,6 +22,7 @@ func main() {
 	flagKVPort := flag.Int("port-kv", consts.DefaultKVServerPort, "kv port ")
 	flagClearWorkerNum := flag.Int("clear-worker-num", consts.DefaultTxnManagerClearWorkerNumber, "txn manager worker number")
 	flagIOWorkerNum := flag.Int("io-worker-num", consts.DefaultTxnManagerIOWorkerNumber, "txn manager worker number")
+	flagMaxBufferedPerPartition := flag.Int("max-buffered-per-partition", consts.DefaultTxnManagerMaxIOTaskBufferedPerPartition, "io worker pool and clear worker num pool max buffered per partition")
 	flagWoundUncommittedTxnThreshold := flag.Duration("wound-uncommitted-txn-threshold", consts.DefaultWoundUncommittedTxnThreshold,
 		"transaction older than this may be wounded by another transaction")
 	cmd.RegisterStoreFlags()
@@ -33,10 +34,11 @@ func main() {
 		glog.Fatalf("can't create gate: %v", err)
 	}
 	cfg := types.NewTxnManagerConfig(*flagWoundUncommittedTxnThreshold)
+	cfg = cfg.WithClearWorkNum(*flagClearWorkerNum).WithIOWorkerNum(*flagIOWorkerNum).WithMaxTaskBufferedPerPartition(*flagMaxBufferedPerPartition)
 	if err := cfg.Validate(); err != nil {
 		glog.Fatalf("invalid config: %v", err)
 	}
-	txnServer, err := txn.NewServer(*flagTxnPort, gAte, cfg, *flagClearWorkerNum, *flagIOWorkerNum, store)
+	txnServer, err := txn.NewServer(*flagTxnPort, gAte, cfg, store)
 	if err != nil {
 		glog.Fatalf("failed to new txn server: %v", err)
 	}

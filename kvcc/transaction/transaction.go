@@ -104,8 +104,8 @@ func (t *transaction) signalKeyEvent(event KeyEvent, checkDone bool) (shouldRemo
 		t.state = types.TxnStateRollbacking
 		t.rollbackedKey2Success[event.Key] = false
 	case KeyEventTypeVersionRemoved:
-		t.rollbackedKey2Success[event.Key] = true
 		t.state = types.TxnStateRollbacking
+		t.rollbackedKey2Success[event.Key] = true
 		if checkDone && t.doneKey(event.Key) {
 			t.state = types.TxnStateRollbacked
 			shouldRemoveTxn = true

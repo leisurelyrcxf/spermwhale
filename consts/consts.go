@@ -7,8 +7,9 @@ const (
 	DefaultMaxClockDrift                = time.Second
 	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
 
-	DefaultTxnManagerClearWorkerNumber = 20
-	DefaultTxnManagerIOWorkerNumber    = 30
+	DefaultTxnManagerClearWorkerNumber             = 20
+	DefaultTxnManagerIOWorkerNumber                = 30
+	DefaultTxnManagerMaxIOTaskBufferedPerPartition = 10000
 )
 
 const (

@@ -5,7 +5,6 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
-	"testing"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )
@@ -15,10 +14,10 @@ type T interface {
 }
 
 type MyT struct {
-	t *testing.T
+	t testifyassert.TestingT
 }
 
-func NewT(t *testing.T) MyT {
+func NewT(t testifyassert.TestingT) MyT {
 	return MyT{
 		t: t,
 	}
@@ -38,6 +37,6 @@ func isMain() bool {
 	return strings.Contains(ss, "testing.(*T).Run")
 }
 
-func NewAssertion(t *testing.T) *testifyassert.Assertions {
+func NewAssertion(t testifyassert.TestingT) *testifyassert.Assertions {
 	return testifyassert.New(NewT(t))
 }

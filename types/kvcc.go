@@ -137,23 +137,18 @@ func (opt KVCCWriteOption) WithClearWriteIntent() KVCCWriteOption {
 	return opt
 }
 
-func (opt KVCCWriteOption) WithRemoveVersion() KVCCWriteOption {
-	opt.flag |= WriteOptBitMaskRemoveVersion
-	return opt
-}
-
 func (opt KVCCWriteOption) WithRollbackVersion() KVCCWriteOption {
 	opt.flag |= WriteOptBitMaskRemoveVersion
 	opt.flag |= WriteOptBitMaskRemoveVersionRollback
 	return opt
 }
 
-func (opt KVCCWriteOption) WithRemoveVersionCondRollback(isRollback bool) KVCCWriteOption {
+func (opt KVCCWriteOption) WithRemoveTxnRecordCondRollback(isRollback bool) KVCCWriteOption {
 	opt.flag |= WriteOptBitMaskRemoveVersion
 	if isRollback {
 		opt.flag |= WriteOptBitMaskRemoveVersionRollback
 	}
-	return opt
+	return opt.WithTxnRecord()
 }
 
 func (opt KVCCWriteOption) CondReadForWrite(b bool) KVCCWriteOption {
