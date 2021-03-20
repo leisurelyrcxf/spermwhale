@@ -106,7 +106,9 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
 				return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
 			}
-			glog.V(60).Infof("txn-%d get enter, cost %s, time since notified: %s", opt.ReaderVersion, bench.Elapsed(), time.Duration(time.Now().UnixNano()-(w.NotifyTime)))
+			if glog.V(60) {
+				glog.Infof("txn-%d get enter, cost %s, time since notified: %s", opt.ReaderVersion, bench.Elapsed(), time.Duration(time.Now().UnixNano()-(w.NotifyTime)))
+			}
 		}
 	}
 	for i := 0; ; i++ {
@@ -130,7 +132,6 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
 	kv.lm.RLock(key)
-
 	var maxReadVersion uint64
 	if updateTimestampCache {
 		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, opt.ReaderVersion)
@@ -150,21 +151,27 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	if err != nil || !valCC.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
 		kv.lm.RUnlock(key)
-		glog.V(60).Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+		if glog.V(60) {
+			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+		}
 		return valCC, err
 	}
 	kv.lm.RUnlock(key)
 
 	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(valCC.Version), key)
 	if err != nil {
-		if errors.GetErrorCode(err) == consts.ErrCodeTabletWriteTransactionNotFound {
+		code := errors.GetErrorCode(err)
+		if code != consts.ErrCodeWriteIntentQueueFull && glog.V(40) {
+			glog.Infof("txn-%d get register key event failed: '%v', cost: %s", opt.ReaderVersion, err, bench.Elapsed())
+		}
+		if code == consts.ErrCodeTabletWriteTransactionNotFound {
 			return valCC, err
 		}
 		return valCC, nil // Let upper layer handle this.
 	}
 	if waiter != nil {
 		var waitErr error
-		if event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/100); waitErr != nil {
+		if event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/10); waitErr != nil {
 			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, valCC.Version, waitErr)
 			return valCC, nil // Let upper layer handle this.
 		}
@@ -172,7 +179,10 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	assert.Must(event.Key == key)
 	switch event.Type {
 	case transaction.KeyEventTypeClearWriteIntent:
-		glog.V(60).Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+		if glog.V(60) {
+			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+		}
+		assert.Must(valCC.InternalVersion == 4)
 		return valCC.WithNoWriteIntent(), nil
 	case transaction.KeyEventTypeRemoveVersionFailed:
 		// TODO maybe wait until rollbacked?
@@ -181,7 +191,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		// TODO remove this in product
 		vv, _ := kv.db.Get(ctx, key, types.NewKVReadOption(valCC.Version+1))
 		assert.Must(vv.Version < valCC.Version)
-		return valCC, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
+		return valCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 	default:
 		panic(fmt.Sprintf("impossible event type: '%s'", event.Type))
 	}
@@ -217,7 +227,9 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 				kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key,
 					transaction.GetReadForWriteKeyEventTypeClearWriteIntent(err == nil)))
 			}
-			glog.V(60).Infof("txn-%d write intent cleared, cost: %s", txnId, bench.Elapsed())
+			if glog.V(60) {
+				glog.Infof("txn-%d write intent cleared, cost: %s", txnId, bench.Elapsed())
+			}
 		} else if opt.IsRollbackKey() {
 			if isWrittenKey {
 				kv.txnManager.SignalKeyEvent(txnId, transaction.NewKeyEvent(key,
@@ -231,7 +243,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		return err
 	}
 
-	if opt.IsFirstWriteOfKey() {
+	if val.IsFirstWriteOfKey() {
 		kv.txnManager.AddWriteTransactionWrittenKey(txnId)
 	}
 
@@ -257,8 +269,8 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if err == nil && opt.IsReadForWrite() {
 		kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key, transaction.ReadForWriteKeyEventTypeKeyWritten))
 	}
-	if !opt.IsTxnRecord() {
-		glog.V(60).Infof("txn-%d set key finished, cost %s", txnId, bench.Elapsed())
+	if !opt.IsTxnRecord() && bool(glog.V(60)) {
+		glog.Infof("txn-%d set key('%s': v%d) finished, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
 	}
 	return err
 }

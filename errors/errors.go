@@ -1,6 +1,8 @@
 package errors
 
 import (
+	"fmt"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 )
 
@@ -13,9 +15,9 @@ var (
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined,
 		Msg:  "read uncommitted data previous txn state undetermined",
 	}
-	ErrReadUncommittedDataPrevTxnHasBeenRollbacked = &Error{
-		Code: consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked,
-		Msg:  "read uncommitted data previous txn has been rollbacked",
+	ErrReadUncommittedDataPrevTxnKeyRollbacked = &Error{
+		Code: consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
+		Msg:  "read uncommitted data previous txn key has been rollbacked",
 	}
 	ErrReadUncommittedDataPrevTxnToBeRollbacked = &Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
@@ -60,6 +62,10 @@ var (
 	ErrTransactionStateCorrupted = &Error{
 		Code: consts.ErrCodeTransactionStateCorrupted,
 		Msg:  "transaction state corrupted",
+	}
+	ErrTransactionInternalVersionOverflow = &Error{
+		Code: consts.ErrCodeTransactionInternalVersionOverflow,
+		Msg:  fmt.Sprintf("transaction internal version overflows %d", consts.MaxTxnInternalVersion),
 	}
 	ErrNilResponse = &Error{
 		Code: consts.ErrCodeNilResponse,

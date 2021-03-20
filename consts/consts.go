@@ -1,6 +1,14 @@
 package consts
 
-import "time"
+import (
+	"math"
+	"time"
+)
+
+const (
+	MinTxnInternalVersion = 1
+	MaxTxnInternalVersion = uint8(math.MaxUint8)
+)
 
 const (
 	DefaultTooStaleWriteThreshold       = 5 * time.Second
@@ -8,6 +16,7 @@ const (
 	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
 
 	DefaultTxnManagerClearWorkerNumber             = 20
+	DefaultTxnManagerClearJobTimeout               = time.Second * 10
 	DefaultTxnManagerIOWorkerNumber                = 30
 	DefaultTxnManagerMaxIOTaskBufferedPerPartition = 10000
 )
@@ -29,8 +38,7 @@ const (
 	WriteOptBitMaskReadForWrite                       = 1 << 3
 	WriteOptBitMaskReadForWriteRollbackOrClearReadKey = 1 << 4
 	WriteOptBitMaskTxnRecord                          = 1 << 5
-	WriteOptBitMaskFirstWriteOfKey                    = 1 << 6
-	WriteOptBitMaskWriteByDifferentTxn                = 1 << 7
+	WriteOptBitMaskWriteByDifferentTxn                = 1 << 6
 
 	ValueMetaBitMaskHasWriteIntent = 1
 )

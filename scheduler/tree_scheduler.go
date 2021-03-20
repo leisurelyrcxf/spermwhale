@@ -4,6 +4,7 @@ import (
 	"hash/crc32"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
 
 type StaticTreeScheduler struct {
@@ -12,7 +13,7 @@ type StaticTreeScheduler struct {
 
 func NewStaticTreeScheduler(maxBufferedTask, workerNumber int) *StaticTreeScheduler {
 	s := &StaticTreeScheduler{BasicScheduler: BasicScheduler{
-		tasks:        make(chan *types.Task, maxBufferedTask),
+		tasks:        make(chan *basic.Task, maxBufferedTask),
 		workerNumber: workerNumber,
 	}}
 	s.start()

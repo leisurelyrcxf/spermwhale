@@ -14,20 +14,10 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
+	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
-
-type TransactionHolder interface {
-	GetTxn(txnID types.TxnId) (*Txn, error)
-	RemoveTxn(txn *Txn)
-}
-
-const (
-	defaultClearTimeout = time.Second * 15
-)
-
-type Job func(ctx context.Context) error
 
 func TransactionKey(id types.TxnId) string {
 	return fmt.Sprintf("txn_%d", id)
@@ -42,9 +32,9 @@ func DecodeTxn(data []byte) (*Txn, error) {
 }
 
 type TransactionInfo struct {
-	ID    types.TxnId
-	State types.TxnState
-	Type  types.TxnType
+	ID    types.TxnId    `json:"I"`
+	State types.TxnState `json:"S"`
+	Type  types.TxnType  `json:"T"`
 }
 
 func InvalidTransactionInfo(id types.TxnId) TransactionInfo {
@@ -84,33 +74,32 @@ func (i *TransactionInfo) GetType() types.TxnType {
 }
 
 type Txn struct {
+	sync.Mutex `json:"-"`
+
 	TransactionInfo
+	ttypes.WriteKeyInfos
 
-	WrittenKeys []string
-
-	writeKeyTasks        []*types.ListTask
-	lastWriteKeyTasks    map[string]*types.ListTask
-	txnRecordTask        *types.ListTask
+	preventWriteFlags    map[string]bool
 	readForWriteReadKeys map[string]struct{}
-	allIOTasksFinished   bool
 
-	preventWriteFlags map[string]bool
+	txnKey        string
+	txnRecordTask *types.ListTask
+
+	allIOTasksFinished bool
 
 	cfg   types.TxnManagerConfig
 	kv    types.KVCC
 	store *TransactionStore
 	s     *Scheduler
-	h     TransactionHolder
+	h     *TransactionManager
 
 	err error
-
-	sync.Mutex `json:"-"`
 }
 
 func NewTxn(
 	id types.TxnId, typ types.TxnType,
 	kv types.KVCC, cfg types.TxnManagerConfig,
-	store *TransactionStore, holder TransactionHolder,
+	store *TransactionStore, holder *TransactionManager,
 	s *Scheduler) *Txn {
 	return &Txn{
 		TransactionInfo: TransactionInfo{
@@ -118,18 +107,27 @@ func NewTxn(
 			State: types.TxnStateUncommitted,
 			Type:  typ,
 		},
-		lastWriteKeyTasks: make(map[string]*types.ListTask),
-		preventWriteFlags: make(map[string]bool),
-		cfg:               cfg,
-		kv:                kv,
-		store:             store,
-		s:                 s,
-		h:                 holder,
+		WriteKeyInfos: ttypes.WriteKeyInfos{
+			KV:          kv,
+			TaskTimeout: cfg.WoundUncommittedTxnThreshold,
+		},
+
+		txnKey: TransactionKey(id),
+
+		cfg:   cfg,
+		kv:    kv,
+		store: store,
+		s:     s,
+		h:     holder,
 	}
 }
 
-func (txn *Txn) ioTaskIDOfKey(key string) string {
-	return fmt.Sprintf("%s-%s", txn.Key(), key)
+func (txn *Txn) GenIDOfKey(key string) string {
+	return fmt.Sprintf("%s-%s", txn.txnKey, key)
+}
+
+func (txn *Txn) RetrieveKeyFromID(keyId string) string {
+	return keyId[len(txn.txnKey)+1:]
 }
 
 func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
@@ -155,9 +153,9 @@ func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
 			return val, err
 		}
-		if errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked {
+		if errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked {
 			rand.Seed(time.Now().UnixNano())
-			time.Sleep(time.Duration(1+rand.Intn(5)) * time.Millisecond)
+			time.Sleep(time.Duration(1+rand.Intn(3)) * time.Millisecond)
 		}
 	}
 }
@@ -169,7 +167,7 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 
 	var (
 		vv            types.ValueCC
-		lastWriteTask = txn.lastWriteKeyTasks[key]
+		lastWriteTask = txn.GetLastWriteKeyTask(key)
 	)
 	if lastWriteTask != nil {
 		ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
@@ -197,7 +195,11 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
-		txn.preventWriteFlags[key] = true
+		if txn.preventWriteFlags == nil {
+			txn.preventWriteFlags = map[string]bool{key: true}
+		} else {
+			txn.preventWriteFlags[key] = true
+		}
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
@@ -206,36 +208,34 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 		return types.EmptyValue, err
 	}
 	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
-	if !vv.Meta.HasWriteIntent() {
-		// committed value
-		return vv.Value, nil
-	}
-	if vv.Version == txn.ID.Version() {
-		// read after write
+	if !vv.Meta.HasWriteIntent() /* committed value */ ||
+		vv.Version == txn.ID.Version() /* read after write */ {
 		return vv.Value, nil
 	}
 	assert.Must(vv.Version < txn.ID.Version())
 	var (
-		keyWithWriteIntent = map[string]bool{key: true} // value indicates the key exists
+		keyWithWriteIntent = map[string]struct{}{key: {}}
 		preventFutureWrite = utils.IsTooOld(vv.Version, txn.cfg.WoundUncommittedTxnThreshold)
 	)
 	writeTxn, err := txn.store.inferTransactionRecordWithRetry(
 		ctx,
 		types.TxnId(vv.Version), txn,
-		keyWithWriteIntent, []string{key},
+		keyWithWriteIntent, keyWithWriteIntent,
 		preventFutureWrite,
 		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
 		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	committed, rollbackedOrSafeToRollback := writeTxn.CheckCommitState(ctx, txn, keyWithWriteIntent, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
+	committed, rollbackedOrSafeToRollback := writeTxn.CheckCommitState(ctx, txn, map[string]uint8{key: vv.InternalVersion}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
+		committedTxnInternalVersion := writeTxn.GetCommittedValueInternalVersion(key)
+		assert.Must(committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
 		return vv.Value, nil
 	}
 	if rollbackedOrSafeToRollback {
-		if writeTxn.State == types.TxnStateRollbacked || !keyWithWriteIntent[key] {
-			return types.EmptyValue, errors.ErrReadUncommittedDataPrevTxnHasBeenRollbacked
+		if writeTxn.IsWrittenKeyRollbackedCheckMustNotCommitted(key) {
+			return types.EmptyValue, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 		}
 		assert.Must(writeTxn.State == types.TxnStateRollbacking)
 		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, "previous txn %d", writeTxn.ID)
@@ -244,28 +244,31 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
 
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]bool, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
+func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]uint8, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	txn.Lock()
 	defer txn.Unlock()
 
 	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, maxRetry)
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]bool, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]uint8, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
 	switch txn.State {
 	case types.TxnStateStaging:
-		if len(txn.WrittenKeys) == 0 {
-			glog.Fatalf("[checkCommitState] len(txn.WrittenKeys) == 0, txn: %v", txn)
+		writtenKey2InternalVersion := txn.GetWrittenKeysWithLastInternalVersion()
+		if len(writtenKey2InternalVersion) == 0 {
+			glog.Fatalf("[checkCommitState] txn.WrittenKeys.Len() == 0, txn: %v", txn)
 		}
-		if len(keysWithWriteIntent) == len(txn.WrittenKeys) {
-			assert.MustAllContain(keysWithWriteIntent, txn.WrittenKeys)
+		for key := range keysWithWriteIntent {
+			assert.Must(txn.ContainsWrittenKey(key))
+		}
+		if len(writtenKey2InternalVersion) == len(keysWithWriteIntent) && txn.MatchAllWrittenKeyInternalVersions(keysWithWriteIntent) {
 			txn.State = types.TxnStateCommitted
-			txn.onCommitted(callerTxn.ID, "found committed during CheckCommitState: len(keysWithWriteIntent) == len(txn.WrittenKeys)") // help commit since original txn coordinator may have gone
+			txn.onCommitted(callerTxn.ID, "found committed during CheckCommitState: len(keysWithWriteIntent) == txn.WrittenKeys.Len()") // help commit since original txn coordinator may have gone
 			return true, false
 		}
 
 		var inKeys, notInKeys []string
-		for _, writtenKey := range txn.WrittenKeys {
+		for writtenKey := range writtenKey2InternalVersion {
 			if _, ok := keysWithWriteIntent[writtenKey]; ok {
 				inKeys = append(inKeys, writtenKey)
 			} else {
@@ -284,24 +287,32 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version())
+				assert.Must(vv.InternalVersion > 0)
 				if !vv.HasWriteIntent() {
 					txn.State = types.TxnStateCommitted
+					txn.MarkCommittedCleared(key, vv.Value)
 					txn.onCommitted(callerTxn.ID, fmt.Sprintf("found committed during CheckCommitState: key '%s' committed", key)) // help commit since original txn coordinator may have gone
 					return true, false
 				}
-				continue
-			}
-			if idx >= notInKeysLen {
-				txn.State = types.TxnStateRollbacking
-				assert.MustContain(keysWithWriteIntent, key)
-				keysWithWriteIntent[key] = false                                               // key already rollbacked
-				_ = txn.rollback(ctx, callerTxn.ID, true, "previous write intent disappeared") // help rollback since original txn coordinator may have gone
-				return false, true
+				if vv.InternalVersion == writtenKey2InternalVersion[key] {
+					continue
+				}
+				assert.Must(vv.InternalVersion < writtenKey2InternalVersion[key])
 			}
 			if vv.MaxReadVersion > txn.ID.Version() {
 				txn.State = types.TxnStateRollbacking
+				if !exists {
+					txn.MarkWrittenKeyRollbacked(key)
+				}
 				_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("found non exist key during CheckCommitState"+
 					" and is impossible to succeed in the future, max read version(%d) > txnId(%d)", vv.MaxReadVersion, txn.ID)) // help rollback since original txn coordinator may have gone
+				return false, true
+			}
+			if !exists && idx >= notInKeysLen {
+				assert.MustContain(keysWithWriteIntent, key)
+				txn.State = types.TxnStateRollbacking
+				txn.MarkWrittenKeyRollbacked(key)                                              // key already rollbacked
+				_ = txn.rollback(ctx, callerTxn.ID, true, "previous write intent disappeared") // help rollback since original txn coordinator may have gone
 				return false, true
 			}
 			return false, false
@@ -339,24 +350,14 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 		return txn.err
 	}
 
-	writeOpt := types.NewKVCCWriteOption().CondReadForWrite(txn.Type.IsReadForWrite()).CondFirstWriteOfKey(!txn.hasWritten(key))
-	writeTask := types.NewListTaskNoResult(
-		txn.ioTaskIDOfKey(key),
-		fmt.Sprintf("set-key-%s", key),
-		txn.cfg.WoundUncommittedTxnThreshold, func(ctx context.Context, _ interface{}) error {
-			return txn.kv.Set(ctx, key, types.NewValue(val, txn.ID.Version()), writeOpt)
-		})
-	if err := txn.s.ScheduleIOJob(writeTask); err != nil {
-		_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("io schedule failed: '%v'", err.Error()))
+	if err := txn.WriteKey(txn.GenIDOfKey(key), txn.s.ioJobScheduler,
+		key, types.NewValue(val, txn.ID.Version()),
+		types.NewKVCCWriteOption().CondReadForWrite(txn.Type.IsReadForWrite())); err != nil {
+		_ = txn.rollback(ctx, txn.ID, true, err.Error())
 		txn.err = err
 		return err
 	}
-	if _, ok := txn.lastWriteKeyTasks[key]; !ok {
-		txn.WrittenKeys = append(txn.WrittenKeys, key)
-	}
-	txn.writeKeyTasks = append(txn.writeKeyTasks, writeTask)
-	txn.lastWriteKeyTasks[key] = writeTask
-	for _, task := range txn.writeKeyTasks {
+	for _, task := range txn.GetWriteTasks() {
 		// TODO this should be safe even though no sync was executed
 		if err := task.ErrUnsafe(); errors.IsMustRollbackWriteKeyErr(err) {
 			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write key io task '%s' failed: '%v'", task.ID, err.Error()))
@@ -375,7 +376,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.State)
 	}
 
-	if len(txn.WrittenKeys) == 0 {
+	if txn.GetWrittenKeyCount() == 0 {
 		if txn.Type.IsReadForWrite() && len(txn.readForWriteReadKeys) > 0 {
 			_ = txn.rollback(ctx, txn.ID, false, "readForWrite transaction write no keys")
 			return errors.ErrReadForWriteTransactionCommitWithNoWrittenKeys
@@ -387,8 +388,8 @@ func (txn *Txn) Commit(ctx context.Context) error {
 
 	txn.State = types.TxnStateStaging
 	txnRecordTask := types.NewListTaskNoResult(
-		txn.Key(),
-		fmt.Sprintf("write-txn-record-%s", txn.Key()),
+		txn.txnKey,
+		"write-txn-record-during-commit",
 		txn.cfg.WoundUncommittedTxnThreshold, func(ctx context.Context, _ interface{}) error {
 			return txn.writeTxnRecord(ctx)
 		})
@@ -426,13 +427,13 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	ctx = context.Background()
 	maxRetry := utils.MaxInt(int(int64(txn.cfg.WoundUncommittedTxnThreshold)/int64(time.Second))*3, 10)
 	if recordErr := txn.txnRecordTask.Err(); recordErr != nil {
-		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.WrittenKeys, true, maxRetry)
+		inferredTxn, err := txn.store.inferTransactionRecordWithRetry(ctx, txn.ID, txn, nil, txn.GetWrittenKeys(), true, maxRetry)
 		if err != nil {
 			txn.State = types.TxnStateInvalid
 			return err
 		}
 		assert.Must(txn.ID == inferredTxn.ID)
-		assert.MustEqualStrings(inferredTxn.WrittenKeys, txn.WrittenKeys)
+		assert.Must(inferredTxn.GetWrittenKeyCount() == txn.GetWrittenKeyCount())
 		txn.State = inferredTxn.State
 		if txn.State == types.TxnStateCommitted {
 			return nil
@@ -442,13 +443,8 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		}
 	}
 	assert.Must(txn.State == types.TxnStateStaging)
-	succeededKeys := make(map[string]bool)
-	for key, lastWriteKeyTask := range txn.lastWriteKeyTasks {
-		if lastWriteKeyTask.Err() == nil {
-			succeededKeys[key] = true
-		}
-	}
-	assert.Must(len(succeededKeys) != len(txn.WrittenKeys) || txn.txnRecordTask.Err() != nil)
+	succeededKeys := txn.GetSucceededWrittenKeys()
+	assert.Must(len(succeededKeys) != txn.GetWrittenKeyCount() || txn.txnRecordTask.Err() != nil)
 	committed, rollbacked := txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
 	if committed {
 		assert.Must(txn.State == types.TxnStateCommitted)
@@ -496,10 +492,9 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	}
 
 	txn.State = types.TxnStateRollbacking
-	assert.Must(len(txn.WrittenKeys) == len(txn.lastWriteKeyTasks))
 	var (
 		noNeedToRemoveTxnRecord = txn.ID == callerTxn && txn.txnRecordTask == nil
-		toClearKeys             = txn.getClearKeys()
+		toClearKeys             = txn.getToClearKeys()
 	)
 	if noNeedToRemoveTxnRecord && len(toClearKeys) == 0 {
 		txn.State = types.TxnStateRollbacked
@@ -508,7 +503,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 
 	var (
 		root = types.NewTreeTaskNoResult(
-			txn.Key(), "remove-txn-record", defaultClearTimeout,
+			txn.txnKey, "remove-txn-record", txn.cfg.ClearTimeout,
 			nil, func(ctx context.Context, _ []interface{}) error {
 				if noNeedToRemoveTxnRecord {
 					return nil
@@ -516,7 +511,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 				return txn.removeTxnRecord(ctx, true)
 			},
 		)
-		writtenKeyChildren = make([]*types.TreeTask, 0, len(txn.WrittenKeys))
+		writtenKeyChildren = make([]*types.TreeTask, 0, txn.GetWrittenKeyCount())
 	)
 	defer func() {
 		if txn.State == types.TxnStateRollbacking && createTxnRecordOnFailure && !root.ChildrenSuccess(writtenKeyChildren) {
@@ -524,17 +519,24 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		}
 	}()
 
-	for key, isWrittenKey := range toClearKeys {
-		key, isWrittenKey := key, isWrittenKey
+	for key, writeInfo := range toClearKeys {
+		assert.Must(!writeInfo.Committed && !writeInfo.CommittedCleared)
+		if writeInfo.Rollbacked {
+			continue
+		}
+
+		var (
+			key          = key
+			isWrittenKey = writeInfo.IsValid()
+			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
+			opt          = types.NewKVCCWriteOption().WithRollbackVersion().
+					CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
+					CondWriteByDifferentTransaction(callerTxn != txn.ID)
+		)
 		child := types.NewTreeTaskNoResult(
-			txn.Key()+key, "rollback-key", defaultClearTimeout,
-			root, func(ctx context.Context, _ []interface{}) error {
+			txn.GenIDOfKey(key), "rollback-key", txn.cfg.ClearTimeout, root, func(ctx context.Context, _ []interface{}) error {
 				_ = reason
-				if removeErr := txn.kv.Set(ctx, key,
-					types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-					types.NewKVCCWriteOption().WithRollbackVersion().
-						CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
-						CondWriteByDifferentTransaction(callerTxn != txn.ID)); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
+				if removeErr := txn.kv.Set(ctx, key, val, opt); removeErr != nil && !errors.IsNotExistsErr(removeErr) {
 					glog.Warningf("rollback key %v failed: '%v'", key, removeErr)
 					return removeErr
 				}
@@ -553,6 +555,11 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		createTxnRecordOnFailure = false
 		return errors.Annotatef(ctx.Err(), "wait rollback root task finish timeouted")
 	}
+	for _, child := range writtenKeyChildren {
+		if err := child.Err(); err == nil {
+			txn.MarkWrittenKeyRollbacked(txn.RetrieveKeyFromID(child.ID))
+		}
+	}
 	if err := root.Err(); err != nil {
 		return err
 	}
@@ -566,8 +573,9 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 
 func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	assert.Must(txn.State == types.TxnStateCommitted)
-	assert.Must(len(txn.WrittenKeys) > 0)
+	assert.Must(txn.GetWrittenKeyCount() > 0)
 
+	txn.MarkAllWrittenKeyCommitted()
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		return
 	}
@@ -579,13 +587,13 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	}
 
 	var root = types.NewTreeTaskNoResult(
-		txn.Key(), "remove-txn-record", defaultClearTimeout,
+		txn.txnKey, "remove-txn-record", txn.cfg.ClearTimeout,
 		nil, func(ctx context.Context, _ []interface{}) error {
 			if consts.BuildOption.IsDebug() { // TODO remove this in product
-				for _, key := range txn.WrittenKeys {
+				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
 					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
 					assert.Must(err == nil && (exists && !val.HasWriteIntent()))
-				}
+				})
 			}
 			if err := txn.removeTxnRecord(ctx, false); err != nil {
 				return err
@@ -597,16 +605,24 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 		},
 	)
 
-	for key, isWrittenKey := range txn.getClearKeys() {
-		key, isWrittenKey := key, isWrittenKey
+	for key, writeInfo := range txn.getToClearKeys() {
+		assert.Must(!writeInfo.Rollbacked)
+		if writeInfo.CommittedCleared {
+			continue
+		}
+
+		var (
+			key          = key
+			isWrittenKey = writeInfo.IsValid()
+			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
+			opt          = types.NewKVCCWriteOption().WithClearWriteIntent().
+					CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
+					CondWriteByDifferentTransaction(callerTxn != txn.ID)
+		)
+		assert.Must(!isWrittenKey || writeInfo.InternalVersion > 0)
 		_ = types.NewTreeTaskNoResult(
-			txn.Key()+key, "clear-key", defaultClearTimeout,
-			root, func(ctx context.Context, _ []interface{}) error {
-				if clearErr := txn.kv.Set(ctx, key,
-					types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
-					types.NewKVCCWriteOption().WithClearWriteIntent().
-						CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
-						CondWriteByDifferentTransaction(callerTxn != txn.ID)); clearErr != nil {
+			txn.GenIDOfKey(key), "clear-key", txn.cfg.ClearTimeout, root, func(ctx context.Context, _ []interface{}) error {
+				if clearErr := txn.kv.Set(ctx, key, val, opt); clearErr != nil {
 					if errors.IsNotExistsErr(clearErr) {
 						glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, clearErr)
 					} else {
@@ -622,25 +638,25 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	_ = txn.s.ScheduleClearJobTree(root)
 }
 
-func (txn *Txn) getClearKeys() map[string]bool /* map[key]isWritten */ {
-	m := make(map[string]bool)
+func (txn *Txn) getToClearKeys() map[string]ttypes.WriteKeyInfo /* key->WrittenValueInternalVersion */ {
+	var m = make(map[string]ttypes.WriteKeyInfo)
 	if txn.Type.IsReadForWrite() {
 		for readKey := range txn.readForWriteReadKeys {
-			m[readKey] = false
+			m[readKey] = ttypes.EmptyWriteKeyInfo
 		}
 	}
-	for _, writtenKey := range txn.WrittenKeys {
-		m[writtenKey] = true
-	}
+	txn.ForEachWrittenKey(func(writtenKey string, info ttypes.WriteKeyInfo) {
+		m[writtenKey] = info
+	})
 	return m
 }
 
 func (txn *Txn) Encode() []byte {
-	return utils.JsonEncode(txn)
-}
-
-func (txn *Txn) Key() string {
-	return TransactionKey(txn.ID)
+	bytes, err := txn.MarshalJSON()
+	if err != nil {
+		glog.Fatalf("marshal json failed: %v", err)
+	}
+	return bytes
 }
 
 func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
@@ -666,15 +682,15 @@ func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
 	for _, cancelledTask := range cancelledTasks {
 		cancelledTask.WaitFinish()
 	}
-	for _, ioTask := range ioTasks { // TODO remove this in product
-		assert.Must(ioTask.Finished())
+	for _, ioTask := range ioTasks {
+		assert.Must(ioTask.Finished()) // TODO remove this in product
 	}
 	txn.s.GCIOJobs(ioTasks)
 	txn.allIOTasksFinished = true
 }
 
 func (txn *Txn) getIOTasks() []*types.ListTask {
-	ioTasks := append(make([]*types.ListTask, 0, len(txn.writeKeyTasks)), txn.writeKeyTasks...)
+	ioTasks := txn.GetCopiedWriteTasks()
 	if txn.txnRecordTask != nil {
 		ioTasks = append(ioTasks, txn.txnRecordTask)
 	}
@@ -684,7 +700,7 @@ func (txn *Txn) getIOTasks() []*types.ListTask {
 func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
-	err := txn.kv.Set(ctx, txn.Key(), types.NewValue(txn.Encode(), txn.ID.Version()),
+	err := txn.kv.Set(ctx, txn.txnKey, types.NewValue(txn.Encode(), txn.ID.Version()),
 		types.NewKVCCWriteOption().WithTxnRecord())
 	if err != nil {
 		glog.V(7).Infof("[writeTxnRecord] write transaction record failed: %v", err)
@@ -693,7 +709,7 @@ func (txn *Txn) writeTxnRecord(ctx context.Context) error {
 }
 
 func (txn *Txn) removeTxnRecord(ctx context.Context, rollback bool) error {
-	err := txn.kv.Set(ctx, txn.Key(),
+	err := txn.kv.Set(ctx, txn.txnKey,
 		types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent(),
 		types.NewKVCCWriteOption().WithRemoveTxnRecordCondRollback(rollback))
 	if err != nil && !errors.IsNotExistsErr(err) {
@@ -703,11 +719,27 @@ func (txn *Txn) removeTxnRecord(ctx context.Context, rollback bool) error {
 	return nil
 }
 
-func (txn *Txn) hasWritten(key string) bool {
-	_, ok := txn.lastWriteKeyTasks[key]
-	return ok
-}
-
 func (txn *Txn) couldBeWounded() bool {
 	return utils.IsTooOld(txn.ID.Version(), txn.cfg.WoundUncommittedTxnThreshold)
+}
+
+type Marshaller struct {
+	TransactionInfo
+	WrittenKeys map[string]uint8 `json:"K"`
+}
+
+func (txn *Txn) MarshalJSON() ([]byte, error) {
+	return json.Marshal(Marshaller{
+		TransactionInfo: txn.TransactionInfo,
+		WrittenKeys:     txn.GetWrittenKeysWithLastInternalVersion(),
+	})
+}
+
+func (txn *Txn) UnmarshalJSON(bytes []byte) (err error) {
+	var t Marshaller
+	if err = json.Unmarshal(bytes, &t); err == nil {
+		txn.TransactionInfo = t.TransactionInfo
+		txn.InitializeWrittenKeyInfos(t.WrittenKeys)
+	}
+	return err
 }

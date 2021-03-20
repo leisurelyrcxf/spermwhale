@@ -11,6 +11,7 @@ import (
 type TxnManagerConfig struct {
 	WoundUncommittedTxnThreshold time.Duration
 	ClearWorkerNum, IOWorkerNum  int
+	ClearTimeout                 time.Duration
 	MaxTaskBufferedPerPartition  int
 }
 
@@ -18,6 +19,7 @@ func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerC
 	return TxnManagerConfig{
 		WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold,
 		ClearWorkerNum:               consts.DefaultTxnManagerClearWorkerNumber,
+		ClearTimeout:                 consts.DefaultTxnManagerClearJobTimeout,
 		IOWorkerNum:                  consts.DefaultTxnManagerIOWorkerNumber,
 		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxIOTaskBufferedPerPartition,
 	}

@@ -98,5 +98,5 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 	if !assert.Equal(goRoutineNumber*delta+initialValue, val) {
 		return
 	}
-	return txns.Check(assert)
+	return txns.CheckReadForWriteOnly(assert, "k1")
 }

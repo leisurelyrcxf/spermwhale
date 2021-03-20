@@ -3,10 +3,18 @@ package utils
 import (
 	"encoding/json"
 
-	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"github.com/golang/glog"
+
+	"github.com/leisurelyrcxf/spermwhale/errors"
 )
+
+func JsonEncodeCompacted(v interface{}) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		glog.Fatalf("encode to json failed: '%v'", err)
+	}
+	return b
+}
 
 func JsonEncode(v interface{}) []byte {
 	b, err := json.MarshalIndent(v, "", "    ")

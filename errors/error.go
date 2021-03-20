@@ -20,7 +20,7 @@ var (
 
 	retryableTxnErrs = mergeSet(mustRollbackGetErrs, map[int]struct{}{
 		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
-		consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked: {},
+		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
 		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
 	})
 )
@@ -113,7 +113,7 @@ func IsRetryableTransactionManagerErr(e error) bool {
 
 func IsRetryableGetErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked
+	return code == consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked
 }
 
 func IsMustRollbackGetErr(e error) bool {
@@ -144,7 +144,8 @@ func IsNotSupportedErr(e error) bool {
 
 func IsRetryableTabletGetErr(err error) bool {
 	code := GetErrorCode(err)
-	return code == consts.ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked || code == consts.ErrCodeTabletWriteTransactionNotFound
+	return code == consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked ||
+		code == consts.ErrCodeTabletWriteTransactionNotFound
 }
 
 func GetErrorCode(e error) int {

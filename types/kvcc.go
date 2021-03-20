@@ -177,13 +177,6 @@ func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
 	return opt
 }
 
-func (opt KVCCWriteOption) CondFirstWriteOfKey(b bool) KVCCWriteOption {
-	if b {
-		opt.flag |= WriteOptBitMaskFirstWriteOfKey
-	}
-	return opt
-}
-
 func (opt KVCCWriteOption) IsClearWriteIntent() bool {
 	return IsWriteOptClearWriteIntent(opt.flag)
 }
@@ -206,10 +199,6 @@ func (opt KVCCWriteOption) IsReadForWriteRollbackOrClearReadKey() bool {
 
 func (opt KVCCWriteOption) IsTxnRecord() bool {
 	return opt.flag&WriteOptBitMaskTxnRecord == WriteOptBitMaskTxnRecord
-}
-
-func (opt KVCCWriteOption) IsFirstWriteOfKey() bool {
-	return opt.flag&WriteOptBitMaskFirstWriteOfKey == WriteOptBitMaskFirstWriteOfKey
 }
 
 func (opt KVCCWriteOption) IsWriteByDifferentTransaction() bool {

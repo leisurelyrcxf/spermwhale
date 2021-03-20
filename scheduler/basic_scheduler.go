@@ -3,16 +3,16 @@ package scheduler
 import (
 	"sync"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
-	"github.com/leisurelyrcxf/spermwhale/types"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 )
 
 type BasicScheduler struct {
-	tasks        chan *types.Task
+	tasks        chan *basic.Task
 	workerNumber int
 
 	closed bool
@@ -22,14 +22,14 @@ type BasicScheduler struct {
 
 func NewBasicScheduler(maxBufferedTask, workerNumber int) *BasicScheduler {
 	b := &BasicScheduler{
-		tasks:        make(chan *types.Task, maxBufferedTask),
+		tasks:        make(chan *basic.Task, maxBufferedTask),
 		workerNumber: workerNumber,
 	}
 	b.start()
 	return b
 }
 
-func (s *BasicScheduler) Schedule(t *types.Task) error {
+func (s *BasicScheduler) Schedule(t *basic.Task) error {
 	s.RLock()
 	defer s.RUnlock()
 

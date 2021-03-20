@@ -77,12 +77,37 @@ func (ss ExecuteInfos) Swap(i, j int) {
 	ss[i], ss[j] = ss[j], ss[i]
 }
 
-func (ss ExecuteInfos) Check(assert *testifyassert.Assertions) bool {
+func (ss ExecuteInfos) CheckReadForWriteOnly(assert *testifyassert.Assertions, key string) bool {
 	sort.Sort(ss)
 	for i := 1; i < len(ss); i++ {
 		prev, cur := ss[i-1], ss[i]
-		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
+		if !assert.Equal(prev.ID, cur.ReadValues[key].Version) || !assert.Equal(prev.WriteValues[key].MustInt(), cur.ReadValues[key].MustInt()) {
 			return false
+		}
+	}
+	return true
+}
+
+func (ss ExecuteInfos) Check(assert *testifyassert.Assertions) bool {
+	sort.Sort(ss)
+	for i := 0; i < len(ss); i++ {
+		findLastWriteVersion := func(cur int, key string, readVal types.Value) types.Value {
+			for j := i - 1; j > 0; j-- {
+				ptx := ss[j]
+				if writeVal, ok := ptx.WriteValues[key]; ok {
+					return writeVal
+				}
+			}
+			return types.EmptyValue
+		}
+		for key, readVal := range ss[i].ReadValues {
+			lastWriteVal := findLastWriteVersion(i, key, readVal)
+			if lastWriteVal.IsEmpty() {
+				continue
+			}
+			if !assert.Equal(readVal.Version, lastWriteVal.Version) {
+				return false
+			}
 		}
 	}
 	return true

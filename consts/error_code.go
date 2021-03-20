@@ -4,7 +4,7 @@ const (
 	ErrCodeWriteReadConflict                           = 1
 	ErrCodeStaleWrite                                  = 2
 	ErrCodeReadUncommittedDataPrevTxnStateUndetermined = 3
-	ErrCodeReadUncommittedDataPrevTxnHasBeenRollbacked = 4
+	ErrCodeReadUncommittedDataPrevTxnKeyRollbacked     = 4
 	ErrCodeReadUncommittedDataPrevTxnToBeRollbacked    = 5
 	ErrCodeReadAfterWriteFailed                        = 6
 
@@ -15,9 +15,10 @@ const (
 	ErrCodeVersionAlreadyExists = 50
 	ErrCodeVersionNotExists     = 51
 
-	ErrCodeTransactionAlreadyExists  = 62
-	ErrCodeTransactionNotFound       = 63
-	ErrCodeTransactionStateCorrupted = 64
+	ErrCodeTransactionAlreadyExists           = 62
+	ErrCodeTransactionNotFound                = 63
+	ErrCodeTransactionStateCorrupted          = 64
+	ErrCodeTransactionInternalVersionOverflow = 65
 
 	ErrCodeWriteIntentQueueFull = 70
 

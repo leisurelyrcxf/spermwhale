@@ -9,8 +9,9 @@ import (
 )
 
 type Meta struct {
-	Version uint64
-	Flag    uint8
+	Version         uint64
+	InternalVersion uint8
+	Flag            uint8
 }
 
 func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
@@ -32,6 +33,10 @@ func (m Meta) isEmpty() bool {
 
 func (m Meta) HasWriteIntent() bool {
 	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+}
+
+func (m Meta) IsFirstWriteOfKey() bool {
+	return m.InternalVersion == consts.MinTxnInternalVersion
 }
 
 type Value struct {
@@ -103,6 +108,11 @@ func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 		Value:          v,
 		MaxReadVersion: maxReadVersion,
 	}
+}
+
+func (v Value) WithInternalVersion(version uint8) Value {
+	v.Meta.InternalVersion = version
+	return v
 }
 
 func IntValue(i int) Value {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -24,7 +26,7 @@ type Scheduler struct {
 	ioJobScheduler    *scheduler.ConcurrentDynamicListScheduler
 }
 
-func (s *Scheduler) ScheduleClearJobTree(root *types.TreeTask) error {
+func (s *Scheduler) ScheduleClearJobTree(root *types.TreeTask) error { // TODO add context
 	return s.clearJobScheduler.ScheduleTree(root)
 }
 
@@ -130,23 +132,16 @@ func (m *TransactionManager) createStore() *TransactionManager {
 		retryWaitPeriod: consts.DefaultRetryWaitPeriod,
 
 		txnInitializer: func(record *Txn) {
-			record.lastWriteKeyTasks = make(map[string]*types.ListTask)
-			for _, key := range record.WrittenKeys {
-				record.lastWriteKeyTasks[key] = nil
-			}
 			record.cfg = m.cfg
 			record.kv = m.kv
 			record.store = m.store
 			record.s = m.s
 			record.h = m
 		},
-		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys []string) *Txn {
+		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys basic.Set) *Txn {
 			txn := m.newTxn(txnId, types.TxnTypeDefault)
 			txn.State = state
-			txn.WrittenKeys = writtenKeys
-			for _, key := range txn.WrittenKeys {
-				txn.lastWriteKeyTasks[key] = nil
-			}
+			txn.InitializeWrittenKeyInfosNaive(writtenKeys)
 			return txn
 		},
 	}

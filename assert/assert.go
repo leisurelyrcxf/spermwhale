@@ -27,14 +27,14 @@ func MustEqualStrings(s1, s2 []string) {
 	}
 }
 
-func MustAllContain(m map[string]bool, strings []string) {
-	for _, str := range strings {
-		_, ok := m[str]
+func MustAllContain(super map[string]uint8, keys []string) {
+	for _, key := range keys {
+		_, ok := super[key]
 		Must(ok)
 	}
 }
 
-func MustContain(m map[string]bool, str string) {
+func MustContain(m map[string]uint8, str string) {
 	_, ok := m[str]
 	Must(ok)
 }
