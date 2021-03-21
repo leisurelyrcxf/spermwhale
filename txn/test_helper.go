@@ -35,17 +35,36 @@ var (
 	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 1000).WithMaxClockDrift(0)
 )
 
-type memoryDB struct {
-	types.KV
-	latency                             time.Duration
-	probabilityOfTxnRecordFailureFactor int
+type FailurePattern int
+
+const (
+	FailurePatternNone                   = 0
+	FailurePatternAckLost FailurePattern = 1 << iota
+	FailurePatternReqLost
+	FailurePatternAll = 0xffffffff
+)
+
+func (p FailurePattern) IsAckLost() bool {
+	return p&FailurePatternAckLost == FailurePatternAckLost
 }
 
-func newMemoryDB(latency time.Duration, probabilityOfTxnRecordFailureFractor int) *memoryDB {
+func (p FailurePattern) IsReqLost() bool {
+	return p&FailurePatternReqLost == FailurePatternReqLost
+}
+
+type memoryDB struct {
+	types.KV
+	latency                                  time.Duration
+	probabilityOfTxnRecordFailureDenominator int
+	failurePattern                           FailurePattern
+}
+
+func newMemoryDB(latency time.Duration, failurePattern FailurePattern, failureProbability int) *memoryDB {
 	return &memoryDB{
-		KV:                                  memory.NewMemoryDB(),
-		latency:                             latency,
-		probabilityOfTxnRecordFailureFactor: probabilityOfTxnRecordFailureFractor,
+		KV:                                       memory.NewMemoryDB(),
+		latency:                                  latency,
+		probabilityOfTxnRecordFailureDenominator: failureProbability,
+		failurePattern:                           failurePattern,
 	}
 }
 
@@ -56,12 +75,18 @@ func (d *memoryDB) Get(ctx context.Context, key string, opt types.KVReadOption) 
 
 func (d *memoryDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
 	time.Sleep(d.latency)
-	if err := d.KV.Set(ctx, key, val, opt); err != nil || d.probabilityOfTxnRecordFailureFactor <= 0 {
+	if d.failurePattern.IsReqLost() {
+		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
+			return errors.ErrInject
+		}
+	}
+	if err := d.KV.Set(ctx, key, val, opt); err != nil {
 		return err
 	}
-	rand.Seed(time.Now().UnixNano())
-	if rand.Intn(d.probabilityOfTxnRecordFailureFactor) == 0 {
-		return errors.ErrInject
+	if d.failurePattern.IsAckLost() {
+		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
+			return errors.ErrInject
+		}
 	}
 	return nil
 }
@@ -89,6 +114,7 @@ func (ss ExecuteInfos) Swap(i, j int) {
 	ss[i], ss[j] = ss[j], ss[i]
 }
 
+// CheckReadForWriteOnly only used for checking only have update (read for write) transactions in the test case
 func (ss ExecuteInfos) CheckReadForWriteOnly(assert *testifyassert.Assertions, key string) bool {
 	sort.Sort(ss)
 	for i := 1; i < len(ss); i++ {

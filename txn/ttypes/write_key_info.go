@@ -55,7 +55,7 @@ type WriteKeyInfos struct {
 }
 
 func (ks *WriteKeyInfos) InitializeWrittenKeys(key2LastWrittenVersion KeyVersions, completed bool) {
-	assert.Must(ks.keys == nil)
+	assert.Must(ks.keys == nil && len(key2LastWrittenVersion) > 0)
 	ks.keys = make(map[string]WriteKeyInfo)
 	for key, lastWrittenVersion := range key2LastWrittenVersion {
 		ks.keys[key] = NewWriteKeyInfo(lastWrittenVersion)

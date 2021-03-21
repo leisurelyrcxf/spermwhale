@@ -40,13 +40,23 @@ func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
 	testTxnLostUpdate(t, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second})
 }
 
+func TestTxnLostUpdateRandomErr(t *testing.T) {
+	testTxnLostUpdateRaw(t, 100, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10},
+		FailurePatternAll, 10)
+}
+
 func testTxnLostUpdate(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration) {
+	testTxnLostUpdateRaw(t, 10000, txnType, readOpt, staleWriteThresholds, FailurePatternNone, 0)
+}
+
+func testTxnLostUpdateRaw(t *testing.T, txnNumber int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration,
+	failurePattern FailurePattern, failureProbability int) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, staleWriteThreshold := range staleWriteThresholds {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdateOneRound(t, i, txnType, readOpt, staleWriteThreshold)) {
+			if !testifyassert.True(t, testTxnLostUpdateOneRound(t, i, txnNumber, txnType, readOpt, staleWriteThreshold, failurePattern, failureProbability)) {
 				t.Errorf("testTxnLostUpdate failed @round %d, staleWriteThreshold: %s, type: %s, readOpt: %v", i, staleWriteThreshold, txnType, readOpt)
 				return
 			}
@@ -54,15 +64,15 @@ func testTxnLostUpdate(t *testing.T, txnType types.TxnType, readOpt types.TxnRea
 	}
 }
 
-func testTxnLostUpdateOneRound(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
+func testTxnLostUpdateOneRound(t *testing.T, round int, txnNumber int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration,
+	failurePattern FailurePattern, failureProbability int) (b bool) {
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	const (
-		initialValue    = 101
-		goRoutineNumber = 10000
-		delta           = 6
+		initialValue = 101
+		delta        = 6
 	)
-	db := memory.NewMemoryDB()
+	db := newMemoryDB(0, failurePattern, failureProbability)
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(m, 0)
@@ -75,9 +85,9 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, txnType types.TxnType, r
 	if !assert.NoError(err) {
 		return
 	}
-	txns := make([]ExecuteInfo, goRoutineNumber)
+	txns := make([]ExecuteInfo, txnNumber)
 	var wg sync.WaitGroup
-	for i := 0; i < goRoutineNumber; i++ {
+	for i := 0; i < txnNumber; i++ {
 		wg.Add(1)
 
 		go func(i int) {
@@ -114,7 +124,7 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, txnType types.TxnType, r
 		return
 	}
 	t.Logf("val: %d", val)
-	if !assert.Equal(goRoutineNumber*delta+initialValue, val) {
+	if !assert.Equal(txnNumber*delta+initialValue, val) {
 		return
 	}
 

@@ -117,7 +117,6 @@ func NewTxn(
 	}
 }
 
-// TODO don't add txn id
 type Marshaller struct {
 	State       types.TxnState     `json:"S"`
 	Type        types.TxnType      `json:"T"`
@@ -129,6 +128,8 @@ func DecodeTxn(txnId types.TxnId, data []byte) (*Txn, error) {
 	if err := json.Unmarshal(data, &t); err != nil {
 		return nil, err
 	}
+	assert.Must(t.State != types.TxnStateStaging || len(t.WrittenKeys) > 0)
+
 	txn := &Txn{}
 	txn.TransactionInfo = TransactionInfo{
 		ID:    txnId,
@@ -140,7 +141,7 @@ func DecodeTxn(txnId types.TxnId, data []byte) (*Txn, error) {
 }
 
 func (txn *Txn) Encode() []byte {
-	assert.Must(txn.State != types.TxnStateStaging || txn.AreWrittenKeysCompleted())
+	assert.Must(txn.State != types.TxnStateStaging || (txn.AreWrittenKeysCompleted() && txn.GetWrittenKeyCount() > 0))
 	bytes, err := json.Marshal(Marshaller{
 		State:       txn.State,
 		Type:        txn.Type,
@@ -273,10 +274,9 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 }
 
 func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
-	assert.Must(len(keysWithWriteIntent) > 0)
 	switch txn.State {
 	case types.TxnStateStaging:
-		assert.Must(txn.AreWrittenKeysCompleted())
+		assert.Must(txn.AreWrittenKeysCompleted() && txn.GetWrittenKeyCount() > 0)
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key))
 		}
@@ -490,7 +490,7 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 	return txn.rollback(ctx, txn.ID, true, "rollback by user, txn err: '%v'", txn.err)
 }
 
-func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string, args ...interface{}) error { // TODO lazy generate reason?
+func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string, args ...interface{}) error {
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		assert.Must(txn.State == types.TxnStateRollbacking)
 		return nil
@@ -512,7 +512,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		toClearKeys             = txn.getToClearKeys(true)
 	)
 	if noNeedToRemoveTxnRecord && len(toClearKeys) == 0 {
-		if txn.AreWrittenKeysCompleted() {
+		if txn.ID == callerTxn || txn.AreWrittenKeysCompleted() {
 			txn.State = types.TxnStateRollbacked
 		}
 		return nil
@@ -591,7 +591,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		return err
 	}
 
-	if txn.AreWrittenKeysCompleted() {
+	if txn.ID == callerTxn || txn.AreWrittenKeysCompleted() {
 		txn.State = types.TxnStateRollbacked
 		if callerTxn == txn.ID {
 			txn.gc()
@@ -601,8 +601,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 }
 
 func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interface{}) {
-	assert.Must(txn.State == types.TxnStateCommitted && txn.AreWrittenKeysCompleted())
-	assert.Must(txn.GetWrittenKeyCount() > 0)
+	assert.Must(txn.State == types.TxnStateCommitted && txn.AreWrittenKeysCompleted() && txn.GetWrittenKeyCount() > 0)
 
 	txn.MarkAllWrittenKeysCommitted()
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
