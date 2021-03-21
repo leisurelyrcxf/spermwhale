@@ -23,7 +23,7 @@ import (
 )
 
 func TestTxnLostUpdate(t *testing.T) {
-	testTxnLostUpdate(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Second})
+	testTxnLostUpdate(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10})
 }
 
 func TestTxnLostUpdateReadForWrite(t *testing.T) {
@@ -40,7 +40,7 @@ func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
 
 func testTxnLostUpdate(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 4))
+	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, staleWriteThreshold := range staleWriteThresholds {
 		for i := 0; i < rounds; i++ {

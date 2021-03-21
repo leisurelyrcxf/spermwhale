@@ -174,7 +174,7 @@ func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_
 		}
 		if err != nil && errors.IsMustRollbackGetErr(err) {
 			txn.State = types.TxnStateRollbacking
-			_ = txn.rollback(ctx, txn.ID, true, err.Error())
+			_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Get: %v", err)
 		}
 	}()
 
@@ -280,9 +280,9 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key))
 		}
-		if txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchAllWrittenKeyVersions(keysWithWriteIntent) {
+		if txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchWrittenKeys(keysWithWriteIntent) {
 			txn.State = types.TxnStateCommitted
-			txn.onCommitted(callerTxn.ID, "[CheckCommitState] txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchAllWrittenKeyVersions(keysWithWriteIntent)") // help commit since original txn coordinator may have gone
+			txn.onCommitted(callerTxn.ID, "[CheckCommitState] txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchWrittenKeys(keysWithWriteIntent)") // help commit since original txn coordinator may have gone
 			return true, false
 		}
 
@@ -312,7 +312,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				if !vv.HasWriteIntent() {
 					txn.State = types.TxnStateCommitted
 					txn.MarkCommittedCleared(key, vv.Value)
-					txn.onCommitted(callerTxn.ID, fmt.Sprintf("[CheckCommitState] key '%s' write intent cleared", key)) // help commit since original txn coordinator may have gone
+					txn.onCommitted(callerTxn.ID, "[CheckCommitState] key '%s' write intent cleared", key) // help commit since original txn coordinator may have gone
 					return true, false
 				}
 				if vv.InternalVersion == txnWrittenKeys[key] {
@@ -325,26 +325,26 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				if !exists {
 					txn.MarkWrittenKeyRollbacked(key)
 				}
-				_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("found non existed key '%s' during CheckCommitState"+
-					" and is impossible to succeed in the future, max read version(%d) > txnId(%d)", key, vv.MaxReadVersion, txn.ID)) // help rollback since original txn coordinator may have gone
+				_ = txn.rollback(ctx, callerTxn.ID, true, "found non existed key '%s' during CheckCommitState"+
+					" and is impossible to succeed in the future, max read version(%d) > txnId(%d)", key, vv.MaxReadVersion, txn.ID) // help rollback since original txn coordinator may have gone
 				return false, true
 			}
 			if !exists && idx >= notInKeysLen {
 				assert.Must(keysWithWriteIntent.Contains(key))
 				txn.State = types.TxnStateRollbacking
-				txn.MarkWrittenKeyRollbacked(key)                                                                            // key already rollbacked
-				_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("previous write intent of key '%s' disappeared", key)) // help rollback since original txn coordinator may have gone
+				txn.MarkWrittenKeyRollbacked(key)                                                               // key already rollbacked
+				_ = txn.rollback(ctx, callerTxn.ID, true, "previous write intent of key '%s' disappeared", key) // help rollback since original txn coordinator may have gone
 				return false, true
 			}
 			return false, false
 		}
 		txn.State = types.TxnStateCommitted
-		txn.onCommitted(callerTxn.ID, "[CheckCommitState] all keys exist with last internal txn version") // help commit since original txn coordinator may have gone
+		txn.onCommitted(callerTxn.ID, "[CheckCommitState] all keys exist and match latest internal txn version") // help commit since original txn coordinator may have gone
 		return true, false
 	case types.TxnStateCommitted:
 		return true, false
 	case types.TxnStateRollbacking:
-		_ = txn.rollback(ctx, callerTxn.ID, false, fmt.Sprintf("%s, txn error: %v", types.TxnStateRollbacking, txn.err)) // help rollback since original txn coordinator may have gone
+		_ = txn.rollback(ctx, callerTxn.ID, false, "transaction rollbacking, txn error: %v", txn.err) // help rollback since original txn coordinator may have gone
 		return false, true
 	case types.TxnStateRollbacked:
 		return false, true
@@ -367,21 +367,21 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 
 	if txn.preventWriteFlags[key] {
 		txn.err = errors.Annotatef(errors.ErrWriteReadConflict, "a transaction with higher timestamp has read the key '%s'", key)
-		_ = txn.rollback(ctx, txn.ID, true, txn.err.Error())
+		_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Set: %v", txn.err)
 		return txn.err
 	}
 
 	if err := txn.WriteKey(txn.GenIDOfKey(key), txn.s.ioJobScheduler,
 		key, types.NewValue(val, txn.ID.Version()),
 		types.NewKVCCWriteOption().CondReadForWrite(txn.Type.IsReadForWrite())); err != nil {
-		_ = txn.rollback(ctx, txn.ID, true, err.Error())
+		_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Set: %v", txn.err)
 		txn.err = err
 		return err
 	}
 	for _, task := range txn.GetWriteTasks() {
 		// TODO this should be safe even though no sync was executed
 		if err := task.ErrUnsafe(); errors.IsMustRollbackWriteKeyErr(err) {
-			_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write key io task '%s' failed: '%v'", task.ID, err.Error()))
+			_ = txn.rollback(ctx, txn.ID, true, "Txn::Set write key io task '%s' failed: '%v'", task.ID, err)
 			txn.err = err
 			return err
 		}
@@ -421,7 +421,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 		})
 	if err := txn.s.ScheduleIOJob(txnRecordTask); err != nil {
 		txn.State = types.TxnStateRollbacking
-		_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write record io task schedule failed: '%v'", err.Error()))
+		_ = txn.rollback(ctx, txn.ID, true, "write record io task schedule failed: '%v'", err)
 		return err
 	}
 	txn.txnRecordTask = txnRecordTask
@@ -435,7 +435,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			if errors.IsMustRollbackCommitErr(ioTaskErr) {
 				// write record must failed
 				txn.State = types.TxnStateRollbacking
-				_ = txn.rollback(ctx, txn.ID, true, fmt.Sprintf("write key %s returns rollbackable error: '%v'", ioTask.ID, ioTaskErr))
+				_ = txn.rollback(ctx, txn.ID, true, "write key %s returns rollbackable error: '%v'", ioTask.ID, ioTaskErr)
 				return ioTaskErr
 			}
 			lastNonRollbackableIOErr = ioTaskErr
@@ -445,7 +445,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	if lastNonRollbackableIOErr == nil {
 		// succeeded
 		txn.State = types.TxnStateCommitted
-		txn.onCommitted(txn.ID, "all keys and txn record written successfully")
+		txn.onCommitted(txn.ID, "[Txn::Commit] all keys and txn record written successfully")
 		return nil
 	}
 
@@ -489,10 +489,10 @@ func (txn *Txn) Rollback(ctx context.Context) error {
 	txn.Lock()
 	defer txn.Unlock()
 
-	return txn.rollback(ctx, txn.ID, true, "rollback by user")
+	return txn.rollback(ctx, txn.ID, true, "rollback by user, txn err: '%v'", txn.err)
 }
 
-func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string) error { // TODO lazy generate reason?
+func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRecordOnFailure bool, reason string, args ...interface{}) error { // TODO lazy generate reason?
 	if callerTxn != txn.ID && !txn.couldBeWounded() {
 		assert.Must(txn.State == types.TxnStateRollbacking)
 		return nil
@@ -525,10 +525,14 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		if errors.IsQueueFullErr(txn.err) {
 			deltaV += 10
 		}
+		var v glog.Verbose
 		if callerTxn != txn.ID {
-			glog.V(glog.Level(7+deltaV)).Infof("rollbacking txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
+			v = glog.V(glog.Level(7 + deltaV))
 		} else {
-			glog.V(glog.Level(20+deltaV)).Infof("rollbacking txn %d..., reason: '%v'", txn.ID, reason)
+			v = glog.V(glog.Level(20 + deltaV))
+		}
+		if v {
+			glog.Infof(fmt.Sprintf("rollbacking txn %d..., callerTxn: %d, reason: '%s'", txn.ID, callerTxn, reason), args...)
 		}
 	}
 
@@ -598,7 +602,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	return nil
 }
 
-func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
+func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interface{}) {
 	assert.Must(txn.State == types.TxnStateCommitted && txn.AreWrittenKeysCompleted())
 	assert.Must(txn.GetWrittenKeyCount() > 0)
 
@@ -608,7 +612,9 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	}
 
 	if callerTxn != txn.ID {
-		glog.V(7).Infof("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason)
+		if glog.V(7) {
+			glog.Infof(fmt.Sprintf("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason), args...)
+		}
 	} else {
 		assert.Must(txn.txnRecordTask != nil)
 	}
