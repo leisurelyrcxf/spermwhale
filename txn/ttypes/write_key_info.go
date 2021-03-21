@@ -90,14 +90,20 @@ func (ks WriteKeyInfos) GetLastWriteKeyTask(key string) *types.ListTask {
 	return ks.keys[key].LastTask
 }
 
-func (ks WriteKeyInfos) GetSucceededWrittenKeys() KeyVersions {
+func (ks WriteKeyInfos) GetSucceededWrittenKeysUnsafe() map[string]types.ValueCC {
 	assert.Must(ks.completed)
 
-	succeededKeys := make(KeyVersions)
+	succeededKeys := make(map[string]types.ValueCC)
 	for key, v := range ks.keys {
 		if v.LastTask.Err() == nil {
 			assert.Must(v.LastTask.Data.(types.TxnInternalVersion) == v.LastWrittenVersion && v.LastWrittenVersion > 0)
-			succeededKeys[key] = v.LastWrittenVersion
+			succeededKeys[key] = types.ValueCC{
+				Value: types.Value{
+					Meta: types.Meta{
+						InternalVersion: v.LastWrittenVersion, // actually only the txn internal version will be used
+					},
+				},
+			}
 		}
 	}
 	return succeededKeys
