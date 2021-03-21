@@ -130,7 +130,7 @@ func (ks WriteKeyInfos) IsWrittenKeyRollbacked(key string) bool {
 	return v.Rollbacked
 }
 
-func (ks WriteKeyInfos) MatchAllWrittenKeyVersions(keysWithWriteIntent KeyVersions) bool {
+func (ks WriteKeyInfos) MatchWrittenKeys(keysWithWriteIntent KeyVersions) bool {
 	for k, v := range keysWithWriteIntent {
 		lastWrittenVersion := ks.keys[k].LastWrittenVersion
 		assert.Must(lastWrittenVersion.IsValid())
