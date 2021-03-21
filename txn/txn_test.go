@@ -23,62 +23,36 @@ import (
 )
 
 func TestTxnLostUpdate(t *testing.T) {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 4))
-
-	for _, staleWriteThresholdInMilliseconds := range []int{10} {
-		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdate(t, i, types.TxnTypeDefault, types.NewTxnReadOption(), time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
-				t.Errorf("TestTxnLostUpdate failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
-				return
-			}
-		}
-	}
+	testTxnLostUpdate(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Second})
 }
 
 func TestTxnLostUpdateReadForWrite(t *testing.T) {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 4))
-
-	for _, staleWriteThresholdInMilliseconds := range []int{1000} {
-		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdate(t, i, types.TxnTypeReadForWrite, types.NewTxnReadOption(), time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
-				t.Errorf("TestTxnLostUpdateReadForWrite failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
-				return
-			}
-		}
-	}
+	testTxnLostUpdate(t, types.TxnTypeReadForWrite, types.NewTxnReadOption(), []time.Duration{time.Second})
 }
 
 func TestTxnLostUpdateWaitNoWriteIntent(t *testing.T) {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 4))
-
-	for _, staleWriteThresholdInMilliseconds := range []int{10} {
-		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdate(t, i, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitNoWriteIntent(), time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
-				t.Errorf("TestTxnLostUpdateWaitNoWriteIntent failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
-				return
-			}
-		}
-	}
+	testTxnLostUpdate(t, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second})
 }
 
 func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
+	testTxnLostUpdate(t, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second})
+}
+
+func testTxnLostUpdate(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 4))
 
-	for _, staleWriteThresholdInMilliseconds := range []int{1000} {
+	for _, staleWriteThreshold := range staleWriteThresholds {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdate(t, i, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent(), time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
-				t.Errorf("TestTxnLostUpdateReadForWriteWaitNoWriteIntent failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
+			if !testifyassert.True(t, testTxnLostUpdateOneRound(t, i, txnType, readOpt, staleWriteThreshold)) {
+				t.Errorf("testTxnLostUpdate failed @round %d, staleWriteThreshold: %s, type: %s, readOpt: %v", i, staleWriteThreshold, txnType, readOpt)
 				return
 			}
 		}
 	}
 }
 
-func testTxnLostUpdate(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
+func testTxnLostUpdateOneRound(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
 	t.Logf("testTxnLostUpdate @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	const (
@@ -2341,7 +2315,7 @@ func TestTxnEncode(t *testing.T) {
 
 	txn := NewTxn(123, types.TxnTypeReadForWrite, kvcc.NewKVCCForTesting(memory.NewMemoryDB(), defaultTabletTxnConfig), defaultTxnManagerConfig, &TransactionStore{}, nil, nil)
 	txn.State = types.TxnStateRollbacking
-	txn.InitializeWrittenKeys(ttypes.KeyVersions{"k1": 111, "k2": 222})
+	txn.InitializeWrittenKeys(ttypes.KeyVersions{"k1": 111, "k2": 222}, true)
 	bytes := txn.Encode()
 	t.Logf("txn:     %s", string(bytes))
 
@@ -2351,5 +2325,5 @@ func TestTxnEncode(t *testing.T) {
 	assert.Equal(txn.ID, newTxn.ID)
 	assert.Equal(txn.Type, newTxn.Type)
 	assert.Equal(txn.State, newTxn.State)
-	assert.Equal(txn.MustGetWrittenKey2LastVersion(), newTxn.MustGetWrittenKey2LastVersion())
+	assert.Equal(txn.GetWrittenKey2LastVersion(), newTxn.GetWrittenKey2LastVersion())
 }

@@ -122,7 +122,9 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id types.TxnId, typ types.TxnType) *Txn {
-	return NewTxn(id, typ, m.kv, m.cfg, m.store, m, m.s)
+	return NewTxn(id, typ, m.kv, m.cfg, m.store, m.s, func(txn *Txn) {
+		m.RemoveTxn(txn)
+	})
 }
 
 func (m *TransactionManager) createStore() *TransactionManager {
@@ -136,12 +138,14 @@ func (m *TransactionManager) createStore() *TransactionManager {
 			record.kv = m.kv
 			record.store = m.store
 			record.s = m.s
-			record.h = m
+			record.destroy = func(txn *Txn) {
+				m.RemoveTxn(txn)
+			}
 		},
-		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn {
+		partialTxnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn {
 			txn := m.newTxn(txnId, types.TxnTypeDefault)
 			txn.State = state
-			txn.InitializeWrittenKeys(writtenKeys)
+			txn.InitializeWrittenKeys(writtenKeys, false)
 			return txn
 		},
 	}

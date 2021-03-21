@@ -2,7 +2,6 @@ package txn
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
@@ -21,8 +20,8 @@ type TransactionStore struct {
 	cfg             types.TxnManagerConfig
 	retryWaitPeriod time.Duration
 
-	txnInitializer func(txn *Txn)
-	txnConstructor func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn
+	txnInitializer        func(txn *Txn)
+	partialTxnConstructor func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn
 }
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
@@ -148,9 +147,9 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	if keyExists {
 		if !vv.HasWriteIntent() {
 			// case 1
-			txn := s.txnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
+			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
 			if txnId == callerTxn.ID {
-				txn.h.RemoveTxn(txn)
+				txn.gc()
 			}
 			txn.MarkCommittedCleared(key, vv.Value)
 			return txn, nil
@@ -162,27 +161,18 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	}
 	// 1. key not exists
 	//    1.1. preventFutureTxnRecordWrite, safe to rollback
-	//    1.2. len(keysWithWriteIntent) == len(allWrittenKey2LastVersion), one of the keys with write intent disappeared, safe to rollback
+	//    1.2. len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) == 1, key with write intent disappeared, safe to rollback
 	// 2. preventFutureTxnRecordWrite && key exists & vv.HasWriteIntent(), since we've prevented write txn record,
 	//	  guaranteed commit won't succeed in the future, hence safe to rollback.
-	txn = s.txnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion)
-	if !keyExists {
+	if txn = s.partialTxnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion); !keyExists {
 		txn.MarkWrittenKeyRollbacked(key)
-		if txn.GetWrittenKeyCount() == 1 {
-			assert.Must(key == allWrittenKey2LastVersion.MustFirstKey())
-			txn.State = types.TxnStateRollbacked // nothing to rollback
-			if txnId == callerTxn.ID {
-				txn.h.RemoveTxn(txn)
-			}
-			return txn, nil
-		}
 	}
 	if preventFutureTxnRecordWrite {
 		_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
 	} else {
-		assert.Must(!keyExists)
-		assert.Must(len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)
-		_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("write intent of key %s disappeared", key)) // help rollback if original txn coordinator was gone
+		assert.Must(!keyExists && len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)
+		// nothing to rollback
+		//_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("write intent of key %s disappeared", key)) // help rollback if original txn coordinator was gone
 	}
 	return txn, nil
 }

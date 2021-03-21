@@ -51,14 +51,16 @@ type WriteKeyInfos struct {
 
 	KV          types.KVCC
 	TaskTimeout time.Duration
+	completed   bool
 }
 
-func (ks *WriteKeyInfos) InitializeWrittenKeys(key2LastWrittenVersion KeyVersions) {
+func (ks *WriteKeyInfos) InitializeWrittenKeys(key2LastWrittenVersion KeyVersions, completed bool) {
 	assert.Must(ks.keys == nil)
 	ks.keys = make(map[string]WriteKeyInfo)
 	for key, lastWrittenVersion := range key2LastWrittenVersion {
 		ks.keys[key] = NewWriteKeyInfo(lastWrittenVersion)
 	}
+	ks.completed = completed
 }
 
 func (ks WriteKeyInfos) GetWriteTasks() []*types.ListTask {
@@ -75,7 +77,7 @@ func (ks WriteKeyInfos) ForEachWrittenKey(f func(key string, info WriteKeyInfo))
 	}
 }
 
-func (ks WriteKeyInfos) MustGetWrittenKey2LastVersion() (keys KeyVersions) {
+func (ks WriteKeyInfos) GetWrittenKey2LastVersion() (keys KeyVersions) {
 	keys = make(KeyVersions)
 	for k, v := range ks.keys {
 		assert.Must(v.LastWrittenVersion.IsValid())
@@ -89,6 +91,8 @@ func (ks WriteKeyInfos) GetLastWriteKeyTask(key string) *types.ListTask {
 }
 
 func (ks WriteKeyInfos) GetSucceededWrittenKeys() KeyVersions {
+	assert.Must(ks.completed)
+
 	succeededKeys := make(KeyVersions)
 	for key, v := range ks.keys {
 		if v.LastTask.Err() == nil {
@@ -109,6 +113,10 @@ func (ks WriteKeyInfos) GetCommittedVersion(key string) types.TxnInternalVersion
 	assert.Must(v.LastTask == nil || v.LastTask.Data.(types.TxnInternalVersion) == v.LastWrittenVersion)
 
 	return v.LastWrittenVersion
+}
+
+func (ks WriteKeyInfos) AreWrittenKeysCompleted() bool {
+	return ks.completed
 }
 
 func (ks WriteKeyInfos) ContainsWrittenKey(key string) bool {
@@ -159,6 +167,7 @@ func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
 	//assert.Must(v.LastTask == nil || v.LastTask.Data.(uint8) == value.InternalVersion)
 
 	v := ks.keys[key]
+	assert.Must(!ks.completed || v.LastWrittenVersion == value.InternalVersion)
 	v.LastWrittenVersion = value.InternalVersion
 	v.Committed = true
 	v.CommittedCleared = true
@@ -169,6 +178,7 @@ func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
 // Below are write methods, need pass pointers
 
 func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicListScheduler, key string, val types.Value, opt types.KVCCWriteOption) error {
+	assert.Must(!ks.completed)
 	var v = WriteKeyInfo{LastWrittenVersion: 0}
 	if ks.keys == nil {
 		ks.keys = map[string]WriteKeyInfo{}
@@ -192,4 +202,9 @@ func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicL
 	ks.keys[key] = v
 	ks.tasks = append(ks.tasks, task)
 	return nil
+}
+
+// MarkWrittenKeyCompleted, keys and LastWrittenVersion won't change after this call.
+func (ks *WriteKeyInfos) MarkWrittenKeyCompleted() {
+	ks.completed = true
 }
