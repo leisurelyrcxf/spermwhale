@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/leisurelyrcxf/spermwhale/types/basic"
+	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
 
 	"github.com/golang/glog"
 
@@ -138,10 +138,10 @@ func (m *TransactionManager) createStore() *TransactionManager {
 			record.s = m.s
 			record.h = m
 		},
-		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys basic.Set) *Txn {
+		txnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn {
 			txn := m.newTxn(txnId, types.TxnTypeDefault)
 			txn.State = state
-			txn.InitializeWrittenKeyInfosNaive(writtenKeys)
+			txn.InitializeWrittenKeys(writtenKeys)
 			return txn
 		},
 	}

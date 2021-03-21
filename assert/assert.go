@@ -27,18 +27,6 @@ func MustEqualStrings(s1, s2 []string) {
 	}
 }
 
-func MustAllContain(super map[string]uint8, keys []string) {
-	for _, key := range keys {
-		_, ok := super[key]
-		Must(ok)
-	}
-}
-
-func MustContain(m map[string]uint8, str string) {
-	_, ok := m[str]
-	Must(ok)
-}
-
 func MustEqualString(s1, s2 string) {
 	if s1 != s2 {
 		panic(fmt.Sprintf("s1(%v) != s2(%v)", s1, s2))

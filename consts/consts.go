@@ -6,8 +6,9 @@ import (
 )
 
 const (
-	MinTxnInternalVersion = 1
-	MaxTxnInternalVersion = uint8(math.MaxUint8)
+	MinTxnInternalVersion             = 1
+	MaxTxnInternalVersion             = math.MaxUint8 - 1
+	PositiveInvalidTxnInternalVersion = math.MaxUint8
 )
 
 const (

@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -52,6 +54,11 @@ func (cfg TxnManagerConfig) WithWoundUncommittedTxnThreshold(woundUncommittedTxn
 	return cfg
 }
 
+type TabletTxnConfigMarshaller struct {
+	StaleWriteThreshold string
+	MaxClockDrift       string
+}
+
 type TabletTxnConfig struct {
 	StaleWriteThreshold time.Duration
 	MaxClockDrift       time.Duration
@@ -62,6 +69,17 @@ func NewTabletTxnConfig(staleWriteThreshold time.Duration) TabletTxnConfig {
 		StaleWriteThreshold: staleWriteThreshold,
 		MaxClockDrift:       consts.DefaultMaxClockDrift,
 	}
+}
+
+func (cfg TabletTxnConfig) String() string {
+	bytes, err := json.Marshal(TabletTxnConfigMarshaller{
+		StaleWriteThreshold: cfg.StaleWriteThreshold.String(),
+		MaxClockDrift:       cfg.MaxClockDrift.String(),
+	})
+	if err != nil {
+		return fmt.Sprintf("TabletTxnConfig{'%s'}", err.Error())
+	}
+	return string(bytes)
 }
 
 func (cfg TabletTxnConfig) Validate() error {
@@ -86,4 +104,8 @@ func (cfg TabletTxnConfig) WithStaleWriteThreshold(val time.Duration) TabletTxnC
 func (cfg TabletTxnConfig) WithMaxClockDrift(val time.Duration) TabletTxnConfig {
 	cfg.MaxClockDrift = val
 	return cfg
+}
+
+func (cfg TabletTxnConfig) SupportReadForWriteTxn() bool {
+	return cfg.StaleWriteThreshold >= time.Millisecond*500
 }

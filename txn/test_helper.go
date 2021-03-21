@@ -3,9 +3,12 @@ package txn
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/errors"
 
 	testifyassert "github.com/stretchr/testify/assert"
 
@@ -32,26 +35,35 @@ var (
 	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 1000).WithMaxClockDrift(0)
 )
 
-type MemoryDBWithLatency struct {
+type memoryDB struct {
 	types.KV
-	latency time.Duration
+	latency                             time.Duration
+	probabilityOfTxnRecordFailureFactor int
 }
 
-func NewMemoryDBWithLatency(latency time.Duration) *MemoryDBWithLatency {
-	return &MemoryDBWithLatency{
-		KV:      memory.NewMemoryDB(),
-		latency: latency,
+func newMemoryDB(latency time.Duration, probabilityOfTxnRecordFailureFractor int) *memoryDB {
+	return &memoryDB{
+		KV:                                  memory.NewMemoryDB(),
+		latency:                             latency,
+		probabilityOfTxnRecordFailureFactor: probabilityOfTxnRecordFailureFractor,
 	}
 }
 
-func (d *MemoryDBWithLatency) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+func (d *memoryDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
 	time.Sleep(d.latency)
 	return d.KV.Get(ctx, key, opt)
 }
 
-func (d *MemoryDBWithLatency) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+func (d *memoryDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
 	time.Sleep(d.latency)
-	return d.KV.Set(ctx, key, val, opt)
+	if err := d.KV.Set(ctx, key, val, opt); err != nil || d.probabilityOfTxnRecordFailureFactor <= 0 {
+		return err
+	}
+	rand.Seed(time.Now().UnixNano())
+	if rand.Intn(d.probabilityOfTxnRecordFailureFactor) == 0 {
+		return errors.ErrInject
+	}
+	return nil
 }
 
 type ExecuteInfo struct {

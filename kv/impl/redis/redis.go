@@ -22,22 +22,25 @@ import (
 )
 
 type Value struct {
-	F uint8
-	V []byte
+	Meta            uint8  `json:"M"`
+	InternalVersion uint8  `json:"I"`
+	V               []byte `json:"V"`
 }
 
 func NewValue(v types.Value) Value {
 	return Value{
-		F: v.Flag,
-		V: v.V,
+		Meta:            v.Flag,
+		InternalVersion: uint8(v.InternalVersion),
+		V:               v.V,
 	}
 }
 
 func (v Value) WithVersion(version uint64) types.Value {
 	return types.Value{
 		Meta: types.Meta{
-			Version: version,
-			Flag:    v.F,
+			Version:         version,
+			InternalVersion: types.TxnInternalVersion(v.InternalVersion),
+			Flag:            v.Meta,
 		},
 		V: v.V,
 	}

@@ -182,7 +182,6 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		if glog.V(60) {
 			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
 		}
-		assert.Must(valCC.InternalVersion == 4)
 		return valCC.WithNoWriteIntent(), nil
 	case transaction.KeyEventTypeRemoveVersionFailed:
 		// TODO maybe wait until rollbacked?

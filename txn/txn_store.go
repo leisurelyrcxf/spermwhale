@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
+
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 
 	"github.com/golang/glog"
@@ -20,7 +22,7 @@ type TransactionStore struct {
 	retryWaitPeriod time.Duration
 
 	txnInitializer func(txn *Txn)
-	txnConstructor func(txnId types.TxnId, state types.TxnState, writtenKeys basic.Set) *Txn
+	txnConstructor func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn
 }
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
@@ -49,7 +51,7 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 	}
 }
 
-func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, keys basic.Set, txnId types.TxnId, callTxn *Txn, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
+func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, keys ttypes.KeyVersions, txnId types.TxnId, callTxn *Txn, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for key := range keys {
@@ -99,7 +101,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 func (s *TransactionStore) inferTransactionRecordWithRetry(
 	ctx context.Context,
 	txnId types.TxnId, callerTxn *Txn,
-	keysWithWriteIntent, allKeys basic.Set,
+	keysWithWriteIntent basic.Set, allWrittenKey2LastVersion ttypes.KeyVersions,
 	preventFutureTxnRecordWrite bool,
 	maxRetry int) (txn *Txn, err error) {
 	// TODO maybe get from txn manager first?
@@ -123,7 +125,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	//
 	// Hence we get the keys. (we may get the same key a second time because the result of the key before seen transaction record not exists is not confident enough)
 	// Transaction record not exists, get key to find out the truth.
-	assert. /* do not remove this*/ Must(preventFutureTxnRecordWrite || len(keysWithWriteIntent) == len(allKeys))
+	assert. /* do not remove this*/ Must(preventFutureTxnRecordWrite || (len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) && len(keysWithWriteIntent) == 1))
 	var (
 		key       string
 		vv        types.ValueCC
@@ -131,22 +133,22 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		keyErr    error
 	)
 	if len(keysWithWriteIntent) == 1 {
-		assert.Must(len(allKeys) == 1)
-		conflictedKey := allKeys.MustFirstElement()
+		assert.Must(len(allWrittenKey2LastVersion) == 1)
+		conflictedKey := allWrittenKey2LastVersion.MustFirstKey()
 		assert.Must(keysWithWriteIntent.Contains(conflictedKey))
 		vv, keyExists, keyErr = s.getValueWrittenByTxnWithRetry(ctx, conflictedKey, txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
 		key = conflictedKey
 	} else {
-		key, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allKeys, txnId, callerTxn, maxRetry)
+		key, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allWrittenKey2LastVersion, txnId, callerTxn, maxRetry)
 	}
 	if keyErr != nil {
-		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%v)) returns unexpected error: %v", txnId, callerTxn.ID, allKeys, keyErr)
+		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%v)) returns unexpected error: %v", txnId, callerTxn.ID, allWrittenKey2LastVersion, keyErr)
 		return nil, keyErr
 	}
 	if keyExists {
 		if !vv.HasWriteIntent() {
 			// case 1
-			txn := s.txnConstructor(txnId, types.TxnStateCommitted, allKeys)
+			txn := s.txnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
 			if txnId == callerTxn.ID {
 				txn.h.RemoveTxn(txn)
 			}
@@ -160,14 +162,14 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	}
 	// 1. key not exists
 	//    1.1. preventFutureTxnRecordWrite, safe to rollback
-	//    1.2. len(keysWithWriteIntent) == len(allKeys), one of the keys with write intent disappeared, safe to rollback
-	// 2. key exists & vv.HasWriteIntent() && preventFutureTxnRecordWrite, since we've prevented write txn record,
+	//    1.2. len(keysWithWriteIntent) == len(allWrittenKey2LastVersion), one of the keys with write intent disappeared, safe to rollback
+	// 2. preventFutureTxnRecordWrite && key exists & vv.HasWriteIntent(), since we've prevented write txn record,
 	//	  guaranteed commit won't succeed in the future, hence safe to rollback.
-	txn = s.txnConstructor(txnId, types.TxnStateRollbacking, allKeys)
+	txn = s.txnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion)
 	if !keyExists {
 		txn.MarkWrittenKeyRollbacked(key)
 		if txn.GetWrittenKeyCount() == 1 {
-			assert.Must(key == allKeys.MustFirstElement())
+			assert.Must(key == allWrittenKey2LastVersion.MustFirstKey())
 			txn.State = types.TxnStateRollbacked // nothing to rollback
 			if txnId == callerTxn.ID {
 				txn.h.RemoveTxn(txn)
@@ -178,8 +180,8 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	if preventFutureTxnRecordWrite {
 		_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
 	} else {
-		assert.Must(len(allKeys) == 1)
-		assert.Must(len(keysWithWriteIntent) == 1)
+		assert.Must(!keyExists)
+		assert.Must(len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)
 		_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("write intent of key %s disappeared", key)) // help rollback if original txn coordinator was gone
 	}
 	return txn, nil

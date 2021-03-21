@@ -45,6 +45,18 @@ func (i TxnId) Max(another TxnId) TxnId {
 	return another
 }
 
+type TxnInternalVersion uint8
+
+const (
+	TxnInternalVersionMin             TxnInternalVersion = consts.MinTxnInternalVersion
+	TxnInternalVersionMax             TxnInternalVersion = consts.MaxTxnInternalVersion
+	TxnInternalVersionPositiveInvalid TxnInternalVersion = consts.PositiveInvalidTxnInternalVersion
+)
+
+func (v TxnInternalVersion) IsValid() bool {
+	return v != 0 && v != TxnInternalVersionPositiveInvalid
+}
+
 // AtomicTxnId is a wrapper with a simpler interface around atomic.(Add|Store|Load|CompareAndSwap)TxnId functions.
 type AtomicTxnId struct {
 	uint64

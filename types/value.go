@@ -10,7 +10,7 @@ import (
 
 type Meta struct {
 	Version         uint64
-	InternalVersion uint8
+	InternalVersion TxnInternalVersion
 	Flag            uint8
 }
 
@@ -110,7 +110,7 @@ func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	}
 }
 
-func (v Value) WithInternalVersion(version uint8) Value {
+func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
 	v.Meta.InternalVersion = version
 	return v
 }

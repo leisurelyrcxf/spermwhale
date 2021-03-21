@@ -38,7 +38,7 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 	)
 
 	start := time.Now()
-	kvc := kvcc.NewKVCCForTesting(NewMemoryDBWithLatency(time.Millisecond*10), defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
+	kvc := kvcc.NewKVCCForTesting(newMemoryDB(time.Millisecond*10, 0), defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
 	tm := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
 	sc := smart_txn_client.NewSmartClient(tm, 0)
 	defer sc.Close()
