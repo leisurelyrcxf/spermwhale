@@ -121,6 +121,16 @@ func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ e
 	return val, nil
 }
 
+func (c *SmartClient) MGet(ctx context.Context, keys []string) (values []types.Value, _ error) {
+	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
+		values, err = txn.MGet(ctx, keys, types.NewTxnReadOption())
+		return
+	}); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
 func (c *SmartClient) SetInt(ctx context.Context, key string, intVal int) error {
 	return c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 		return txn.Set(ctx, key, []byte(strconv.Itoa(intVal)))
@@ -128,14 +138,27 @@ func (c *SmartClient) SetInt(ctx context.Context, key string, intVal int) error 
 }
 
 func (c *SmartClient) GetInt(ctx context.Context, key string) (int, error) {
-	var val types.Value
-	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
-		val, err = txn.Get(ctx, key, types.NewTxnReadOption())
-		return
-	}); err != nil {
+	val, err := c.Get(ctx, key)
+	if err != nil {
 		return 0, err
 	}
 	return val.Int()
+}
+
+func (c *SmartClient) MGetInts(ctx context.Context, keys []string) ([]int, error) {
+	values, err := c.MGet(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	ints := make([]int, 0, len(values))
+	for _, v := range values {
+		x, err := v.Int()
+		if err != nil {
+			return nil, err
+		}
+		ints = append(ints, x)
+	}
+	return ints, nil
 }
 
 func (c *SmartClient) Close() error {

@@ -71,6 +71,10 @@ var (
 		Code: consts.ErrCodeNilResponse,
 		Msg:  "response is nil",
 	}
+	ErrInvalidResponse = &Error{
+		Code: consts.ErrCodeInvalidResponse,
+		Msg:  "response is invalid",
+	}
 	ErrTxnRetriedTooManyTimes = &Error{
 		Code: consts.ErrCodeTxnRetriedTooManyTimes,
 		Msg:  "transaction retried too many times",

@@ -6,6 +6,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+
 	"github.com/leisurelyrcxf/spermwhale/topo"
 
 	"google.golang.org/grpc"
@@ -44,6 +46,28 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 	return &txnpb.TxnGetResponse{
 		Txn: txn.ToPB(),
 		V:   val.ToPB(),
+	}, nil
+}
+
+func (s *Stub) MGet(ctx context.Context, req *txnpb.TxnMGetRequest) (*txnpb.TxnMGetResponse, error) {
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
+	if err != nil {
+		return &txnpb.TxnMGetResponse{
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(),
+			Err: errors.ToPBError(err),
+		}, nil
+	}
+	values, err := txn.MGet(ctx, req.Keys, types.NewTxnReadOptionFromPB(req.Opt))
+	if err != nil {
+		return &txnpb.TxnMGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
+	}
+	pbValues := make([]*commonpb.Value, 0, len(values))
+	for _, v := range values {
+		pbValues = append(pbValues, v.ToPB())
+	}
+	return &txnpb.TxnMGetResponse{
+		Txn:    txn.ToPB(),
+		Values: pbValues,
 	}, nil
 }
 

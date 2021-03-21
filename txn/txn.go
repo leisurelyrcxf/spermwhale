@@ -161,6 +161,21 @@ func (txn *Txn) RetrieveKeyFromID(keyId string) string {
 	return keyId[len(txn.txnKey)+1:]
 }
 
+func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption) (values []types.Value, err error) {
+	if !txn.Type.IsSnapshotRead() {
+		values = make([]types.Value, 0, len(keys))
+		for _, key := range keys {
+			val, err := txn.Get(ctx, key, opt)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, val)
+		}
+		return values, nil
+	}
+	return nil, errors.Annotatef(errors.ErrNotSupported, txn.Type.String())
+}
+
 func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
 	if key == "" {
 		return types.EmptyValue, errors.ErrEmptyKey

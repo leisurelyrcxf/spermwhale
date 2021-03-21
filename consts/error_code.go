@@ -29,7 +29,8 @@ const (
 	ErrCodeTabletWriteTransactionNotFound                 = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten      = 92
 	ErrCodeNilResponse                                    = 99
-	ErrCodeTxnRetriedTooManyTimes                         = 100
+	ErrCodeInvalidResponse                                = 100
+	ErrCodeTxnRetriedTooManyTimes                         = 101
 	ErrCodeNotSupported                                   = 111
 	ErrCodeInvalidRequest                                 = 222
 	ErrCodeSchedulerClosed                                = 333

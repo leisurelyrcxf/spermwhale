@@ -9,12 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 const (
@@ -130,12 +128,17 @@ const (
 	TxnTypeInvalid      TxnType = 0
 	TxnTypeDefault      TxnType = 1
 	TxnTypeReadForWrite TxnType = 2
+	TxnTypeSnapshotRead TxnType = 3
 
 	TxnTypeDefaultDesc      = "default"
 	TxnTypeReadForWriteDesc = "read_for_write"
+	TxnTypeSnapshotReadDesc = "snapshot_read"
 )
 
-var SupportedTransactionTypesDesc = []string{"'" + TxnTypeDefaultDesc + "'", "'" + TxnTypeReadForWriteDesc + "'"}
+var SupportedTransactionTypesDesc = []string{
+	"'" + TxnTypeDefaultDesc + "'",
+	"'" + TxnTypeReadForWriteDesc + "'",
+	"'" + TxnTypeSnapshotReadDesc + "'"}
 
 func ParseTxnType(str string) (TxnType, error) {
 	switch str {
@@ -143,6 +146,8 @@ func ParseTxnType(str string) (TxnType, error) {
 		return TxnTypeDefault, nil
 	case TxnTypeReadForWriteDesc, fmt.Sprintf("%d", TxnTypeReadForWrite):
 		return TxnTypeReadForWrite, nil
+	case TxnTypeSnapshotReadDesc, fmt.Sprintf("%d", TxnTypeSnapshotRead):
+		return TxnTypeSnapshotRead, nil
 	default:
 		return TxnTypeInvalid, errors.Annotatef(errors.ErrInvalidRequest, "unknown txn type %s", str)
 	}
@@ -154,6 +159,8 @@ func (t TxnType) String() string {
 		return TxnTypeDefaultDesc
 	case TxnTypeReadForWrite:
 		return TxnTypeReadForWriteDesc
+	case TxnTypeSnapshotRead:
+		return TxnTypeSnapshotReadDesc
 	default:
 		return "invalid"
 	}
@@ -165,6 +172,10 @@ func (t TxnType) ToPB() txnpb.TxnType {
 
 func (t TxnType) IsReadForWrite() bool {
 	return t == TxnTypeReadForWrite
+}
+
+func (t TxnType) IsSnapshotRead() bool {
+	return t == TxnTypeSnapshotRead
 }
 
 type TxnReadOption struct {
@@ -225,6 +236,7 @@ type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
 	GetType() TxnType
+	MGet(ctx context.Context, keys []string, opt TxnReadOption) (values []Value, err error)
 	Get(ctx context.Context, key string, opt TxnReadOption) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error

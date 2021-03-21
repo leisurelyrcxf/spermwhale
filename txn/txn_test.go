@@ -273,7 +273,7 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 	return true
 }
 
-func TestTxnLostUpdateWriteAfterOverflow(t *testing.T) {
+func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 	const (
 		initialValue    = 101
 		goRoutineNumber = 10000
@@ -1288,6 +1288,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 
 	return true
 }
+
 func TestDistributedTxnReadConsistency(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 6))
@@ -1356,29 +1357,10 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 			start := time.Now()
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
-						if err != nil {
-							return err
-						}
-						v1, err := key1Val.Int()
-						if !assert.NoError(err) {
-							return err
-						}
-
-						key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
-						if err != nil {
-							return err
-						}
-						v2, err := key2Val.Int()
-						if !assert.NoError(err) {
-							return err
-						}
-						if !assert.Equal(valueSum, v1+v2) {
-							return errors.ErrAssertFailed
-						}
-						return nil
-					}))
+					if values, err := sc.MGetInts(ctx, []string{key1, key2}); assert.NoError(err) && assert.Len(values, 2) {
+						v1, v2 := values[0], values[1]
+						assert.Equal(valueSum, v1+v2)
+					}
 				} else {
 					assert.NoError(sc.DoTransactionOfType(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
 						{

@@ -2,6 +2,7 @@ package txn
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
@@ -72,6 +73,42 @@ func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId, opt typ
 		return types.EmptyValue, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V.Meta == nil")
 	}
 	return types.NewValueFromPB(resp.V), txnInfo, nil
+}
+
+func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId, opt types.TxnReadOption) ([]types.Value, TransactionInfo, error) {
+	resp, err := c.c.MGet(ctx, &txnpb.TxnMGetRequest{
+		Keys:  keys,
+		TxnId: uint64(txnID),
+		Opt:   opt.ToPB(),
+	})
+	if err != nil {
+		return nil, InvalidTransactionInfo(txnID), err
+	}
+	if resp == nil {
+		return nil, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp == nil")
+	}
+	if resp.Txn == nil {
+		return nil, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp.Txn == nil")
+	}
+	txnInfo := NewTransactionInfoFromPB(resp.Txn)
+	assert.Must(txnInfo.ID == txnID)
+	if resp.Err != nil {
+		return nil, txnInfo, errors.NewErrorFromPB(resp.Err)
+	}
+	if resp.Values == nil {
+		return nil, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp.V == nil")
+	}
+	if len(resp.Values) != len(keys) {
+		return nil, txnInfo, errors.Annotatef(errors.ErrInvalidResponse, fmt.Sprintf("TxnClient::MGet resp length not match, expect %d, got %d", len(keys), len(resp.Values)))
+	}
+	values := make([]types.Value, 0, len(keys))
+	for _, v := range resp.Values {
+		if v.Meta == nil {
+			return nil, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp.V.Meta == nil")
+		}
+		values = append(values, types.NewValueFromPB(v))
+	}
+	return values, txnInfo, nil
 }
 
 func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.TxnId) (TransactionInfo, error) {
@@ -165,6 +202,13 @@ func (txn *ClientTxn) Get(ctx context.Context, key string, opt types.TxnReadOpti
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return val, err
+}
+
+func (txn *ClientTxn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption) ([]types.Value, error) {
+	values, txnInfo, err := txn.c.MGet(ctx, keys, txn.ID, opt)
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
+	return values, err
 }
 
 func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
