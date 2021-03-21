@@ -191,6 +191,9 @@ func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicL
 	} else {
 		v = ks.keys[key]
 	}
+	if v.LastWrittenVersion+1 > types.TxnInternalVersionMax {
+		return errors.ErrTransactionInternalVersionOverflow
+	}
 	v.LastWrittenVersion++
 	val = val.WithInternalVersion(v.LastWrittenVersion)
 	task := types.NewListTaskWithResult(taskId, "set", ks.TaskTimeout, func(ctx context.Context, prevResult interface{}) (i interface{}, err error) {

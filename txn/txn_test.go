@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -259,6 +261,46 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 	}
 
 	return true
+}
+
+func TestTxnLostUpdateWriteAfterOverflow(t *testing.T) {
+	const (
+		initialValue    = 101
+		goRoutineNumber = 10000
+		key             = "k1"
+	)
+	if goRoutineNumber&1 != 0 {
+		panic("goRoutineNumber&1 != 0")
+	}
+	db := memory.NewMemoryDB()
+	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(time.Second))
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(time.Second))
+	sc := smart_txn_client.NewSmartClient(m, 0)
+	defer sc.Close()
+	assert := types.NewAssertion(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+		for i := 0; i < consts.MaxTxnInternalVersion; i++ {
+			if err := txn.Set(ctx, key, types.IntValue(initialValue).V); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	val, err := sc.Get(ctx, key)
+	assert.NoError(err)
+	assert.Equal(types.TxnInternalVersionMax, val.InternalVersion)
+	assert.Equal(types.TxnInternalVersion(254), val.InternalVersion)
+	assert.Equal(errors.ErrTransactionInternalVersionOverflow, sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+		for i := 0; i < consts.PositiveInvalidTxnInternalVersion; i++ {
+			if err := txn.Set(ctx, key, types.IntValue(initialValue).V); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
 }
 
 func TestTxnReadForWrite2Keys(t *testing.T) {

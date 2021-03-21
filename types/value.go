@@ -36,7 +36,7 @@ func (m Meta) HasWriteIntent() bool {
 }
 
 func (m Meta) IsFirstWriteOfKey() bool {
-	return m.InternalVersion == consts.MinTxnInternalVersion
+	return m.InternalVersion == TxnInternalVersionMin
 }
 
 type Value struct {

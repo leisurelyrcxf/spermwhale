@@ -248,7 +248,7 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 		ctx,
 		types.TxnId(vv.Version), txn,
 		map[string]struct{}{key: {}},
-		ttypes.KeyVersions{key: consts.PositiveInvalidTxnInternalVersion}, // last internal version not known, use an invalid version instead, don't use 0 because we want to guarantee WriteKeyInfo.NotEmpty()
+		ttypes.KeyVersions{key: types.TxnInternalVersionPositiveInvalid}, // last internal version not known, use an invalid version instead, don't use 0 because we want to guarantee WriteKeyInfo.NotEmpty()
 		preventFutureWrite,
 		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
