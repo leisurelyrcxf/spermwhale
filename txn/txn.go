@@ -26,9 +26,9 @@ func TransactionKey(id types.TxnId) string {
 }
 
 type TransactionInfo struct {
-	ID    types.TxnId    `json:"I"`
-	State types.TxnState `json:"S"`
-	Type  types.TxnType  `json:"T"`
+	ID    types.TxnId
+	State types.TxnState
+	Type  types.TxnType
 }
 
 func InvalidTransactionInfo(id types.TxnId) TransactionInfo {
@@ -119,17 +119,22 @@ func NewTxn(
 
 // TODO don't add txn id
 type Marshaller struct {
-	TransactionInfo
+	State       types.TxnState     `json:"S"`
+	Type        types.TxnType      `json:"T"`
 	WrittenKeys ttypes.KeyVersions `json:"K"`
 }
 
-func DecodeTxn(data []byte) (*Txn, error) {
+func DecodeTxn(txnId types.TxnId, data []byte) (*Txn, error) {
 	var t Marshaller
 	if err := json.Unmarshal(data, &t); err != nil {
 		return nil, err
 	}
 	txn := &Txn{}
-	txn.TransactionInfo = t.TransactionInfo
+	txn.TransactionInfo = TransactionInfo{
+		ID:    txnId,
+		State: t.State,
+		Type:  t.Type,
+	}
 	txn.InitializeWrittenKeys(t.WrittenKeys, txn.State == types.TxnStateStaging)
 	return txn, nil
 }
@@ -137,8 +142,9 @@ func DecodeTxn(data []byte) (*Txn, error) {
 func (txn *Txn) Encode() []byte {
 	assert.Must(txn.State != types.TxnStateStaging || txn.AreWrittenKeysCompleted())
 	bytes, err := json.Marshal(Marshaller{
-		TransactionInfo: txn.TransactionInfo,
-		WrittenKeys:     txn.GetWrittenKey2LastVersion(), // TODO does the key write order matter?
+		State:       txn.State,
+		Type:        txn.Type,
+		WrittenKeys: txn.GetWrittenKey2LastVersion(), // TODO does the key write order matter?
 	})
 	if err != nil {
 		glog.Fatalf("marshal json failed: %v", err)
@@ -249,7 +255,7 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 		return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version)
-	committed, rollbackedOrSafeToRollback := writeTxn.CheckCommitState(ctx, txn, ttypes.KeyVersions{key: vv.InternalVersion}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
+	committed, rollbackedOrSafeToRollback := writeTxn.checkCommitState(ctx, txn, ttypes.KeyVersions{key: vv.InternalVersion}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
@@ -264,13 +270,6 @@ func (txn *Txn) get(ctx context.Context, key string, opt types.TxnReadOption) (_
 	}
 	assert.Must(!writeTxn.State.IsTerminated())
 	return types.EmptyValue, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
-}
-
-func (txn *Txn) CheckCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent ttypes.KeyVersions, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
-	txn.Lock()
-	defer txn.Unlock()
-
-	return txn.checkCommitState(ctx, callerTxn, keysWithWriteIntent, preventFutureWrite, maxRetry)
 }
 
 func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent ttypes.KeyVersions, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {

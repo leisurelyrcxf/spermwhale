@@ -2319,7 +2319,7 @@ func TestTxnEncode(t *testing.T) {
 	bytes := txn.Encode()
 	t.Logf("txn:     %s", string(bytes))
 
-	newTxn, err := DecodeTxn(bytes)
+	newTxn, err := DecodeTxn(123, bytes)
 	assert.NoError(err)
 	t.Logf("new_txn: %s", string(newTxn.Encode()))
 	assert.Equal(txn.ID, newTxn.ID)

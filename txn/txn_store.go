@@ -80,7 +80,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 		txnRecordData, err = s.kv.Get(ctx, TransactionKey(txnID), readOpt)
 		if err == nil {
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
-			txn, err := DecodeTxn(txnRecordData.V)
+			txn, err := DecodeTxn(txnID, txnRecordData.V)
 			if err != nil {
 				return nil, true, err
 			}
