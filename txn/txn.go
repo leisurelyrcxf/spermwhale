@@ -345,7 +345,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 	case types.TxnStateCommitted:
 		return true, false
 	case types.TxnStateRollbacking:
-		_ = txn.rollback(ctx, callerTxn.ID, false, fmt.Sprintf("transaction in state '%s'", types.TxnStateRollbacking)) // help rollback since original txn coordinator may have gone
+		_ = txn.rollback(ctx, callerTxn.ID, false, fmt.Sprintf("%s, txn error: %v", types.TxnStateRollbacking, txn.err)) // help rollback since original txn coordinator may have gone
 		return false, true
 	case types.TxnStateRollbacked:
 		return false, true
@@ -503,6 +503,24 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		return nil
 	}
 
+	if txn.State != types.TxnStateUncommitted && txn.State != types.TxnStateRollbacking {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s or %s, but got %s", types.TxnStateUncommitted, types.TxnStateRollbacking, txn.State)
+	}
+
+	assert.Must(txn.txnRecordTask == nil || txn.AreWrittenKeysCompleted())
+	assert.Must(txn.State != types.TxnStateStaging || txn.AreWrittenKeysCompleted())
+	txn.State = types.TxnStateRollbacking
+	var (
+		noNeedToRemoveTxnRecord = !txn.AreWrittenKeysCompleted() || (txn.ID == callerTxn && txn.txnRecordTask == nil)
+		toClearKeys             = txn.getToClearKeys(true)
+	)
+	if noNeedToRemoveTxnRecord && len(toClearKeys) == 0 {
+		if txn.AreWrittenKeysCompleted() {
+			txn.State = types.TxnStateRollbacked
+		}
+		return nil
+	}
+
 	{
 		var deltaV = 0
 		if errors.IsQueueFullErr(txn.err) {
@@ -513,24 +531,6 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		} else {
 			glog.V(glog.Level(20+deltaV)).Infof("rollbacking txn %d..., reason: '%v'", txn.ID, reason)
 		}
-	}
-
-	if txn.State != types.TxnStateUncommitted && txn.State != types.TxnStateRollbacking {
-		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s or %s, but got %s", types.TxnStateUncommitted, types.TxnStateRollbacking, txn.State)
-	}
-
-	assert.Must(txn.txnRecordTask == nil || txn.AreWrittenKeysCompleted())
-	assert.Must(txn.State != types.TxnStateStaging || txn.AreWrittenKeysCompleted())
-	txn.State = types.TxnStateRollbacking
-	var (
-		noNeedToRemoveTxnRecord = !txn.AreWrittenKeysCompleted() || (txn.ID == callerTxn && txn.txnRecordTask == nil)
-		toClearKeys             = txn.getToClearKeys()
-	)
-	if noNeedToRemoveTxnRecord && len(toClearKeys) == 0 {
-		if txn.AreWrittenKeysCompleted() {
-			txn.State = types.TxnStateRollbacked
-		}
-		return nil
 	}
 
 	var (
@@ -551,15 +551,10 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		}
 	}()
 
-	for key, writeInfo := range toClearKeys {
-		assert.Must(!writeInfo.Committed && !writeInfo.CommittedCleared)
-		if writeInfo.Rollbacked {
-			continue
-		}
-
+	for key, isWrittenKey := range toClearKeys {
 		var (
 			key          = key
-			isWrittenKey = writeInfo.NotEmpty()
+			isWrittenKey = isWrittenKey
 			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
 			opt          = types.NewKVCCWriteOption().WithRollbackVersion().
 					CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
@@ -605,7 +600,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 }
 
 func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
-	assert.Must(txn.State == types.TxnStateCommitted)
+	assert.Must(txn.State == types.TxnStateCommitted && txn.AreWrittenKeysCompleted())
 	assert.Must(txn.GetWrittenKeyCount() > 0)
 
 	txn.MarkAllWrittenKeysCommitted()
@@ -638,21 +633,15 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 		},
 	)
 
-	for key, writeInfo := range txn.getToClearKeys() {
-		assert.Must(!writeInfo.Rollbacked)
-		if writeInfo.CommittedCleared {
-			continue
-		}
-
+	for key, isWrittenKey := range txn.getToClearKeys(false) {
 		var (
 			key          = key
-			isWrittenKey = writeInfo.NotEmpty()
+			isWrittenKey = isWrittenKey
 			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
 			opt          = types.NewKVCCWriteOption().WithClearWriteIntent().
 					CondReadForWrite(txn.Type.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
 					CondWriteByDifferentTransaction(callerTxn != txn.ID)
 		)
-		assert.Must(!isWrittenKey || writeInfo.LastWrittenVersion > 0)
 		_ = types.NewTreeTaskNoResult(
 			txn.GenIDOfKey(key), "clear-key", txn.cfg.ClearTimeout, root, func(ctx context.Context, _ []interface{}) error {
 				if clearErr := txn.kv.Set(ctx, key, val, opt); clearErr != nil {
@@ -671,16 +660,19 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string) {
 	_ = txn.s.ScheduleClearJobTree(root)
 }
 
-func (txn *Txn) getToClearKeys() map[string]ttypes.WriteKeyInfo /* key->WrittenValueInternalVersion */ {
-	var m = make(map[string]ttypes.WriteKeyInfo)
+func (txn *Txn) getToClearKeys(rollback bool) map[string]bool /* key->isWrittenKey */ {
+	var m = make(map[string]bool)
 	if txn.Type.IsReadForWrite() {
 		for readKey := range txn.readForWriteReadKeys {
-			m[readKey] = ttypes.EmptyWriteKeyInfo
+			m[readKey] = false
 		}
 	}
 	txn.ForEachWrittenKey(func(writtenKey string, info ttypes.WriteKeyInfo) {
-		assert.Must(info.NotEmpty())
-		m[writtenKey] = info
+		assert.Must(!info.IsEmpty())
+		if (rollback && !info.Rollbacked) || (!rollback && !info.CommittedCleared) {
+			assert.Must((rollback && !info.CommittedCleared && !info.Committed) || (!rollback && !info.Rollbacked))
+			m[writtenKey] = true
+		}
 	})
 	return m
 }
@@ -694,6 +686,9 @@ func (txn *Txn) waitIOTasks(ctx context.Context, forceCancel bool) {
 		ioTasks        = txn.getIOTasks()
 		cancelledTasks = make([]*types.ListTask, 0, len(ioTasks))
 	)
+	if len(ioTasks) == 0 {
+		return
+	}
 	for _, ioTask := range ioTasks {
 		if ctx.Err() == nil && !forceCancel {
 			if !ioTask.WaitFinishWithContext(ctx) {

@@ -147,4 +147,8 @@ var (
 		Code: consts.ErrCodeTabletWriteTransactionNotFound,
 		Msg:  "tablet write transaction not found, probably removed",
 	}
+	ErrTransactionRecordNotFoundAndWontBeWritten = &Error{
+		Code: consts.ErrCodeTransactionRecordNotFoundAndWontBeWritten,
+		Msg:  "transaction record not found and prevented from being written", // help rollback if original txn coordinator was gone
+	}
 )

@@ -27,6 +27,7 @@ const (
 
 	ErrCodeCantRemoveCommittedValue                       = 90
 	ErrCodeTabletWriteTransactionNotFound                 = 91
+	ErrCodeTransactionRecordNotFoundAndWontBeWritten      = 92
 	ErrCodeNilResponse                                    = 99
 	ErrCodeTxnRetriedTooManyTimes                         = 100
 	ErrCodeNotSupported                                   = 111

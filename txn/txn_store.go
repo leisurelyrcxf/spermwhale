@@ -168,7 +168,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		txn.MarkWrittenKeyRollbacked(key)
 	}
 	if preventFutureTxnRecordWrite {
-		_ = txn.rollback(ctx, callerTxn.ID, true, "transaction record not found and prevented from being written") // help rollback if original txn coordinator was gone
+		txn.err = errors.ErrTransactionRecordNotFoundAndWontBeWritten
 	} else {
 		assert.Must(!keyExists && len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)
 		// nothing to rollback

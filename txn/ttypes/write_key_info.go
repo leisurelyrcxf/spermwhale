@@ -41,8 +41,8 @@ func NewWriteKeyInfo(lastWrittenVersion types.TxnInternalVersion) WriteKeyInfo {
 	}
 }
 
-func (ks WriteKeyInfo) NotEmpty() bool {
-	return ks.LastWrittenVersion > 0
+func (ks WriteKeyInfo) IsEmpty() bool {
+	return ks.LastWrittenVersion == 0
 }
 
 type WriteKeyInfos struct {
