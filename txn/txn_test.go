@@ -127,22 +127,26 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, txnType types.TxnType, r
 }
 
 func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
+	testTxnLostUpdateWriteAfterWrite(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10})
+}
+
+func testTxnLostUpdateWriteAfterWrite(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration) {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 6))
 
-	for _, staleWriteThresholdInMilliseconds := range []int{1000} {
+	for _, staleWriteThreshold := range staleWriteThresholds {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnLostUpdateWriteAfterWrite(t, i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))) {
-				t.Errorf("TestTxnLostUpdateWriteAfterWrite failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(staleWriteThresholdInMilliseconds))
+			if !testifyassert.True(t, testTxnLostUpdateWriteAfterWriteOneRound(t, i, txnType, readOpt, staleWriteThreshold)) {
+				t.Errorf("testTxnLostUpdateWriteAfterWriteOneRound failed @round %d, staleWriteThreshold: %s, type: %s, readOpt: %v", i, staleWriteThreshold, txnType, readOpt)
 				return
 			}
 		}
 	}
 }
 
-func testTxnLostUpdateWriteAfterWrite(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnLostUpdateWriteAfterWrite @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
+func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testTxnLostUpdateWriteAfterWriteOneRound @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	const (
 		initialValue     = 101
@@ -182,11 +186,8 @@ func testTxnLostUpdateWriteAfterWrite(t *testing.T, round int, staleWriteThresho
 		go func(i int) {
 			defer wg.Done()
 
-			var (
-				readValues, writeValues = map[string]types.Value{}, map[string]types.Value{}
-				readOpt                 = types.NewTxnReadOption().WithWaitNoWriteIntent()
-			)
-			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
+			var readValues, writeValues = map[string]types.Value{}, map[string]types.Value{}
+			if tx, err := sc.DoTransactionRaw(ctx, txnType, func(ctx context.Context, txn types.Txn) (error, bool) {
 				if i&1 == 1 {
 					val, err := txn.Get(ctx, key, readOpt)
 					if err != nil {
