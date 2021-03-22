@@ -940,12 +940,20 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 }
 
 func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
+	testDistributedTxnConsistencyIntegrate(t, types.TxnTypeDefault, types.NewTxnReadOption())
+}
+
+func TestDistributedTxnConsistencyIntegrateReadForWriteWaitNoWriteIntent(t *testing.T) {
+	testDistributedTxnConsistencyIntegrate(t, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent())
+}
+
+func testDistributedTxnConsistencyIntegrate(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 5))
 
 	for _, threshold := range []int{10000} {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testDistributedTxnConsistencyIntegrate(t, i, time.Millisecond*time.Duration(threshold))) {
+			if !testifyassert.True(t, testDistributedTxnConsistencyIntegrateOneRound(t, i, txnType, readOpt, time.Millisecond*time.Duration(threshold))) {
 				t.Errorf("TestDistributedTxnConsistencyIntegrate failed @round %d", i)
 				return
 			}
@@ -953,20 +961,20 @@ func TestDistributedTxnConsistencyIntegrate(t *testing.T) {
 	}
 }
 
-func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteThreshold time.Duration) (b bool) {
+func testDistributedTxnConsistencyIntegrateOneRound(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
 	assert := types.NewAssertion(t)
 	t.Logf("testDistributedTxnConsistencyIntegrate @round %d", round)
 	var (
 		txnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)
 		tabletCfg     = defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold)
 	)
-	tms, clientTMs, stopper := createCluster(t, txnManagerCfg, tabletCfg)
+	txnServers, clientTMs, stopper := createCluster(t, txnManagerCfg, tabletCfg)
 	defer stopper()
-	if !assert.Len(tms, 2) {
+	if !assert.Len(txnServers, 2) {
 		return
 	}
 	//t.Logf("%v shard: %d, %v shard: %d", key1, gAte.MustRoute(key1).ID, key2, gAte.MustRoute(key2).ID)
-	gAte := tms[0].tm.kv.(*gate.Gate)
+	gAte := txnServers[0].tm.kv.(*gate.Gate)
 	const key1, key2 = "k1", "k22"
 	if !assert.NotEqual(gAte.MustRoute(key1).ID, gAte.MustRoute(key2).ID) {
 		return
@@ -975,7 +983,7 @@ func testDistributedTxnConsistencyIntegrate(t *testing.T, round int, staleWriteT
 	sc1 := smart_txn_client.NewSmartClient(tm1, 10000)
 	sc2 := smart_txn_client.NewSmartClient(tm2, 10000)
 
-	return testDistributedTxnConsistencyIntegrateFunc(t, []*smart_txn_client.SmartClient{sc1, sc2})
+	return testDistributedTxnConsistencyOneRound(t, txnType, readOpt, []*smart_txn_client.SmartClient{sc1, sc2})
 }
 
 func TestDistributedTxnConsistencyStandalone(t *testing.T) {
@@ -1009,7 +1017,7 @@ func testDistributedTxnConsistencyStandalone(t *testing.T, round int) (b bool) {
 	ctm1, ctm2 := NewClientTxnManager(cli1), NewClientTxnManager(cli2)
 	sc1 := smart_txn_client.NewSmartClient(ctm1, 10000)
 	sc2 := smart_txn_client.NewSmartClient(ctm2, 10000)
-	return testDistributedTxnConsistencyIntegrateFunc(t, []*smart_txn_client.SmartClient{sc1, sc2})
+	return testDistributedTxnConsistencyIntegrateConvenient(t, []*smart_txn_client.SmartClient{sc1, sc2})
 }
 
 func TestDistributedTxnConsistencyIntegrateRedis(t *testing.T) {
@@ -1050,10 +1058,14 @@ func testDistributedTxnConsistencyIntegrateRedis(t *testing.T, round int, staleW
 	sc1 := smart_txn_client.NewSmartClient(tm1, 10000)
 	sc2 := smart_txn_client.NewSmartClient(tm2, 10000)
 
-	return testDistributedTxnConsistencyIntegrateFunc(t, []*smart_txn_client.SmartClient{sc1, sc2})
+	return testDistributedTxnConsistencyIntegrateConvenient(t, []*smart_txn_client.SmartClient{sc1, sc2})
 }
 
-func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_client.SmartClient) (b bool) {
+func testDistributedTxnConsistencyIntegrateConvenient(t *testing.T, scs []*smart_txn_client.SmartClient) (b bool) {
+	return testDistributedTxnConsistencyOneRound(t, types.TxnTypeDefault, types.NewTxnReadOption(), scs)
+}
+
+func testDistributedTxnConsistencyOneRound(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, scs []*smart_txn_client.SmartClient) (b bool) {
 	assert := types.NewAssertion(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -1092,9 +1104,9 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 			start := time.Now()
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					assert.NoError(sc1.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+					assert.NoError(sc1.DoTransactionOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+							key1Val, err := txn.Get(ctx, key1, readOpt)
 							if err != nil {
 								return err
 							}
@@ -1109,7 +1121,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+							key2Val, err := txn.Get(ctx, key2, readOpt)
 							if err != nil {
 								return err
 							}
@@ -1125,9 +1137,9 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 						return nil
 					}))
 				} else {
-					assert.NoError(sc2.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+					assert.NoError(sc2.DoTransactionOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+							key1Val, err := txn.Get(ctx, key1, readOpt)
 							if err != nil {
 								return err
 							}
@@ -1142,7 +1154,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+							key2Val, err := txn.Get(ctx, key2, readOpt)
 							if err != nil {
 								return err
 							}
