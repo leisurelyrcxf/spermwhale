@@ -115,7 +115,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlag(key, 2, func(value types.Value) types.Value {
+		if err := db.updateFlag(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
@@ -127,7 +127,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 		if val, err := db.Get(ctx, key, types.NewKVReadOption(3)); !assertValueOfVersion(val, err, 1) || !assert.False(val.HasWriteIntent()) {
 			return
 		}
-		if err := db.updateFlag(key, 2, func(value types.Value) types.Value {
+		if err := db.updateFlag(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !errors.AssertIsVersionNotExistsErr(assert, err) {
@@ -136,7 +136,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlag(key, 1, func(value types.Value) types.Value {
+		if err := db.updateFlag(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
@@ -145,7 +145,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 		if err := db.Set(ctx, key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !assert.NoError(err) {
 			return
 		}
-		if err := db.updateFlag(key, 2, func(value types.Value) types.Value {
+		if err := db.updateFlag(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !errors.AssertIsVersionNotExistsErr(assert, err) {

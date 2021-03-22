@@ -14,8 +14,9 @@ require (
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/protobuf v1.4.3
 	github.com/google/uuid v1.2.0 // indirect
-	github.com/stretchr/testify v1.5.1
+	github.com/stretchr/testify v1.6.1
 	go.etcd.io/etcd v3.3.20+incompatible
+	go.mongodb.org/mongo-driver v1.5.0
 	go.uber.org/zap v1.16.0 // indirect
 	google.golang.org/grpc v1.35.0
 	google.golang.org/protobuf v1.25.0
