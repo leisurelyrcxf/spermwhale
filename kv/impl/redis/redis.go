@@ -8,18 +8,19 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/golang/glog"
 
 	"github.com/go-redis/redis"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
+
+const DebugLevel = 101
 
 type Value struct {
 	Meta            uint8  `json:"M"`
@@ -59,13 +60,12 @@ func (v *Value) Decode(data []byte) error {
 }
 
 type VersionedValues struct {
-	key                    *string
 	cli                    *redis.Client
 	discardedTimestampBits int
 }
 
-func NewVersionedValues(key string, cli *redis.Client, discardedTimestampBits int) VersionedValues {
-	return VersionedValues{key: &key, cli: cli, discardedTimestampBits: discardedTimestampBits}
+func NewVersionedValues(cli *redis.Client, discardedTimestampBits int) VersionedValues {
+	return VersionedValues{cli: cli, discardedTimestampBits: discardedTimestampBits}
 }
 
 func (vvs VersionedValues) encodeRedis(val types.Value) redis.Z {
@@ -88,9 +88,9 @@ func (vvs VersionedValues) versionToScore(version uint64) string {
 	return strconv.FormatUint(version>>vvs.discardedTimestampBits, 10)
 }
 
-func (vvs VersionedValues) Get(version uint64) (types.Value, error) {
+func (vvs VersionedValues) Get(key string, version uint64) (types.Value, error) {
 	versionDesc := vvs.versionToScore(version)
-	cmd := vvs.cli.ZRangeByScoreWithScores(*vvs.key, redis.ZRangeBy{
+	cmd := vvs.cli.ZRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   versionDesc,
 		Max:   versionDesc,
 		Count: 1,
@@ -98,30 +98,38 @@ func (vvs VersionedValues) Get(version uint64) (types.Value, error) {
 	ret, err := cmd.Result()
 	val, err := vvs.getOne(ret, err)
 	assert.Must(err != nil || val.Version == version)
+	if err != nil && glog.V(DebugLevel) {
+		glog.Infof("[Get] get version %d of key '%s' failed: '%v'", version, key, err)
+	}
 	return val, err
 }
 
-func (vvs VersionedValues) Put(val types.Value) error {
+func (vvs VersionedValues) Upsert(key string, val types.Value) error {
 	versionDesc := vvs.versionToScore(val.Version)
 	_, err := vvs.cli.Pipelined(func(pipe redis.Pipeliner) error {
-		pipe.ZRemRangeByScore(*vvs.key, versionDesc, versionDesc)
-		pipe.ZAdd(*vvs.key, vvs.encodeRedis(val))
+		pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
+		glog.V(DebugLevel).Infof("[Upsert] removed version %d of key '%s'", val.Version, key)
+		pipe.ZAdd(key, vvs.encodeRedis(val))
 		return nil
 	})
 	return err
 }
 
-func (vvs VersionedValues) UpdateFlag(version uint64, modifyFlag func(types.Value) types.Value) error {
+func (vvs VersionedValues) UpdateFlag(key string, version uint64, modifyFlag func(val types.Value) types.Value, onNotExists func(err error) error) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(ctx context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
-			cmd := tx.ZRevRangeByScoreWithScores(*vvs.key, redis.ZRangeBy{
+			cmd := tx.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 				Min:   versionDesc,
 				Max:   versionDesc,
 				Count: 1,
 			})
 			prev, err := vvs.getOne(cmd.Result())
 			if err != nil {
+				glog.Errorf("want to clear write intent for version %d of key '%s', but got err: '%v'", version, key, err)
+				if errors.IsNotExistsErr(err) {
+					return onNotExists(err)
+				}
 				return err
 			}
 			assert.Must(prev.Version == version)
@@ -132,31 +140,33 @@ func (vvs VersionedValues) UpdateFlag(version uint64, modifyFlag func(types.Valu
 			}
 
 			_, err = tx.Pipelined(func(pipe redis.Pipeliner) error {
-				pipe.ZRemRangeByScore(*vvs.key, versionDesc, versionDesc)
-				pipe.ZAdd(*vvs.key, vvs.encodeRedis(cur))
+				pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
+				glog.V(DebugLevel).Infof("[UpdateFlag] removed version %d of key '%s'", version, key)
+				pipe.ZAdd(key, vvs.encodeRedis(cur))
+				glog.V(DebugLevel).Infof("[UpdateFlag] modified version %d of key '%s', new value: '%s'(flag: %d)", version, key, string(cur.V), cur.Meta.Flag)
 				return nil
 			})
 			return err
-		}, *vvs.key)
+		}, key)
 	}, func(err error) bool {
 		return err == redis.TxFailedErr
 	})
 }
 
-func (vvs VersionedValues) Max() (types.Value, error) {
-	cmd := vvs.cli.ZRevRangeWithScores(*vvs.key, 0, 0)
+func (vvs VersionedValues) Max(key string) (types.Value, error) {
+	cmd := vvs.cli.ZRevRangeWithScores(key, 0, 0)
 	ret, err := cmd.Result()
 	return vvs.getOne(ret, err)
 }
 
-func (vvs VersionedValues) Min() (types.Value, error) {
-	cmd := vvs.cli.ZRangeWithScores(*vvs.key, 0, 0)
+func (vvs VersionedValues) Min(key string) (types.Value, error) {
+	cmd := vvs.cli.ZRangeWithScores(key, 0, 0)
 	ret, err := cmd.Result()
 	return vvs.getOne(ret, err)
 }
 
-func (vvs VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, error) {
-	cmd := vvs.cli.ZRevRangeByScoreWithScores(*vvs.key, redis.ZRangeBy{
+func (vvs VersionedValues) FindMaxBelow(key string, upperVersion uint64) (types.Value, error) {
+	cmd := vvs.cli.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   "-inf",
 		Max:   vvs.versionToScore(upperVersion),
 		Count: 1,
@@ -165,16 +175,21 @@ func (vvs VersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, error
 	return vvs.getOne(ret, err)
 }
 
-func (vvs VersionedValues) Remove(version uint64) error {
+func (vvs VersionedValues) Remove(key string, version uint64) error {
 	versionDesc := vvs.versionToScore(version)
-	return vvs.cli.ZRemRangeByScore(*vvs.key, versionDesc, versionDesc).Err()
+	if err := vvs.cli.ZRemRangeByScore(key, versionDesc, versionDesc).Err(); err != nil {
+		glog.V(DebugLevel).Infof("[Remove] remove version %d of key '%s' failed: '%s'", version, key, err)
+		return err
+	}
+	glog.V(DebugLevel).Infof("[Remove] removed version %d of key '%s'", version, key)
+	return nil
 }
 
-func (vvs VersionedValues) RemoveIf(version uint64, pred func(prev types.Value) error) error {
+func (vvs VersionedValues) RemoveIf(key string, version uint64, pred func(prev types.Value) error) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(ctx context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
-			cmd := tx.ZRevRangeByScoreWithScores(*vvs.key, redis.ZRangeBy{
+			cmd := tx.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 				Min:   versionDesc,
 				Max:   versionDesc,
 				Count: 1,
@@ -192,11 +207,12 @@ func (vvs VersionedValues) RemoveIf(version uint64, pred func(prev types.Value) 
 			}
 
 			_, err = tx.Pipelined(func(pipe redis.Pipeliner) error {
-				pipe.ZRemRangeByScore(*vvs.key, versionDesc, versionDesc)
+				pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
+				glog.V(DebugLevel).Infof("[RemoveIf] removed version %d of key '%s'", version, key)
 				return nil
 			})
 			return err
-		}, *vvs.key)
+		}, key)
 	}, func(err error) bool {
 		return err == redis.TxFailedErr
 	})
@@ -213,6 +229,10 @@ func (vvs VersionedValues) getOne(zs []redis.Z, err error) (types.Value, error) 
 		panic(fmt.Sprintf("VersionedValues::getOne() len(ret%v) > 1", zs))
 	}
 	return vvs.decodeRedis(zs[0])
+}
+
+func (vvs VersionedValues) Close() error {
+	return vvs.cli.Close()
 }
 
 func mustNewClient(sourceAddr string, auth string) *kv.DB {
@@ -237,23 +257,14 @@ func newClient(sourceAddr string, auth string, discardedTimestampBits int) (*kv.
 	if err := cli.Ping().Err(); err != nil {
 		return nil, errors.Annotatef(err, "can't connect to %s", sourceAddr)
 	}
-	return kv.NewDB(kv.VersionedValuesFactory{
-		Get: func(key string) (vvs kv.VersionedValues, err error) {
-			return NewVersionedValues(key, cli, discardedTimestampBits), nil
-		},
-		GetLazy: func(key string) kv.VersionedValues {
-			return NewVersionedValues(key, cli, discardedTimestampBits)
-		},
-	}, func() error {
-		return cli.Close()
-	}), nil
+	return kv.NewDB(NewVersionedValues(cli, discardedTimestampBits)), nil
 }
 
-func (vvs VersionedValues) Insert(val types.Value) error {
+func (vvs VersionedValues) Insert(key string, val types.Value) error {
 	versionDesc := vvs.versionToScore(val.Version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(ctx context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
-			cmd := tx.ZRevRangeByScoreWithScores(*vvs.key, redis.ZRangeBy{
+			cmd := tx.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 				Min:   versionDesc,
 				Max:   versionDesc,
 				Count: 1,
@@ -263,11 +274,11 @@ func (vvs VersionedValues) Insert(val types.Value) error {
 			}
 
 			_, err := tx.Pipelined(func(pipe redis.Pipeliner) error {
-				pipe.ZAdd(*vvs.key, vvs.encodeRedis(val))
+				pipe.ZAdd(key, vvs.encodeRedis(val))
 				return nil
 			})
 			return err
-		}, *vvs.key)
+		}, key)
 	}, func(err error) bool {
 		return err == redis.TxFailedErr
 	})

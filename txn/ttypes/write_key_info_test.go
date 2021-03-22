@@ -7,7 +7,7 @@ import (
 )
 
 func TestEmptyWriteKeyInfo(t *testing.T) {
-	testifyassert.False(t, EmptyWriteKeyInfo.NotEmpty())
-	testifyassert.True(t, NewWriteKeyInfo(1).NotEmpty())
-	testifyassert.True(t, NewWriteKeyInfo(255).NotEmpty())
+	testifyassert.True(t, EmptyWriteKeyInfo.IsEmpty())
+	testifyassert.False(t, NewWriteKeyInfo(1).IsEmpty())
+	testifyassert.False(t, NewWriteKeyInfo(255).IsEmpty())
 }

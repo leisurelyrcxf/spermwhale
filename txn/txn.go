@@ -769,13 +769,17 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 		assert.Must(txn.txnRecordTask != nil)
 	}
 
-	var root = types.NewTreeTaskNoResult(
+	var root *types.TreeTask
+	root = types.NewTreeTaskNoResult(
 		txn.txnKey, "remove-txn-record", txn.cfg.ClearTimeout,
 		nil, func(ctx context.Context, _ []interface{}) error {
 			if consts.BuildOption.IsDebug() { // TODO remove this in product
+				assert.Must(root.AllChildrenSuccess())
 				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
 					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
-					assert.Must(err == nil && (exists && !val.HasWriteIntent()))
+					if !(err == nil && (exists && !val.HasWriteIntent())) {
+						glog.Fatalf("txn-%d cleared write key '%s' not exists", txn.ID, key)
+					}
 				})
 			}
 			if err := txn.removeTxnRecord(ctx, false); err != nil {
