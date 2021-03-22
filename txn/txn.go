@@ -346,10 +346,25 @@ func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption
 		txn.SnapshotVersion = utils.MinUint64(txn.SnapshotVersion, val.SnapshotVersion)
 	}
 
-	var needRereadKeys []string
+	var (
+		needRereadKeys       []string
+		needRereadKeyIndexes []int
+	)
 	for idx, value := range values {
+		assert.Must(!value.HasWriteIntent())
 		if value.Version > txn.SnapshotVersion {
 			needRereadKeys = append(needRereadKeys, keys[idx])
+			needRereadKeyIndexes = append(needRereadKeyIndexes, idx)
+		} else {
+			//if consts.BuildOption.IsDebug() {
+			//	// TODO remove this
+			//	assert.Must(value.SnapshotVersion >= txn.SnapshotVersion)
+			//	val, err := txn.kv.Get(ctx, keys[idx], txn.GetSnapshotReadOption())
+			//	assert.MustNoError(err)
+			//	assert.Must(val.Version == values[idx].Version)
+			//	assert.Must(val.SnapshotVersion == txn.SnapshotVersion)
+			//}
+			values[idx].SnapshotVersion = txn.SnapshotVersion
 		}
 	}
 
@@ -362,12 +377,8 @@ func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption
 	if err != nil {
 		return nil, err
 	}
-	keyIndex := make(map[string]int)
-	for i, key := range keys {
-		keyIndex[key] = i
-	}
 	for rereadIdx, rereadValue := range rereadValues {
-		values[keyIndex[needRereadKeys[rereadIdx]]] = rereadValue
+		values[needRereadKeyIndexes[rereadIdx]] = rereadValue
 	}
 	return types.ValueCCs(values).ToValues(), nil
 }
@@ -396,19 +407,13 @@ func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.K
 		tasks = append(tasks, task)
 	}
 
-	var ctxErr = ctx.Err()
 	for _, task := range tasks {
-		if ctxErr == nil {
-			if !task.WaitFinishWithContext(ctx) {
-				task.Cancel()
-				ctxErr = ctx.Err()
+		if !task.WaitFinishWithContext(ctx) {
+			for _, t := range tasks {
+				t.Cancel()
 			}
-		} else {
-			task.Cancel()
+			return nil, ctx.Err()
 		}
-	}
-	if ctxErr != nil {
-		return nil, ctxErr
 	}
 
 	values := make([]types.ValueCC, 0, len(keys))
