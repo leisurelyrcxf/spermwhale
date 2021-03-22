@@ -108,7 +108,7 @@ func (v Value) WithVersion(version uint64) Value {
 }
 
 func (v Value) WithNoWriteIntent() Value {
-	v.Flag &= 0xfe
+	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
 	return v
 }
 

@@ -1,10 +1,11 @@
 package memory
 
 import (
+	"context"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/kv"
-	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
@@ -32,36 +33,40 @@ func (vvs *VersionedValues) lazyGet(key string) *KeyVersionedValues {
 	}).(*KeyVersionedValues)
 }
 
-func (vvs *VersionedValues) Get(key string, version uint64) (types.Value, error) {
+func (vvs *VersionedValues) Get(_ context.Context, key string, version uint64) (kv.Value, error) {
 	kvvs, err := vvs.get(key)
 	if err != nil {
-		return types.EmptyValue, err
+		return kv.EmptyValue, err
 	}
 	return kvvs.Get(version)
 }
 
-func (vvs *VersionedValues) Upsert(key string, val types.Value) error {
-	return vvs.lazyGet(key).Upsert(val)
+func (vvs *VersionedValues) Upsert(_ context.Context, key string, version uint64, val kv.Value) error {
+	return vvs.lazyGet(key).Upsert(version, val)
 }
 
-func (vvs *VersionedValues) UpdateFlag(key string, version uint64, modifyFlag func(val types.Value) types.Value, onNotExists func(err error) error) error {
+func (vvs *VersionedValues) UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error {
+	return errors.ErrNotSupported
+}
+
+func (vvs *VersionedValues) ReadModifyWrite(_ context.Context, key string, version uint64, modifyFlag func(val kv.Value) kv.Value, onNotExists func(err error) error) error {
 	kvvs, err := vvs.get(key)
 	if err != nil {
 		assert.Must(errors.IsNotExistsErr(err))
 		return onNotExists(err)
 	}
-	return kvvs.UpdateFlag(version, modifyFlag, onNotExists)
+	return kvvs.ReadModifyWrite(version, modifyFlag, onNotExists)
 }
 
-func (vvs *VersionedValues) FindMaxBelow(key string, upperVersion uint64) (types.Value, error) {
+func (vvs *VersionedValues) FindMaxBelow(_ context.Context, key string, upperVersion uint64) (val kv.Value, version uint64, err error) {
 	kvvs, err := vvs.get(key)
 	if err != nil {
-		return types.EmptyValue, err
+		return kv.EmptyValue, 0, err
 	}
 	return kvvs.FindMaxBelow(upperVersion)
 }
 
-func (vvs *VersionedValues) Remove(key string, version uint64) error {
+func (vvs *VersionedValues) Remove(_ context.Context, key string, version uint64) error {
 	kvvs, err := vvs.get(key)
 	if err != nil {
 		return err
@@ -69,7 +74,7 @@ func (vvs *VersionedValues) Remove(key string, version uint64) error {
 	return kvvs.Remove(version)
 }
 
-func (vvs *VersionedValues) RemoveIf(key string, version uint64, pred func(prev types.Value) error) error {
+func (vvs *VersionedValues) RemoveIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
 	kvvs, err := vvs.get(key)
 	if err != nil {
 		return err
@@ -97,29 +102,29 @@ func newKeyVersionedValues() *KeyVersionedValues {
 	}))
 }
 
-func (kvvs *KeyVersionedValues) Get(version uint64) (types.Value, error) {
+func (kvvs *KeyVersionedValues) Get(version uint64) (kv.Value, error) {
 	val, ok := (*concurrency.ConcurrentTreeMap)(kvvs).Get(version)
 	if !ok {
-		return types.EmptyValue, errors.Annotatef(errors.ErrVersionNotExists, "version: %d", version)
+		return kv.EmptyValue, errors.Annotatef(errors.ErrVersionNotExists, "version: %d", version)
 	}
-	return val.(types.Value), nil
+	return val.(kv.Value), nil
 }
 
-func (kvvs *KeyVersionedValues) Insert(val types.Value) error {
-	if !(*concurrency.ConcurrentTreeMap)(kvvs).Insert(val.Version, val) {
+func (kvvs *KeyVersionedValues) Insert(version uint64, val kv.Value) error {
+	if !(*concurrency.ConcurrentTreeMap)(kvvs).Insert(version, val) {
 		return errors.ErrVersionAlreadyExists
 	}
 	return nil
 }
 
-func (kvvs *KeyVersionedValues) Upsert(val types.Value) error {
-	(*concurrency.ConcurrentTreeMap)(kvvs).Put(val.Version, val)
+func (kvvs *KeyVersionedValues) Upsert(version uint64, val kv.Value) error {
+	(*concurrency.ConcurrentTreeMap)(kvvs).Put(version, val)
 	return nil
 }
 
-func (kvvs *KeyVersionedValues) UpdateFlag(version uint64, modifyFlag func(types.Value) types.Value, onNotExists func(error) error) error {
+func (kvvs *KeyVersionedValues) ReadModifyWrite(version uint64, modifyFlag func(kv.Value) kv.Value, onNotExists func(error) error) error {
 	if !(*concurrency.ConcurrentTreeMap)(kvvs).Update(version, func(old interface{}) (new interface{}, modified bool) {
-		oldVal := old.(types.Value)
+		oldVal := old.(kv.Value)
 		newVal := modifyFlag(oldVal)
 		return newVal, newVal.Flag != oldVal.Flag
 	}) {
@@ -128,39 +133,39 @@ func (kvvs *KeyVersionedValues) UpdateFlag(version uint64, modifyFlag func(types
 	return nil
 }
 
-func (kvvs *KeyVersionedValues) Max() (types.Value, error) {
+func (kvvs *KeyVersionedValues) Max() (kv.Value, error) {
 	// Key is revered sorted, thus min is actually max version..
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Min()
 	if key == nil {
-		return types.EmptyValue, errors.ErrVersionNotExists
+		return kv.EmptyValue, errors.ErrVersionNotExists
 	}
-	return dbVal.(types.Value), nil
+	return dbVal.(kv.Value), nil
 }
 
-func (kvvs *KeyVersionedValues) Min() (types.Value, error) {
+func (kvvs *KeyVersionedValues) Min() (kv.Value, error) {
 	// Key is revered sorted, thus max is the min version.
 	key, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Max()
 	if key == nil {
-		return types.EmptyValue, errors.ErrVersionNotExists
+		return kv.EmptyValue, errors.ErrVersionNotExists
 	}
-	return dbVal.(types.Value), nil
+	return dbVal.(kv.Value), nil
 }
 
-func (kvvs *KeyVersionedValues) FindMaxBelow(upperVersion uint64) (types.Value, error) {
-	version, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Find(func(key interface{}, value interface{}) bool {
+func (kvvs *KeyVersionedValues) FindMaxBelow(upperVersion uint64) (val kv.Value, version uint64, err error) {
+	key, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Find(func(key interface{}, value interface{}) bool {
 		return key.(uint64) <= upperVersion
 	})
-	if version == nil {
-		return types.EmptyValue, errors.Annotatef(errors.ErrVersionNotExists, "upperVersion: %d", upperVersion)
+	if key == nil {
+		return kv.EmptyValue, 0, errors.Annotatef(errors.ErrVersionNotExists, "upperVersion: %d", upperVersion)
 	}
-	return dbVal.(types.Value), nil
+	return dbVal.(kv.Value), key.(uint64), nil
 }
 
-func (kvvs *KeyVersionedValues) RemoveIf(version uint64, pred func(prev types.Value) error) error {
+func (kvvs *KeyVersionedValues) RemoveIf(version uint64, pred func(prev kv.Value) error) error {
 	var err error
 	(*concurrency.ConcurrentTreeMap)(kvvs).RemoveIf(version, func(prev interface{}) bool {
-		if predErr := pred(prev.(types.Value)); predErr != nil {
+		if predErr := pred(prev.(kv.Value)); predErr != nil {
 			err = predErr
 			return false
 		}

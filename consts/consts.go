@@ -43,7 +43,8 @@ const (
 	WriteOptBitMaskTxnRecord                          = 1 << 5
 	WriteOptBitMaskWriteByDifferentTxn                = 1 << 6
 
-	ValueMetaBitMaskHasWriteIntent = 1
+	ValueMetaBitMaskHasWriteIntent   = 1
+	ValueMetaBitMaskClearWriteIntent = 0xfe
 )
 
 func IsWriteOptClearWriteIntent(flag uint8) bool {

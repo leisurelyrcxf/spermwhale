@@ -190,3 +190,10 @@ func CASError(e error, oldCode int, newErr error) error {
 	}
 	return e
 }
+
+func CASError2(e error, exp error, newErr error) error {
+	if e == exp {
+		return newErr
+	}
+	return e
+}
