@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"hash/crc32"
 	"sync"
 
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
@@ -73,4 +74,30 @@ func (s *BasicScheduler) start() {
 			}
 		}()
 	}
+}
+
+type ConcurrentBasicScheduler struct {
+	partitions []*BasicScheduler
+}
+
+func NewConcurrentBasicScheduler(partitionNum int, maxBufferedPerPartition int, workerNumberPerPartition int) *ConcurrentBasicScheduler {
+	s := &ConcurrentBasicScheduler{partitions: make([]*BasicScheduler, partitionNum)}
+	for i := range s.partitions {
+		s.partitions[i] = NewBasicScheduler(maxBufferedPerPartition, workerNumberPerPartition)
+	}
+	return s
+}
+
+func (s *ConcurrentBasicScheduler) Schedule(task *basic.Task) error {
+	return s.partition(task.ID).Schedule(task)
+}
+
+func (s *ConcurrentBasicScheduler) Close() {
+	for _, partition := range s.partitions {
+		partition.Close()
+	}
+}
+
+func (s *ConcurrentBasicScheduler) partition(taskID string) *BasicScheduler {
+	return s.partitions[int(crc32.ChecksumIEEE([]byte(taskID)))%len(s.partitions)]
 }

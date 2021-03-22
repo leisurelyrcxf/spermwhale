@@ -45,7 +45,7 @@ func UseTxn(ctx context.Context) error {
 				return err
 			}
 			v1 += delta
-			if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+			if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 				return err
 			}
 		}
@@ -60,7 +60,7 @@ func UseTxn(ctx context.Context) error {
 				return err
 			}
 			v2 += delta2
-			if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+			if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 				return err
 			}
 		}

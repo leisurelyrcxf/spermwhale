@@ -24,6 +24,7 @@ message Txn {
     uint64 id = 1;
     TxnState state = 2;
     TxnType type = 3;
+    uint64 snapshot_version = 4;
 }
 
 message TxnReadOption {

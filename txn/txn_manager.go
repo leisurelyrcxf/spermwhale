@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
 
 	"github.com/golang/glog"
@@ -23,24 +25,30 @@ import (
 
 type Scheduler struct {
 	clearJobScheduler *scheduler.ConcurrentStaticTreeScheduler
-	ioJobScheduler    *scheduler.ConcurrentDynamicListScheduler
+	writeJobScheduler *scheduler.ConcurrentDynamicListScheduler
+	readJobScheduler  *scheduler.ConcurrentBasicScheduler
 }
 
 func (s *Scheduler) ScheduleClearJobTree(root *types.TreeTask) error { // TODO add context
 	return s.clearJobScheduler.ScheduleTree(root)
 }
 
-func (s *Scheduler) ScheduleIOJob(t *types.ListTask) error {
-	return s.ioJobScheduler.Schedule(t)
+func (s *Scheduler) ScheduleWriteJob(t *types.ListTask) error {
+	return s.writeJobScheduler.Schedule(t)
 }
 
-func (s *Scheduler) GCIOJobs(ts []*types.ListTask) {
-	s.ioJobScheduler.GC(ts)
+func (s *Scheduler) ScheduleReadJob(t *basic.Task) error {
+	return s.readJobScheduler.Schedule(t)
+}
+
+func (s *Scheduler) GCWriteJobs(ts []*types.ListTask) {
+	s.writeJobScheduler.GC(ts)
 }
 
 func (s *Scheduler) Close() {
 	s.clearJobScheduler.Close()
-	s.ioJobScheduler.Close()
+	s.writeJobScheduler.Close()
+	s.readJobScheduler.Close()
 }
 
 type TransactionManager struct {
@@ -78,8 +86,9 @@ func NewTransactionManagerWithOracle(kv types.KVCC, cfg types.TxnManagerConfig, 
 		cfg: cfg,
 
 		s: &Scheduler{
-			clearJobScheduler: scheduler.NewConcurrentStaticTreeScheduler(cfg.ClearWorkerNum, cfg.MaxTaskBufferedPerPartition, 1),
-			ioJobScheduler:    scheduler.NewConcurrentDynamicListScheduler(cfg.IOWorkerNum, cfg.MaxTaskBufferedPerPartition, 1),
+			clearJobScheduler: scheduler.NewConcurrentStaticTreeScheduler(cfg.ClearerNum, cfg.MaxTaskBufferedPerPartition, 1),
+			writeJobScheduler: scheduler.NewConcurrentDynamicListScheduler(cfg.WriterNum, cfg.MaxTaskBufferedPerPartition, 1),
+			readJobScheduler:  scheduler.NewConcurrentBasicScheduler(cfg.ReaderNum, cfg.MaxTaskBufferedPerPartition, 1),
 		},
 	}).createStore()
 	tm.txns.Initialize(32)

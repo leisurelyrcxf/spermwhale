@@ -11,29 +11,35 @@ import (
 )
 
 type TxnManagerConfig struct {
-	WoundUncommittedTxnThreshold time.Duration
-	ClearWorkerNum, IOWorkerNum  int
-	ClearTimeout                 time.Duration
-	MaxTaskBufferedPerPartition  int
+	WoundUncommittedTxnThreshold     time.Duration
+	ClearerNum, WriterNum, ReaderNum int
+	ClearTimeout                     time.Duration
+	MaxTaskBufferedPerPartition      int
 }
 
 func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
 	return TxnManagerConfig{
 		WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold,
-		ClearWorkerNum:               consts.DefaultTxnManagerClearWorkerNumber,
+		ClearerNum:                   consts.DefaultTxnManagerClearerNumber,
 		ClearTimeout:                 consts.DefaultTxnManagerClearJobTimeout,
-		IOWorkerNum:                  consts.DefaultTxnManagerIOWorkerNumber,
-		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxIOTaskBufferedPerPartition,
+		WriterNum:                    consts.DefaultTxnManagerWriterNumber,
+		ReaderNum:                    consts.DefaultTxnManagerReaderNumber,
+		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxBufferedJobPerPartition,
 	}
 }
 
-func (cfg TxnManagerConfig) WithClearWorkNum(clearWorkerNum int) TxnManagerConfig {
-	cfg.ClearWorkerNum = clearWorkerNum
+func (cfg TxnManagerConfig) WithClearerNum(clearerNum int) TxnManagerConfig {
+	cfg.ClearerNum = clearerNum
 	return cfg
 }
 
-func (cfg TxnManagerConfig) WithIOWorkerNum(ioWorkerNum int) TxnManagerConfig {
-	cfg.IOWorkerNum = ioWorkerNum
+func (cfg TxnManagerConfig) WithWriterNum(writerNum int) TxnManagerConfig {
+	cfg.WriterNum = writerNum
+	return cfg
+}
+
+func (cfg TxnManagerConfig) WithReaderNum(readerNum int) TxnManagerConfig {
+	cfg.ReaderNum = readerNum
 	return cfg
 }
 

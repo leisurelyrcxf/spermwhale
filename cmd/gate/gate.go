@@ -20,9 +20,10 @@ import (
 func main() {
 	flagTxnPort := flag.Int("port-txn", consts.DefaultTxnServerPort, "txn port")
 	flagKVPort := flag.Int("port-kv", consts.DefaultKVServerPort, "kv port ")
-	flagClearWorkerNum := flag.Int("clear-worker-num", consts.DefaultTxnManagerClearWorkerNumber, "txn manager worker number")
-	flagIOWorkerNum := flag.Int("io-worker-num", consts.DefaultTxnManagerIOWorkerNumber, "txn manager worker number")
-	flagMaxBufferedPerPartition := flag.Int("max-buffered-per-partition", consts.DefaultTxnManagerMaxIOTaskBufferedPerPartition, "io worker pool and clear worker num pool max buffered per partition")
+	flagClearerNum := flag.Int("clearer-num", consts.DefaultTxnManagerClearerNumber, "txn manager clearer number")
+	flagWriterNum := flag.Int("writer-num", consts.DefaultTxnManagerWriterNumber, "txn manager writer number")
+	flagReaderNum := flag.Int("reader-num", consts.DefaultTxnManagerReaderNumber, "txn manager reader number")
+	flagMaxBufferedPerPartition := flag.Int("max-buffered-per-partition", consts.DefaultTxnManagerMaxBufferedJobPerPartition, "io worker pool and clear worker num pool max buffered per partition")
 	flagWoundUncommittedTxnThreshold := flag.Duration("wound-uncommitted-txn-threshold", consts.DefaultWoundUncommittedTxnThreshold,
 		"transaction older than this may be wounded by another transaction")
 	cmd.RegisterStoreFlags()
@@ -34,7 +35,7 @@ func main() {
 		glog.Fatalf("can't create gate: %v", err)
 	}
 	cfg := types.NewTxnManagerConfig(*flagWoundUncommittedTxnThreshold)
-	cfg = cfg.WithClearWorkNum(*flagClearWorkerNum).WithIOWorkerNum(*flagIOWorkerNum).WithMaxTaskBufferedPerPartition(*flagMaxBufferedPerPartition)
+	cfg = cfg.WithClearerNum(*flagClearerNum).WithWriterNum(*flagWriterNum).WithReaderNum(*flagReaderNum).WithMaxTaskBufferedPerPartition(*flagMaxBufferedPerPartition)
 	if err := cfg.Validate(); err != nil {
 		glog.Fatalf("invalid config: %v", err)
 	}

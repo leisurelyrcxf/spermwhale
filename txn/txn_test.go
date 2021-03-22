@@ -105,7 +105,7 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, txnNumber int, txnType t
 				}
 				readValue = val
 				v1 += delta
-				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
+				writeValue = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{
@@ -181,7 +181,7 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 	defer cancel()
 	if !assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 		for i := 0; i < writeTimesPerTxn; i++ {
-			if err := txn.Set(ctx, key, types.IntValue(initialValue).V); err != nil {
+			if err := txn.Set(ctx, key, types.NewIntValue(initialValue).V); err != nil {
 				assert.NoError(err)
 				return err
 			}
@@ -212,7 +212,7 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 					readValues[key] = val
 					for i := 0; i < writeTimesPerTxn; i++ {
 						v1 += delta
-						writeValues[key] = types.IntValue(v1).WithVersion(txn.GetId().Version())
+						writeValues[key] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 						if err := txn.Set(ctx, key, writeValues[key].V); err != nil {
 							return err, true
 						}
@@ -293,7 +293,7 @@ func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 	defer cancel()
 	assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 		for i := 0; i < consts.MaxTxnInternalVersion; i++ {
-			if err := txn.Set(ctx, key, types.IntValue(initialValue).V); err != nil {
+			if err := txn.Set(ctx, key, types.NewIntValue(initialValue).V); err != nil {
 				return err
 			}
 		}
@@ -305,7 +305,7 @@ func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 	assert.Equal(types.TxnInternalVersion(254), val.InternalVersion)
 	assert.Equal(errors.ErrTransactionInternalVersionOverflow, sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
 		for i := 0; i < consts.PositiveInvalidTxnInternalVersion; i++ {
-			if err := txn.Set(ctx, key, types.IntValue(initialValue).V); err != nil {
+			if err := txn.Set(ctx, key, types.NewIntValue(initialValue).V); err != nil {
 				return err
 			}
 		}
@@ -396,7 +396,7 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					}
 					readValues["k1"] = val
 					v1 += delta
-					writeValues["k1"] = types.IntValue(v1).WithVersion(txn.GetId().Version())
+					writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 					if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
 						return err
 					}
@@ -412,7 +412,7 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					}
 					readValues["k2"] = val
 					v2 += delta
-					writeValues["k2"] = types.IntValue(v2).WithVersion(txn.GetId().Version())
+					writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
 					if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
 						return err
 					}
@@ -534,7 +534,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 						readValues["k1"] = val
 						v1 += delta
-						writeValues["k1"] = types.IntValue(v1).WithVersion(txn.GetId().Version())
+						writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 						if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
 							return err
 						}
@@ -550,7 +550,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 						readValues["k2"] = val
 						v2 += delta
-						writeValues["k2"] = types.IntValue(v2).WithVersion(txn.GetId().Version())
+						writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
 						if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
 							return err
 						}
@@ -567,7 +567,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 						readValues["k2"] = val
 						v2 += delta
-						writeValues["k2"] = types.IntValue(v2).WithVersion(txn.GetId().Version())
+						writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
 						if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
 							return err
 						}
@@ -583,7 +583,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 						readValues["k1"] = val
 						v1 += delta
-						writeValues["k1"] = types.IntValue(v1).WithVersion(txn.GetId().Version())
+						writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 						if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
 							return err
 						}
@@ -708,7 +708,7 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 					}
 					readValues[key] = val
 					v += delta
-					writeValues[key] = types.IntValue(v).WithVersion(txn.GetId().Version())
+					writeValues[key] = types.NewIntValue(v).WithVersion(txn.GetId().Version())
 					if err := txn.Set(ctx, key, writeValues[key].V); err != nil {
 						return err
 					}
@@ -838,7 +838,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 						return err
 					}
 					g1, v1 = selector(i, v1)
-					writeValue := types.IntValue(v1).WithVersion(txn.GetId().Version())
+					writeValue := types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 					writeValues["k1"] = writeValue
 					if err := txn.Set(ctx, "k1", writeValue.V); err != nil {
 						return err
@@ -856,7 +856,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 						return err
 					}
 					g2, v2 = selector(i+1, v2)
-					writeValue := types.IntValue(v2).WithVersion(txn.GetId().Version())
+					writeValue := types.NewIntValue(v2).WithVersion(txn.GetId().Version())
 					writeValues["k22"] = writeValue
 					if err := txn.Set(ctx, "k22", writeValue.V); err != nil {
 						return err
@@ -961,13 +961,13 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 				}
 				v1 += delta
 
-				if err := txn.Set(ctx, "k1", types.IntValue(v1-1).V); err != nil {
+				if err := txn.Set(ctx, "k1", types.NewIntValue(v1-1).V); err != nil {
 					return err
 				}
-				if err := txn.Set(ctx, "k1", types.IntValue(v1-3).V); err != nil {
+				if err := txn.Set(ctx, "k1", types.NewIntValue(v1-3).V); err != nil {
 					return err
 				}
-				if err := txn.Set(ctx, "k1", types.IntValue(v1).V); err != nil {
+				if err := txn.Set(ctx, "k1", types.NewIntValue(v1).V); err != nil {
 					return err
 				}
 
@@ -1062,7 +1062,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 					}
 					v1 += delta
 
-					return txn.Set(ctx, "k1", types.IntValue(v1).V), true
+					return txn.Set(ctx, "k1", types.NewIntValue(v1).V), true
 				}, func() error {
 					return errors.ErrInject
 				}, nil)
@@ -1080,7 +1080,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 					}
 					v1 += delta
 
-					return txn.Set(ctx, "k1", types.IntValue(v1).V)
+					return txn.Set(ctx, "k1", types.NewIntValue(v1).V)
 				}))
 			}
 		}(i)
@@ -1161,7 +1161,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 					}
 					v1 += delta
 
-					return txn.Set(ctx, "k1", types.IntValue(v1).V), true
+					return txn.Set(ctx, "k1", types.NewIntValue(v1).V), true
 				}, nil, func() error {
 					return errors.ErrInject
 				})
@@ -1183,7 +1183,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 					}
 					v1 += delta
 
-					return txn.Set(ctx, "k1", types.IntValue(v1).V)
+					return txn.Set(ctx, "k1", types.NewIntValue(v1).V)
 				}))
 			}
 		}(i)
@@ -1267,7 +1267,7 @@ func testDistributedTxnLostUpdate(t *testing.T, round int, staleWriteThreshold t
 					}
 					v1 += delta
 
-					return txn.Set(ctx, "k1", types.IntValue(v1).V)
+					return txn.Set(ctx, "k1", types.NewIntValue(v1).V)
 				})) {
 					return
 				}
@@ -1357,7 +1357,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 			start := time.Now()
 			for round := 0; round < roundPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					if values, err := sc.MGetInts(ctx, []string{key1, key2}); assert.NoError(err) && assert.Len(values, 2) {
+					if values, err := sc.MGetInts(ctx, []string{key1, key2}, types.TxnTypeSnapshotRead); assert.NoError(err) && assert.Len(values, 2) {
 						v1, v2 := values[0], values[1]
 						assert.Equal(valueSum, v1+v2)
 					}
@@ -1373,7 +1373,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 								return err
 							}
 							v1 -= delta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -1388,7 +1388,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 								return err
 							}
 							v2 += delta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 								return err
 							}
 						}
@@ -1524,7 +1524,7 @@ func testDistributedTxnReadConsistencyDeadlock(t *testing.T, round int, staleWri
 								return err
 							}
 							v1 -= delta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -1539,7 +1539,7 @@ func testDistributedTxnReadConsistencyDeadlock(t *testing.T, round int, staleWri
 								return err
 							}
 							v2 += delta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 								return err
 							}
 						}
@@ -1557,7 +1557,7 @@ func testDistributedTxnReadConsistencyDeadlock(t *testing.T, round int, staleWri
 								return err
 							}
 							v2 += delta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 								return err
 							}
 						}
@@ -1572,7 +1572,7 @@ func testDistributedTxnReadConsistencyDeadlock(t *testing.T, round int, staleWri
 								return err
 							}
 							v1 -= delta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -1695,7 +1695,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						}
 						readValues[key1] = key1Val
 						v1 += key1ExtraDelta
-						writtenVal1 := types.IntValue(v1)
+						writtenVal1 := types.NewIntValue(v1)
 						if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
 							return err
 						}
@@ -1726,7 +1726,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						}
 						readValues[key2] = key2Val
 						v2 += key2ExtraDelta
-						writtenVal2 := types.IntValue(v2)
+						writtenVal2 := types.NewIntValue(v2)
 						if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
 							return err
 						}
@@ -1757,7 +1757,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 						}
 						readValues[key3] = key3Val
 						v3 += key3ExtraDelta
-						writtenVal3 := types.IntValue(v3)
+						writtenVal3 := types.NewIntValue(v3)
 						if err := txn.Set(ctx, key3, writtenVal3.V); err != nil {
 							return err
 						}
@@ -1817,7 +1817,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							}
 							readValues[key1] = key1Val
 							v1 -= delta
-							writtenVal1 := types.IntValue(v1)
+							writtenVal1 := types.NewIntValue(v1)
 							if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
 								return err
 							}
@@ -1835,7 +1835,7 @@ func testDistributedTxnConsistencyExtraWrite(t *testing.T, round int, staleWrite
 							}
 							readValues[key2] = key2Val
 							v2 += delta
-							writtenVal2 := types.IntValue(v2)
+							writtenVal2 := types.NewIntValue(v2)
 							if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
 								return err
 							}
@@ -2026,7 +2026,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 
 							v1 -= delta
 							if constraint(v1, v2) {
-								if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+								if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 									return err
 								}
 							}
@@ -2050,7 +2050,7 @@ func testDistributedTxnWriteSkew(t *testing.T, round int, staleWriteThreshold ti
 
 							v2 -= delta
 							if constraint(v1, v2) {
-								if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+								if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 									return err
 								}
 							}
@@ -2245,7 +2245,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 								return err
 							}
 							v1 += key1ExtraDelta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -2260,7 +2260,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 								return err
 							}
 							v2 += key2ExtraDelta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 								return err
 							}
 						}
@@ -2278,7 +2278,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 								return err
 							}
 							v1 -= delta
-							if err := txn.Set(ctx, key1, types.IntValue(v1).V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1).V); err != nil {
 								return err
 							}
 						}
@@ -2293,7 +2293,7 @@ func testDistributedTxnConsistencyIntegrateFunc(t *testing.T, scs []*smart_txn_c
 								return err
 							}
 							v2 += delta
-							if err := txn.Set(ctx, key2, types.IntValue(v2).V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2).V); err != nil {
 								return err
 							}
 						}

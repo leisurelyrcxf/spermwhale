@@ -103,6 +103,10 @@ var (
 		Code: consts.ErrCodeEmptyKey,
 		Msg:  "key is empty",
 	}
+	ErrEmptyKeys = &Error{
+		Code: consts.ErrCodeEmptyKeys,
+		Msg:  "keys are empty",
+	}
 	ErrDontUseThisBeforeTaskFinished = &Error{
 		Code: consts.ErrCodeDontUseThisBeforeTaskFinished,
 		Msg:  "don't use this before task finish",
@@ -154,5 +158,9 @@ var (
 	ErrTransactionRecordNotFoundAndWontBeWritten = &Error{
 		Code: consts.ErrCodeTransactionRecordNotFoundAndWontBeWritten,
 		Msg:  "transaction record not found and prevented from being written", // help rollback if original txn coordinator was gone
+	}
+	ErrSnapshotReadRetriedTooManyTimes = &Error{
+		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
+		Msg:  "snapshot read retried too many times",
 	}
 )

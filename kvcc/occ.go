@@ -129,37 +129,56 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		exactVersion         = opt.IsGetExactVersion()
 		updateTimestampCache = !opt.IsNotUpdateTimestampCache()
 		getMaxReadVersion    = !opt.IsNotGetMaxReadVersion()
+		snapshotRead         = opt.IsSnapshotRead()
 	)
 
-	// guarantee mutual exclusion with set,
-	// note this is different from row lock in 2PL because it gets
-	// unlocked immediately after read finish, which is not allowed in 2PL
-	kv.lm.RLock(key)
+	kv.lm.RLock(key) // guarantee mutual exclusion with set, note this is different from row lock in 2PL
+	var (
+		val types.Value
+		err error
+	)
+	if !snapshotRead {
+		val, err = kv.db.Get(ctx, key, opt.ToKVReadOption())
+	} else {
+		for i := 0; ; i++ {
+			if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); err != nil || !val.HasWriteIntent() {
+				break
+			}
+			if i == consts.MaxRetrySnapshotRead-1 {
+				val, err = types.EmptyValue, errors.ErrSnapshotReadRetriedTooManyTimes
+				break
+			}
+			opt.ReaderVersion = val.Version - 1
+		}
+	}
+	assert.Must(err != nil || (exactVersion && val.Version == opt.ExactVersion) || (!exactVersion && val.Version <= opt.ReaderVersion))
+
 	var maxReadVersion uint64
 	if updateTimestampCache {
 		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, opt.ReaderVersion)
+		//kv.lm.RUnlock(key) TODO if put here performance will down for read-for-write txn, reason unknown.
 	}
 
-	//kv.lm.RUnlock(key) if put here performance will down for read-for-write txn, reason unknown.
-	val, err := kv.db.Get(ctx, key, opt.ToKVReadOption())
-	assert.Must(err != nil || (exactVersion && val.Version == opt.ExactVersion) || (!exactVersion && val.Version <= opt.ReaderVersion))
-	var valCC types.ValueCC
 	if getMaxReadVersion {
-		if maxReadVersion <= opt.ReaderVersion {
+		if maxReadVersion == 0 {
 			maxReadVersion = kv.tsCache.GetMaxReadVersion(key)
 		}
-		valCC = val.WithMaxReadVersion(maxReadVersion)
 	} else {
-		valCC = val.WithMaxReadVersion(0)
+		maxReadVersion = 0 // since protobuffer will skip empty values thus could save network bandwidth
 	}
+	kv.lm.RUnlock(key)
+
+	var valCC = val.WithMaxReadVersion(maxReadVersion)
 	if err != nil || !valCC.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
-		kv.lm.RUnlock(key)
 		if glog.V(60) {
 			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
 		}
+		if snapshotRead {
+			return valCC.WithSnapshotVersion(opt.ReaderVersion), err
+		}
 		return valCC, err
 	}
-	kv.lm.RUnlock(key)
+	assert.Must(!snapshotRead)
 
 	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(valCC.Version), key)
 	if err != nil {
