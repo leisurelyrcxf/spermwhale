@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	testifyassert "github.com/stretchr/testify/assert"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/redis"
