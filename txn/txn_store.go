@@ -70,8 +70,8 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 }
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
-	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, err error) {
-	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithNotGetMaxReadVersion()
+	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, preventedFutureWrite bool, err error) {
+	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion)
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
@@ -82,16 +82,16 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
 			txn, err := DecodeTxn(txnID, txnRecordData.V)
 			if err != nil {
-				return nil, true, err
+				return nil, true, false, err
 			}
 			s.txnInitializer(txn)
-			return txn, true, nil
+			return txn, true, false, nil
 		}
 		if errors.IsNotExistsErr(err) {
-			return nil, false, nil
+			return nil, false, txnRecordData.MaxReadVersion > txnID.Version(), nil
 		}
 		if i++; i >= maxRetryTimes || ctx.Err() != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
 		time.Sleep(s.retryWaitPeriod)
 	}
@@ -104,8 +104,11 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	preventFutureTxnRecordWrite bool,
 	maxRetry int) (txn *Txn, err error) {
 	// TODO maybe get from txn manager first?
-	var recordExists bool
-	if txn, recordExists, err = s.loadTransactionRecordWithRetry(ctx, txnId, preventFutureTxnRecordWrite, maxRetry); err != nil {
+	var (
+		recordExists                  bool
+		preventedFutureTxnRecordWrite bool
+	)
+	if txn, recordExists, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, preventFutureTxnRecordWrite, maxRetry); err != nil {
 		return nil, err
 	}
 	if recordExists {
@@ -116,6 +119,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		assert.Must(txn.State == types.TxnStateStaging || txn.State == types.TxnStateRollbacking)
 		return txn, nil
 	}
+	assert.Must(!preventFutureTxnRecordWrite || preventedFutureTxnRecordWrite)
 
 	// Transaction record not exists, thus must be one among the 3 cases:
 	// 1. transaction has been committed and cleared <=> all keys must have cleared write intent before the transaction record was removed, see the func Txn::onCommitted
@@ -124,7 +128,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	//
 	// Hence we get the keys. (we may get the same key a second time because the result of the key before seen transaction record not exists is not confident enough)
 	// Transaction record not exists, get key to find out the truth.
-	assert. /* do not remove this*/ Must(preventFutureTxnRecordWrite || (len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) && len(keysWithWriteIntent) == 1))
+	assert. /* do not remove this*/ Must(preventedFutureTxnRecordWrite || (len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) && len(keysWithWriteIntent) == 1))
 	var (
 		key       string
 		vv        types.ValueCC
@@ -155,19 +159,19 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 			return txn, nil
 		}
 		// Must haven't committed.
-		if !preventFutureTxnRecordWrite {
+		if !preventedFutureTxnRecordWrite {
 			return nil, errors.Annotatef(errors.ErrKeyNotExist, "txn record of %d not exists", txnId)
 		}
 	}
 	// 1. key not exists
-	//    1.1. preventFutureTxnRecordWrite, safe to rollback
+	//    1.1. preventedFutureTxnRecordWrite, safe to rollback
 	//    1.2. len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) == 1, key with write intent disappeared, safe to rollback
-	// 2. preventFutureTxnRecordWrite && key exists & vv.HasWriteIntent(), since we've prevented write txn record,
+	// 2. preventedFutureTxnRecordWrite && key exists & vv.HasWriteIntent(), since we've prevented write txn record,
 	//	  guaranteed commit won't succeed in the future, hence safe to rollback.
 	if txn = s.partialTxnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion); !keyExists {
 		txn.MarkWrittenKeyRollbacked(key)
 	}
-	if preventFutureTxnRecordWrite {
+	if preventedFutureTxnRecordWrite {
 		txn.err = errors.ErrTransactionRecordNotFoundAndWontBeWritten
 	} else {
 		assert.Must(!keyExists && len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)

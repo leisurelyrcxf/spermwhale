@@ -75,11 +75,6 @@ func (opt KVCCReadOption) WithExactVersion(exactVersion uint64) KVCCReadOption {
 	return opt
 }
 
-func (opt KVCCReadOption) WithSafeIncrReaderVersion() KVCCReadOption {
-	SafeIncr(&opt.ReaderVersion)
-	return opt
-}
-
 func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
 	opt.ReaderVersion += 1
 	return opt

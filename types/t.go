@@ -30,6 +30,7 @@ func (t MyT) Errorf(format string, args ...interface{}) {
 	}
 	print(fmt.Sprintf(format, args...))
 	_ = os.Stderr.Sync()
+	os.Exit(1)
 }
 
 func isMain() bool {

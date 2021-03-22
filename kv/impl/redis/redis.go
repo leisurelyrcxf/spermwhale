@@ -84,7 +84,7 @@ func (vvs VersionedValues) decodeRedis(z redis.Z) (_ types.Value, err error) {
 }
 
 func (vvs VersionedValues) versionToScore(version uint64) string {
-	assert.Must(version == types.MaxTxnVersion || version&((1<<vvs.discardedTimestampBits)-1) == 0)
+	assert.Must(version&((1<<vvs.discardedTimestampBits)-1) == 0)
 	return strconv.FormatUint(version>>vvs.discardedTimestampBits, 10)
 }
 

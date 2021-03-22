@@ -59,7 +59,7 @@ func main() {
 				if strings.HasPrefix(t, "get") {
 					remain := strings.TrimPrefix(t, "get")
 					if remain == "" {
-						fmt.Println("invalid get command, use 'get key'")
+						fmt.Println("invalid get command, use 'get key [version] [exact_version]")
 						continue
 					}
 					if !strings.HasPrefix(remain, " ") {

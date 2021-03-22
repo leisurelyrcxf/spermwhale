@@ -1355,11 +1355,50 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 			defer wg.Done()
 
 			start := time.Now()
-			for round := 0; round < roundPerGoRoutine; round++ {
+			rounds := roundPerGoRoutine
+			if goRoutineIndex == 0 {
+				rounds *= 10
+			}
+			for round := 0; round < rounds; round++ {
 				if goRoutineIndex == 0 {
-					if values, err := sc.MGetInts(ctx, []string{key1, key2}, types.TxnTypeSnapshotRead); assert.NoError(err) && assert.Len(values, 2) {
-						v1, v2 := values[0], values[1]
-						assert.Equal(valueSum, v1+v2)
+					var (
+						txn    types.Txn
+						values []types.Value
+						err    error
+					)
+					if txn, err = sc.DoTransactionExOfType(ctx, types.TxnTypeSnapshotRead, func(ctx context.Context, txn types.Txn) (err error) {
+						values, err = txn.MGet(ctx, []string{key1, key2, key1, key2, key1, key2}, types.NewTxnReadOption())
+						return
+					}); assert.NoError(err) && assert.Len(values, 6) {
+						var ints = make([]int, len(values))
+						for idx, val := range values {
+							assert.True(!val.HasWriteIntent())
+							assert.Equal(types.TxnInternalVersion(1), val.InternalVersion)
+							assert.Equal(txn.(*Txn).SnapshotVersion, val.SnapshotVersion)
+							x, err := val.Int()
+							if !assert.NoError(err) {
+								return
+							}
+							ints[idx] = x
+						}
+						assert.Equal(values[0].Version, values[2].Version)
+						assert.Equal(values[2].Version, values[4].Version)
+						assert.Equal(values[0].Flag, values[2].Flag)
+						assert.Equal(values[2].Flag, values[4].Flag)
+						assert.Equal(values[1].Version, values[3].Version)
+						assert.Equal(values[3].Version, values[5].Version)
+						assert.Equal(values[1].Flag, values[3].Flag)
+						assert.Equal(values[3].Flag, values[5].Flag)
+						v0, v1 := ints[0], ints[1]
+						assert.Equal(valueSum, v0+v1)
+						v2, v3 := ints[2], ints[3]
+						assert.Equal(valueSum, v2+v3)
+						v4, v5 := ints[4], ints[5]
+						assert.Equal(valueSum, v4+v5)
+						assert.Equal(v0, v2)
+						assert.Equal(v2, v4)
+						assert.Equal(v1, v3)
+						assert.Equal(v3, v5)
 					}
 				} else {
 					assert.NoError(sc.DoTransactionOfType(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
@@ -1396,7 +1435,7 @@ func testDistributedTxnReadConsistency(t *testing.T, round int, staleWriteThresh
 					}))
 				}
 			}
-			t.Logf("cost %v per round", time.Now().Sub(start)/roundPerGoRoutine)
+			t.Logf("cost %v per round @go routine %d", time.Now().Sub(start)/time.Duration(rounds), goRoutineIndex)
 		}(i)
 	}
 
