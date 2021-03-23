@@ -8,7 +8,7 @@ option go_package = "proto/kvpb";
 
 message KVReadOption {
     uint64 version = 1;
-    bool exact_version = 2;
+    uint32 flag = 2;
 }
 
 message KVWriteOption {

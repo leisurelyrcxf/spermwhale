@@ -188,7 +188,7 @@ func NewReadOnlyKV(gate *Gate) *ReadOnlyKV {
 
 func (kv *ReadOnlyKV) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
 	var kvccOpt types.KVCCReadOption
-	if opt.ExactVersion {
+	if opt.IsGetExactVersion() {
 		kvccOpt = types.NewKVCCReadOption(opt.Version).WithExactVersion(opt.Version).WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()
 	} else {
 		kvccOpt = types.NewKVCCReadOption(opt.Version).WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()

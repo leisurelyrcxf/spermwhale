@@ -205,7 +205,7 @@ func NewTxnReadOptionFromPB(x *txnpb.TxnReadOption) TxnReadOption {
 }
 
 var TxnReadOptionDesc2BitMask = map[string]uint8{
-	"wait_no_write_intent": consts.CommonReadOptBitMaskWaitNoWriteIntent,
+	"wait_no_write_intent": consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent,
 }
 
 func GetTxnReadOptionDesc() string {
@@ -237,12 +237,12 @@ func (opt TxnReadOption) ToPB() *txnpb.TxnReadOption {
 }
 
 func (opt TxnReadOption) WithWaitNoWriteIntent() TxnReadOption {
-	opt.flag |= consts.CommonReadOptBitMaskWaitNoWriteIntent
+	opt.flag |= consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent
 	return opt
 }
 
 func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
-	return opt.flag&consts.CommonReadOptBitMaskWaitNoWriteIntent == consts.CommonReadOptBitMaskWaitNoWriteIntent
+	return opt.flag&consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent == consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent
 }
 
 var (
