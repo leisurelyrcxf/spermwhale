@@ -221,10 +221,10 @@ func (c *Client) Update(path string, data []byte) error {
 	defer c.unlockFs()
 
 	if err := c.writeFile(c.realpath(path), data, false); err != nil {
-		glog.Warningf("fsclient - update %s failed", path)
+		glog.Errorf("fsclient - update %s failed", path)
 		return err
 	} else {
-		glog.Infof("fsclient - update %s OK", path)
+		glog.V(6).Infof("fsclient - update %s OK", path)
 		return nil
 	}
 }

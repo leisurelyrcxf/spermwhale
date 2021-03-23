@@ -163,7 +163,7 @@ func (g *Gate) syncShard(group *topo.Group) error {
 		return err
 	}
 	g.shards[shard.ID] = shard
-	glog.Infof("synchronized group %d to %s successfully", shard.ID, group.ServerAddr)
+	glog.V(6).Infof("synchronized group %d to %s successfully", shard.ID, group.ServerAddr)
 	return nil
 }
 

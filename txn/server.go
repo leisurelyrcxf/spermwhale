@@ -151,7 +151,7 @@ func (s *Server) Start() error {
 		if err := s.grpcServer.Serve(lis); err != nil {
 			glog.Errorf("txn server 0.0.0.0:%d serve failed: %v", s.Port, err)
 		} else {
-			glog.Infof("txn server 0.0.0.0:%d terminated successfully", s.Port)
+			glog.V(6).Infof("txn server 0.0.0.0:%d terminated successfully", s.Port)
 		}
 	}()
 

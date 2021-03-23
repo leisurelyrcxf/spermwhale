@@ -61,6 +61,8 @@ type TransactionManager struct {
 	store     *TransactionStore
 	topoStore *topo.Store
 
+	recordValues bool
+
 	s *Scheduler
 }
 
@@ -98,6 +100,11 @@ func NewTransactionManagerWithOracle(kv types.KVCC, cfg types.TxnManagerConfig, 
 	return tm
 }
 
+func (m *TransactionManager) SetRecordValuesTxn(b bool) *TransactionManager {
+	m.recordValues = b
+	return m
+}
+
 func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnType) (types.Txn, error) {
 	ts, err := utils.FetchTimestampWithRetry(m)
 	if err != nil {
@@ -110,7 +117,10 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnTy
 	txn := m.newTxn(txnID, typ)
 	err = m.txns.Insert(txnID, txn)
 	assert.MustNoError(err)
-	return txn, nil
+	if !m.recordValues {
+		return txn, nil
+	}
+	return types.NewRecordValuesTxn(txn), nil
 }
 
 func (m *TransactionManager) GetTxn(txnID types.TxnId) (*Txn, error) {
@@ -173,7 +183,7 @@ func (m *TransactionManager) syncOracle() error {
 		return err
 	}
 	m.oracle.Store(cli)
-	glog.Infof("synchronized oracle to %s successfully", o.ServerAddr)
+	glog.V(6).Infof("synchronized oracle to %s successfully", o.ServerAddr)
 	return nil
 }
 

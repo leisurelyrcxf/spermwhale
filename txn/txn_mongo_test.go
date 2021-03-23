@@ -32,10 +32,34 @@ func testTxnLostUpdateMongo(t *testing.T, txnType types.TxnType, readOpt types.T
 	testTxnLostUpdateRaw(t, types.DBTypeMongo, 100, txnType, readOpt, staleWriteThresholds, FailurePatternNone, 0)
 }
 
-func TestDistributedTxnConsistencyIntegrateMongo(t *testing.T) {
-	testDistributedTxnConsistencyIntegrate(NewTestCase(t).SetDBType(types.DBTypeMongo))
+func TestDistributedTxnLostUpdateMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnLostUpdate).SetDBType(types.DBTypeMongo).Run()
 }
 
-func TestDistributedTxnConsistencyIntegrateMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
-	testDistributedTxnConsistencyIntegrate(NewTestCase(t).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent())
+func TestDistributedTxnReadConsistencyMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetDBType(types.DBTypeMongo).Run()
+}
+
+func TestDistributedTxnReadConsistencyDeadlockMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetDBType(types.DBTypeMongo).Run()
+}
+
+func TestDistributedTxnWriteSkewMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnWriteSkew).SetDBType(types.DBTypeMongo).Run()
+}
+
+func TestDistributedTxnExtraWriteSimpleMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteSimple).SetDBType(types.DBTypeMongo).Run()
+}
+
+func TestDistributedTxnExtraWriteComplexMongo(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).Run()
+}
+
+func TestDistributedTxnExtraWriteSimpleMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteSimple).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
+}
+
+func TestDistributedTxnExtraWriteComplexMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
 }

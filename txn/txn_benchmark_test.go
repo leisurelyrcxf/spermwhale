@@ -65,7 +65,7 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 			if waitNoWriteIntent {
 				readOpt = readOpt.WithWaitNoWriteIntent()
 			}
-			if tx, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
