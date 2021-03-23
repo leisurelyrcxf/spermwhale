@@ -22,6 +22,8 @@ var (
 		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
 		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
 		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
+		consts.ErrCodeTxnRollbacking:                              {},
+		consts.ErrCodeTxnRollbacked:                               {},
 	})
 )
 
@@ -107,8 +109,8 @@ func IsRetryableTransactionErr(e error) bool {
 }
 
 func IsRetryableTransactionManagerErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeTransactionAlreadyExists
+	return false
+	//return GetErrorCode(e) == consts.ErrCodeTransactionAlreadyExists
 }
 
 func IsRetryableGetErr(e error) bool {
@@ -168,10 +170,6 @@ func SetErrorCode(e error, code int) {
 		return
 	}
 	panic("impossible")
-}
-
-func NotError(e error, code int) bool {
-	return GetErrorCode(e) != code
 }
 
 func CASErrorCode(e error, oldCode, newCode int) {

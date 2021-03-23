@@ -7,6 +7,8 @@ const (
 	ErrCodeReadUncommittedDataPrevTxnKeyRollbacked     = 4
 	ErrCodeReadUncommittedDataPrevTxnToBeRollbacked    = 5
 	ErrCodeReadAfterWriteFailed                        = 6
+	ErrCodeTxnRollbacking                              = 7
+	ErrCodeTxnRollbacked                               = 8
 
 	ErrCodeKeyNotExists   = 27
 	ErrCodeShardsNotReady = 28
