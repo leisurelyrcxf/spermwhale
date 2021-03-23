@@ -116,7 +116,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key)) // TODO remove this in product
 		}
-		assert.Must(txn.State == types.TxnStateStaging || txn.State == types.TxnStateRollbacking)
+		assert.Must(txn.TxnState == types.TxnStateStaging || txn.TxnState == types.TxnStateRollbacking)
 		return txn, nil
 	}
 	assert.Must(!preventFutureTxnRecordWrite || preventedFutureTxnRecordWrite)

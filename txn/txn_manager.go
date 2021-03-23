@@ -163,7 +163,7 @@ func (m *TransactionManager) createStore() *TransactionManager {
 		},
 		partialTxnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn {
 			txn := m.newTxn(txnId, types.TxnTypeDefault)
-			txn.State = state
+			txn.TxnState = state
 			txn.InitializeWrittenKeys(writtenKeys, false)
 			return txn
 		},
