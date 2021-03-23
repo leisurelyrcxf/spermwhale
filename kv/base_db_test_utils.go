@@ -19,7 +19,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 	defer cancel()
 
 	const (
-		key = "key111"
+		key = "kkk"
 	)
 
 	var (

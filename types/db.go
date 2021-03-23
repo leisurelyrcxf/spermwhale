@@ -12,4 +12,5 @@ var (
 	}
 	DBTypeMemory = addDBType("memory")
 	DBTypeRedis  = addDBType("redis")
+	DBTypeMongo  = addDBType("mongo")
 )

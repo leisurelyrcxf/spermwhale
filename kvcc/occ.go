@@ -171,7 +171,11 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	var valCC = val.WithMaxReadVersion(maxReadVersion)
 	if err != nil || !valCC.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
 		if glog.V(60) {
-			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+			if err != nil {
+				glog.Errorf("txn-%d get key '%s' failed: '%v', cost: %s", opt.ReaderVersion, key, err, bench.Elapsed())
+			} else {
+				glog.Infof("txn-%d get key '%s' succeeded, has write intent: %v, cost: %s", opt.ReaderVersion, key, valCC.HasWriteIntent(), bench.Elapsed())
+			}
 		}
 		if snapshotRead {
 			return valCC.WithSnapshotVersion(opt.ReaderVersion), err
@@ -202,7 +206,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	switch event.Type {
 	case transaction.KeyEventTypeClearWriteIntent:
 		if glog.V(60) {
-			glog.Infof("txn-%d get finished, cost: %s", opt.ReaderVersion, bench.Elapsed())
+			glog.Infof("txn-%d get key '%s' finished with no write intent, cost: %s", opt.ReaderVersion, key, bench.Elapsed())
 		}
 		return valCC.WithNoWriteIntent(), nil
 	case transaction.KeyEventTypeRemoveVersionFailed:
@@ -301,8 +305,12 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if opt.IsReadForWrite() {
 		kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key, transaction.ReadForWriteKeyEventTypeKeyWritten))
 	}
-	if !opt.IsTxnRecord() && bool(glog.V(60)) {
-		glog.Infof("txn-%d set key('%s': v%d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
+	if glog.V(60) {
+		if !opt.IsTxnRecord() {
+			glog.Infof("txn-%d set key('%s': v%d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
+		} else {
+			glog.Infof("txn-%d write txn record succeeded, cost %s", txnId, bench.Elapsed())
+		}
 	}
 	return nil
 }

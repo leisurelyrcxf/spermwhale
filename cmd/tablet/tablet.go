@@ -40,7 +40,7 @@ func main() {
 		db = memory.NewMemoryDB()
 	case types.DBTypeRedis:
 		var err error
-		if db, err = redis.NewClient(fmt.Sprintf("%s:%d", *flagRedisHost, *flagRedisPort), *flagRedisAuth); err != nil {
+		if db, err = redis.NewDB(fmt.Sprintf("%s:%d", *flagRedisHost, *flagRedisPort), *flagRedisAuth); err != nil {
 			glog.Fatalf("cant create redis client: '%v'", err)
 		}
 	default:

@@ -18,7 +18,7 @@ const (
 )
 
 func TestRedis(t *testing.T) {
-	cli := mustNewClient("localhost:6379", "")
+	cli := mustNewDB("localhost:6379", "")
 	for i := 0; i < 1000; i++ {
 		for _, dbug := range []bool{true, false} {
 			utils.SetCustomizedDebugFlag(dbug)
@@ -44,7 +44,7 @@ func TestConcurrentInsert(t *testing.T) {
 
 func testConcurrentInsert(t *testing.T) (b bool) {
 	assert := types.NewAssertion(t)
-	cli := mustNewClient("localhost:6379", "")
+	cli := mustNewDB("localhost:6379", "")
 	const key = "key_update"
 
 	if !assert.NoError(cli.Upsert(context.Background(), key, types.NewValue([]byte("111"), 1))) {
@@ -85,7 +85,7 @@ func TestConcurrentUpdate(t *testing.T) {
 
 func testConcurrentUpdate(t *testing.T) (b bool) {
 	assert := types.NewAssertion(t)
-	cli := mustNewClient("localhost:6379", "")
+	cli := mustNewDB("localhost:6379", "")
 	defer cli.Close()
 	const key = "k1"
 
@@ -138,7 +138,7 @@ func TestConcurrentRemoveIf(t *testing.T) {
 
 func testConcurrentRemoveIf(t *testing.T) (b bool) {
 	assert := types.NewAssertion(t)
-	cli := mustNewClient("localhost:6379", "")
+	cli := mustNewDB("localhost:6379", "")
 	const key = "key"
 
 	if !assert.NoError(cli.Upsert(context.Background(), key, types.NewValue([]byte("111"), 1))) {
@@ -179,7 +179,7 @@ func TestConcurrentUpdateRemoveIf(t *testing.T) {
 func testConcurrentUpdateRemoveIf(t *testing.T) (b bool) {
 	assert := types.NewAssertion(t)
 	kv.Testing = true
-	cli := mustNewClient("localhost:6379", "")
+	cli := mustNewDB("localhost:6379", "")
 	const key = "key"
 
 	if !assert.NoError(cli.Set(context.Background(), key, types.NewValue([]byte("111"), 1), types.NewKVWriteOption())) {

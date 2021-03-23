@@ -87,7 +87,7 @@ type TxnManager interface {
 	Close() error
 }
 
-type TxnState int
+type TxnState uint8
 
 const (
 	TxnStateInvalid     TxnState = 0
@@ -123,7 +123,7 @@ func (s TxnState) IsTerminated() bool {
 	return s.IsAborted() || s == TxnStateCommitted
 }
 
-type TxnType int
+type TxnType uint8
 
 const (
 	TxnTypeInvalid      TxnType = 0
@@ -231,6 +231,10 @@ func (opt TxnReadOption) ToPB() *txnpb.TxnReadOption {
 func (opt TxnReadOption) WithWaitNoWriteIntent() TxnReadOption {
 	opt.flag |= consts.CommonReadOptBitMaskWaitNoWriteIntent
 	return opt
+}
+
+func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
+	return opt.flag&consts.CommonReadOptBitMaskWaitNoWriteIntent == consts.CommonReadOptBitMaskWaitNoWriteIntent
 }
 
 type Txn interface {

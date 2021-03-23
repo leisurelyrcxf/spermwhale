@@ -13,17 +13,17 @@ type T interface {
 	Errorf(format string, args ...interface{})
 }
 
-type MyT struct {
+type myT struct {
 	t testifyassert.TestingT
 }
 
-func NewT(t testifyassert.TestingT) MyT {
-	return MyT{
+func newT(t testifyassert.TestingT) myT {
+	return myT{
 		t: t,
 	}
 }
 
-func (t MyT) Errorf(format string, args ...interface{}) {
+func (t myT) Errorf(format string, args ...interface{}) {
 	if isMain() {
 		t.t.Errorf(format, args...)
 		return
@@ -37,5 +37,5 @@ func isMain() bool {
 }
 
 func NewAssertion(t testifyassert.TestingT) *testifyassert.Assertions {
-	return testifyassert.New(NewT(t))
+	return testifyassert.New(newT(t))
 }

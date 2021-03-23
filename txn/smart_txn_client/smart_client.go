@@ -79,7 +79,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 			if err == nil {
 				return tx, nil
 			}
-			if !retry {
+			if !retry { //TODO FIXME
 				return tx, err
 			}
 			if !tx.GetState().IsAborted() && !errors.IsRetryableTransactionErr(err) {
