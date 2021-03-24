@@ -3,25 +3,27 @@ package mongodb
 import (
 	"testing"
 
-	testifyassert "github.com/stretchr/testify/assert"
-
 	"github.com/leisurelyrcxf/spermwhale/kv"
-	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-func TestMongo(t *testing.T) {
-	cli, err := NewDB("localhost:27017", nil)
-	if !testifyassert.NoError(t, err) {
-		return
-	}
-	for i := 0; i < 100; i++ {
-		for _, dbug := range []bool{true, false} {
-			utils.SetCustomizedDebugFlag(dbug)
-			if !kv.TestDB(t, cli) {
-				t.Errorf("testMongo failed @round %d, debug: %v", i, dbug)
-				return
-			}
-			t.Logf("testRredis succeeded @round %d, debug: %v", i, dbug)
-		}
-	}
+const rounds = 1000
+
+func newDB() (*kv.DB, error) {
+	return NewDB("localhost:27017", nil)
+}
+
+func TestDB(t *testing.T) {
+	kv.RunTestCase(t, rounds, newDB, kv.TestDB)
+}
+
+func TestConcurrentClearWriteIntent(t *testing.T) {
+	kv.RunTestCase(t, rounds, newDB, kv.TestConcurrentClearWriteIntent)
+}
+
+func TestConcurrentRemoveVersion(t *testing.T) {
+	kv.RunTestCase(t, rounds, newDB, kv.TestConcurrentRemoveVersion)
+}
+
+func TestConcurrentClearWriteIntentRemoveVersion(t *testing.T) {
+	kv.RunTestCase(t, rounds, newDB, kv.TestConcurrentClearWriteIntentRemoveVersion)
 }

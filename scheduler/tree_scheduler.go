@@ -1,8 +1,6 @@
 package scheduler
 
 import (
-	"hash/crc32"
-
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
@@ -66,6 +64,6 @@ func (s *ConcurrentStaticTreeScheduler) Close() {
 	}
 }
 
-func (s *ConcurrentStaticTreeScheduler) partition(taskID string) *BasicScheduler {
-	return s.partitions[int(crc32.ChecksumIEEE([]byte(taskID)))%len(s.partitions)]
+func (s *ConcurrentStaticTreeScheduler) partition(taskId basic.TaskId) *BasicScheduler {
+	return s.partitions[taskId.Hash()%uint64(len(s.partitions))] // TODO change to &
 }

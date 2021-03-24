@@ -56,7 +56,7 @@ func NewGate(store *topo.Store) (*Gate, error) {
 }
 
 func (g *Gate) Get(ctx context.Context, key string, opt types.KVCCReadOption) (types.ValueCC, error) {
-	s, err := g.Route(key)
+	s, err := g.Route(types.TxnKeyUnion{Key: key, TxnId: types.TxnId(opt.ExactVersion)})
 	if err != nil {
 		return types.EmptyValueCC, err
 	}
@@ -64,7 +64,7 @@ func (g *Gate) Get(ctx context.Context, key string, opt types.KVCCReadOption) (t
 }
 
 func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
-	s, err := g.Route(key)
+	s, err := g.Route(types.TxnKeyUnion{Key: key, TxnId: types.TxnId(val.Version)})
 	if err != nil {
 		return err
 	}
@@ -78,21 +78,21 @@ func (g *Gate) Close() (err error) {
 	return err
 }
 
-func (g *Gate) Route(key string) (*Shard, error) {
+func (g *Gate) Route(key types.TxnKeyUnion) (*Shard, error) {
 	g.shardsRW.RLock()
 	defer g.shardsRW.RUnlock()
 
 	if !g.shardsReady {
 		return nil, errors.ErrShardsNotReady
 	}
-	var id = int(Hash([]byte(key))) % len(g.shards)
+	var id = key.Hash() % uint64(len(g.shards))
 	if g.shards[id] == nil {
 		glog.Fatalf("g.shards[%d] == nil", id)
 	}
 	return g.shards[id], nil
 }
 
-func (g *Gate) MustRoute(key string) *Shard {
+func (g *Gate) MustRoute(key types.TxnKeyUnion) *Shard {
 	s, err := g.Route(key)
 	assert.MustNoError(err)
 	return s

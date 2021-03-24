@@ -16,10 +16,10 @@ const (
 	DefaultMaxClockDrift                = time.Second
 	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
 
-	DefaultTxnManagerClearerNumber              = 20
+	DefaultTxnManagerClearerNumber              = 32
 	DefaultTxnManagerClearJobTimeout            = time.Second * 10
-	DefaultTxnManagerWriterNumber               = 30
-	DefaultTxnManagerReaderNumber               = 20
+	DefaultTxnManagerWriterNumber               = 32
+	DefaultTxnManagerReaderNumber               = 32
 	DefaultTxnManagerMaxBufferedJobPerPartition = 10000
 )
 

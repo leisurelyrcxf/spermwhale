@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
 )
 
 type KeyEventType int
@@ -45,6 +47,7 @@ type KeyEvent struct {
 var InvalidKeyEvent = KeyEvent{Type: KeyEventTypeInvalid}
 
 func NewKeyEvent(key string, typ KeyEventType) KeyEvent {
+	assert.Must(key != "")
 	return KeyEvent{
 		Key:  key,
 		Type: typ,
@@ -134,6 +137,7 @@ type ReadForWriteKeyEvent struct {
 }
 
 func NewReadForWriteKeyEvent(key string, typ ReadForWriteKeyEventType) ReadForWriteKeyEvent {
+	assert.Must(key != "")
 	return ReadForWriteKeyEvent{
 		Key:  key,
 		Type: typ,

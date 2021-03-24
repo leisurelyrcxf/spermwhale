@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 
@@ -36,7 +38,7 @@ func testTreeScheduler(t *testing.T, round int) (b bool) {
 
 	var (
 		root = types.NewTreeTaskWithResult(
-			"root", "root", 0,
+			basic.NewTaskId(1024, "root"), "root", 0,
 			nil, func(ctx context.Context, prevResults []interface{}) (i interface{}, err error) {
 				var sum int
 				for _, prev := range prevResults {
@@ -51,7 +53,7 @@ func testTreeScheduler(t *testing.T, round int) (b bool) {
 	)
 	for u := 0; u < umbrellaNum; u++ {
 		var internal = types.NewTreeTaskWithResult(
-			"internal", "internal", 0,
+			basic.NewTaskId(1024, "internal"), "internal", 0,
 			root, func(ctx context.Context, prevResults []interface{}) (i interface{}, err error) {
 				var sum int
 				for _, prev := range prevResults {
@@ -68,7 +70,7 @@ func testTreeScheduler(t *testing.T, round int) (b bool) {
 			key := strconv.Itoa(i)
 			k := i
 			_ = types.NewTreeTaskWithResult(
-				key, key, 0,
+				basic.NewTaskId(1024, key), key, 0,
 				internal, func(ctx context.Context, prevResult []interface{}) (interface{}, error) {
 					return k, nil
 				},
@@ -117,7 +119,7 @@ func testTreeSchedulerPropagateErr(t *testing.T, round int) (b bool) {
 	)
 
 	var root = types.NewTreeTaskWithResult(
-		"root", "root", 0,
+		basic.NewTaskId(1024, "root"), "root", 0,
 		nil, func(ctx context.Context, prevResults []interface{}) (i interface{}, err error) {
 			var sum int
 			for _, prev := range prevResults {
@@ -128,7 +130,7 @@ func testTreeSchedulerPropagateErr(t *testing.T, round int) (b bool) {
 	)
 	for u := 0; u < umbrellaNum; u++ {
 		var internal = types.NewTreeTaskWithResult(
-			"internal", "internal", 0,
+			basic.NewTaskId(1024, "internal"), "internal", 0,
 			root, func(ctx context.Context, prevResults []interface{}) (i interface{}, err error) {
 				var sum int
 				for _, prev := range prevResults {
@@ -139,7 +141,7 @@ func testTreeSchedulerPropagateErr(t *testing.T, round int) (b bool) {
 		)
 
 		_ = types.NewTreeTaskWithResult(
-			"0", "0", 0,
+			basic.NewTaskId(1024, "0"), "0", 0,
 			internal, func(ctx context.Context, prevResult []interface{}) (i interface{}, err error) {
 				return 0, errors.ErrInject
 			},
@@ -148,7 +150,7 @@ func testTreeSchedulerPropagateErr(t *testing.T, round int) (b bool) {
 			j := i
 			key := strconv.Itoa(j)
 			_ = types.NewTreeTaskWithResult(
-				key, key, 0,
+				basic.NewTaskId(1024, "key"), key, 0,
 				internal, func(ctx context.Context, prevResult []interface{}) (i interface{}, err error) {
 					return j, nil
 				},

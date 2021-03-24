@@ -2,16 +2,17 @@ package scheduler
 
 import (
 	"context"
-	"hash/crc32"
 	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
@@ -43,35 +44,74 @@ func (l *list) append(t *types.ListTask) {
 	l.tail = t
 }
 
+type TaskMap struct {
+	sync.Mutex
+	m map[basic.TaskId]*list
+}
+
+func (m *TaskMap) Initialize() {
+	m.m = make(map[basic.TaskId]*list)
+}
+
+func (m *TaskMap) Get(id basic.TaskId) *list {
+	m.Lock()
+	defer m.Unlock()
+
+	return m.m[id]
+}
+
+func (m *TaskMap) Set(id basic.TaskId, l *list) {
+	m.Lock()
+	m.m[id] = l
+	m.Unlock()
+}
+
+func (m *TaskMap) Del(id basic.TaskId) {
+	m.Lock()
+	delete(m.m, id)
+	m.Unlock()
+}
+
+func (m *TaskMap) ForEach(f func(id basic.TaskId, l *list)) {
+	m.Lock()
+	defer m.Unlock()
+
+	for k, v := range m.m {
+		f(k, v)
+	}
+}
+
 type DynamicListScheduler struct {
-	taskLists          chan *list
+	tasks              chan interface{}
 	taskListsProtector sync.RWMutex
 	closed             bool
 
-	taskListMap  concurrency.ConcurrentMap
+	taskListMap  TaskMap
 	workerNumber int
 
-	lm *concurrency.LockManager
+	lm concurrency.TaskLockManager
 	wg sync.WaitGroup
 }
 
 func NewDynamicListScheduler(maxBufferedTask, workerNumber int) *DynamicListScheduler {
 	b := &DynamicListScheduler{
-		taskLists:    make(chan *list, maxBufferedTask),
+		tasks:        make(chan interface{}, maxBufferedTask),
 		workerNumber: workerNumber,
-		lm:           concurrency.NewLockManager(),
 	}
-	b.taskListMap.Initialize(16)
+	b.taskListMap.Initialize()
+	b.lm.Initialize()
 	b.start()
 	return b
 }
 
-func (s *DynamicListScheduler) Schedule(t *types.ListTask) error {
+func (s *DynamicListScheduler) Schedule(t *basic.Task) error {
+	return s.schedule(t)
+}
+
+func (s *DynamicListScheduler) ScheduleListTask(t *types.ListTask) error {
 	s.lm.Lock(t.ID)
-	var l *list
-	listObj, ok := s.taskListMap.Get(t.ID)
-	if ok {
-		l = listObj.(*list)
+	l := s.taskListMap.Get(t.ID)
+	if l != nil {
 		l.append(t)
 	} else {
 		l = newList(t)
@@ -84,27 +124,23 @@ func (s *DynamicListScheduler) Schedule(t *types.ListTask) error {
 	l.queuedOrExecuting = true
 	s.lm.Unlock(t.ID)
 
+	return s.schedule(l)
+}
+
+func (s *DynamicListScheduler) schedule(t interface{}) error {
 	s.taskListsProtector.RLock()
 	defer s.taskListsProtector.RUnlock()
 	if s.closed {
 		return errors.ErrSchedulerClosed
 	}
 
-	s.taskLists <- l
+	s.tasks <- t
 	return nil
 }
 
 func (s *DynamicListScheduler) GC(tasks []*types.ListTask) {
-	taskKeys := make(map[string]struct{})
-	for _, t := range tasks {
-		taskKeys[t.ID] = struct{}{}
-	}
-	for key := range taskKeys {
-		//if obj, ok := s.taskListMap.Get(key); ok {
-		//	assert.Must(obj.(*list).lastFinishedTask == obj.(*list).tail)
-		//	s.taskListMap.Del(key)
-		//}
-		s.taskListMap.Del(key)
+	for _, task := range tasks {
+		s.taskListMap.Del(task.ID)
 	}
 }
 
@@ -115,16 +151,16 @@ func (s *DynamicListScheduler) Close() {
 		return
 	}
 
-	close(s.taskLists)
+	close(s.tasks)
 	s.closed = true
 	s.taskListsProtector.Unlock()
 
 	s.wg.Wait()
-	assert.Must(len(s.taskLists) == 0)
-	s.taskListMap.ForEachLoosed(func(s string, i interface{}) {
-		assert.Must(i.(*list).lastFinishedTask == i.(*list).tail) // TODO remove this in product
+	assert.Must(len(s.tasks) == 0)
+	s.taskListMap.ForEach(func(_ basic.TaskId, l *list) {
+		assert.Must(l.lastFinishedTask == l.tail) // TODO remove this in product
 	})
-	s.taskListMap.Clear()
+	s.taskListMap.m = nil
 }
 
 func (s *DynamicListScheduler) start() {
@@ -135,10 +171,21 @@ func (s *DynamicListScheduler) start() {
 			defer s.wg.Done()
 
 			for {
-				tl, ok := <-s.taskLists
+				taskObj, ok := <-s.tasks
 				if !ok {
 					return
 				}
+				if task, ok := taskObj.(*basic.Task); ok {
+					if err := task.Run(); err != nil {
+						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
+							if glog.V(1) {
+								glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
+							}
+						}
+					}
+					continue
+				}
+				tl := taskObj.(*list)
 				assert.Must(tl.queuedOrExecuting)
 
 				var firstTask *types.ListTask
@@ -155,7 +202,7 @@ func (s *DynamicListScheduler) start() {
 				for task := firstTask; ; {
 					if err := task.Run(); err != nil {
 						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
-							glog.Errorf("task %s failed: %v", task.Name, err)
+							glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
 						}
 					}
 
@@ -188,17 +235,17 @@ func NewConcurrentDynamicListScheduler(partitionNum int, maxBufferedPerPartition
 	return s
 }
 
-func (s *ConcurrentDynamicListScheduler) Schedule(t *types.ListTask) error {
+func (s *ConcurrentDynamicListScheduler) Schedule(t *basic.Task) error {
 	return s.partition(t.ID).Schedule(t)
 }
 
+func (s *ConcurrentDynamicListScheduler) ScheduleListTask(t *types.ListTask) error {
+	return s.partition(t.ID).ScheduleListTask(t)
+}
+
 func (s *ConcurrentDynamicListScheduler) GC(tasks []*types.ListTask) {
-	taskKeys := make(map[string]struct{})
 	for _, t := range tasks {
-		taskKeys[t.ID] = struct{}{}
-	}
-	for key := range taskKeys {
-		s.partition(key).taskListMap.Del(key)
+		s.partition(t.ID).taskListMap.Del(t.ID)
 	}
 }
 
@@ -208,6 +255,6 @@ func (s *ConcurrentDynamicListScheduler) Close() {
 	}
 }
 
-func (s *ConcurrentDynamicListScheduler) partition(taskID string) *DynamicListScheduler {
-	return s.partitions[int(crc32.ChecksumIEEE([]byte(taskID)))%len(s.partitions)]
+func (s *ConcurrentDynamicListScheduler) partition(taskId basic.TaskId) *DynamicListScheduler {
+	return s.partitions[taskId.Hash()%uint64(len(s.partitions))]
 }

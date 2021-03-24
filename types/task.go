@@ -5,10 +5,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/golang/glog"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
@@ -20,7 +19,7 @@ type ListTask struct {
 	initialized bool
 }
 
-func NewListTaskNoResult(id string, name string, runTimeout time.Duration,
+func NewListTaskNoResult(id basic.TaskId, name string, runTimeout time.Duration,
 	g func(ctx context.Context, prevResult interface{}) error) *ListTask {
 	return NewListTaskWithResult(id, name, runTimeout, func(ctx context.Context, prevResult interface{}) (i interface{}, err error) {
 		if err := g(ctx, prevResult); err != nil {
@@ -30,12 +29,12 @@ func NewListTaskNoResult(id string, name string, runTimeout time.Duration,
 	})
 }
 
-func NewListTaskWithResult(id string, name string, runTimeout time.Duration,
+func NewListTaskWithResult(id basic.TaskId, name string, runTimeout time.Duration,
 	g func(ctx context.Context, prevResult interface{}) (interface{}, error)) *ListTask {
 	return (&ListTask{}).Initialize(id, name, runTimeout, g)
 }
 
-func (t *ListTask) Initialize(id string, name string, runTimeout time.Duration,
+func (t *ListTask) Initialize(id basic.TaskId, name string, runTimeout time.Duration,
 	g func(ctx context.Context, prevResult interface{}) (interface{}, error)) *ListTask {
 	assert.Must(!t.initialized)
 
@@ -86,7 +85,7 @@ type TreeTask struct {
 }
 
 func NewTreeTaskNoResult(
-	id string, name string, runTimeout time.Duration,
+	id basic.TaskId, name string, runTimeout time.Duration,
 	parent *TreeTask,
 	g func(ctx context.Context, childrenResult []interface{}) error) *TreeTask {
 	return NewTreeTaskWithResult(
@@ -98,13 +97,13 @@ func NewTreeTaskNoResult(
 }
 
 func NewTreeTaskWithResult(
-	id string, name string, runTimeout time.Duration,
+	id basic.TaskId, name string, runTimeout time.Duration,
 	parent *TreeTask,
 	g func(ctx context.Context, childrenResult []interface{}) (interface{}, error)) *TreeTask {
 	return (&TreeTask{}).Initialize(id, name, runTimeout, parent, g)
 }
 
-func (t *TreeTask) Initialize(id string, name string, runTimeout time.Duration,
+func (t *TreeTask) Initialize(id basic.TaskId, name string, runTimeout time.Duration,
 	parent *TreeTask,
 	g func(ctx context.Context, childrenResult []interface{}) (interface{}, error)) *TreeTask {
 	assert.Must(!t.initialized)

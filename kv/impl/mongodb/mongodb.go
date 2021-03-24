@@ -78,7 +78,19 @@ func getCollection(key string) string {
 	return collectionKeys
 }
 
-func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (kv.Value, error) {
+func (m MongoVVS) GetTxnRecord(ctx context.Context, version uint64) (kv.Value, error) {
+	return m.GetKey(ctx, types.TxnId(version).String(), version)
+}
+
+func (m MongoVVS) UpsertTxnRecord(ctx context.Context, version uint64, val kv.Value) error {
+	return m.UpsertKey(ctx, types.TxnId(version).String(), version, val)
+}
+
+func (m MongoVVS) RemoveTxnRecord(ctx context.Context, version uint64) error {
+	return m.RemoveKey(ctx, types.TxnId(version).String(), version)
+}
+
+func (m MongoVVS) GetKey(ctx context.Context, key string, version uint64) (kv.Value, error) {
 	gotKey, val, _, err := m.getOne(key, m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOne(ctx, pkEqual(key, version)))
 	if err != nil {
 		return kv.EmptyValue, err
@@ -87,7 +99,7 @@ func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (kv.Value
 	return val, nil
 }
 
-func (m MongoVVS) FindMaxBelow(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+func (m MongoVVS) FindMaxBelowOfKey(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
 	gotKey, value, version, err := m.getOne(key, m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOne(ctx, bson.D{
 		{attrId, bson.D{
 			{"$lte", bson.D{
@@ -100,42 +112,42 @@ func (m MongoVVS) FindMaxBelow(ctx context.Context, key string, upperVersion uin
 	}
 	if gotKey != key {
 		assert.Must(gotKey < key)
-		return kv.EmptyValue, 0, errors.ErrVersionNotExists
+		return kv.EmptyValue, 0, errors.ErrKeyOrVersionNotExist
 	}
 	return value, version, nil
 }
 
-func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val kv.Value) error {
+func (m MongoVVS) UpsertKey(ctx context.Context, key string, version uint64, val kv.Value) error {
 	collection := m.cli.Database(defaultDatabase).Collection(getCollection(key))
 	single, err := collection.ReplaceOne(ctx, pkEqual(key, version),
 		encodeValue(val), options.Replace().SetUpsert(true))
 	if err != nil {
-		glog.Errorf("[MongoVVS][Upsert] txn-%d upsert key '%s' failed: '%v'", version, key, err)
+		glog.Errorf("[MongoVVS][UpsertKey] txn-%d upsert key '%s' failed: '%v'", version, key, err)
 		return err
 	}
 	glog.V(80).Infof("inserted one document with id: '%v'", single.UpsertedID)
 	return nil
 }
 
-func (m MongoVVS) UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error {
+func (m MongoVVS) UpdateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOneAndUpdate(ctx, pkEqual(key, version),
-		bson.D{{"$set", bson.D{{attrFlag, newFlag}}}}).Err(), mongo.ErrNoDocuments, errors.ErrVersionNotExists)
+		bson.D{{"$set", bson.D{{attrFlag, newFlag}}}}).Err(), mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 }
 
-func (m MongoVVS) Remove(ctx context.Context, key string, version uint64) error {
+func (m MongoVVS) RemoveKey(ctx context.Context, key string, version uint64) error {
 	_, err := m.cli.Database(defaultDatabase).Collection(getCollection(key)).DeleteOne(ctx, pkEqual(key, version))
 	return err
 }
 
-func (m MongoVVS) RemoveIf(ctx context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
-	val, err := m.Get(ctx, key, version)
+func (m MongoVVS) RemoveKeyIf(ctx context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+	val, err := m.GetKey(ctx, key, version)
 	if err != nil {
 		return err
 	}
 	if err := pred(val); err != nil {
 		return err
 	}
-	return m.Remove(ctx, key, version)
+	return m.RemoveKey(ctx, key, version)
 }
 
 func (m MongoVVS) Close() error {
@@ -146,7 +158,7 @@ func (m MongoVVS) Close() error {
 
 func (m MongoVVS) getOne(key string, res *mongo.SingleResult) (gotKey string, value kv.Value, version uint64, _ error) {
 	if err := res.Err(); err != nil {
-		return "", kv.EmptyValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrVersionNotExists)
+		return "", kv.EmptyValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 	}
 	raw, err := res.DecodeBytes()
 	if err != nil {
@@ -234,5 +246,5 @@ func NewDB(addr string, credential *options.Credential) (*kv.DB, error) {
 	if err = client.Ping(ctx, readpref.Primary()); err != nil {
 		return nil, err
 	}
-	return kv.NewDB(newMongoVVS(client)), nil
+	return kv.NewDB(newMongoVVS(client), newMongoVVS(client)), nil
 }

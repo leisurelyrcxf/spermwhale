@@ -2,6 +2,8 @@ package basic
 
 import (
 	"context"
+	"fmt"
+	"hash/crc32"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -16,8 +18,31 @@ var (
 	DummyTaskResult   = struct{}{}
 )
 
+type TaskId struct {
+	TxnId uint64
+	Key   string
+}
+
+func NewTaskId(txnId uint64, key string) TaskId {
+	return TaskId{
+		TxnId: txnId,
+		Key:   key,
+	}
+}
+
+func (id TaskId) Hash() uint64 {
+	if id.Key == "" {
+		return id.TxnId
+	}
+	return id.TxnId + uint64(crc32.ChecksumIEEE([]byte(id.Key)))
+}
+
+func (id TaskId) String() string {
+	return fmt.Sprintf("txn-%s-%d", id.Key, id.TxnId)
+}
+
 type Task struct {
-	ID   string
+	ID   TaskId
 	Name string
 
 	ctx        context.Context
@@ -35,7 +60,7 @@ type Task struct {
 	Data interface{}
 }
 
-func NewTaskNoResult(id string, name string, runTimeout time.Duration, g func(context.Context) error) *Task {
+func NewTaskNoResult(id TaskId, name string, runTimeout time.Duration, g func(context.Context) error) *Task {
 	return NewTask(id, name, runTimeout, func(ctx context.Context) (i interface{}, err error) {
 		if err := g(ctx); err != nil {
 			return nil, err
@@ -44,11 +69,11 @@ func NewTaskNoResult(id string, name string, runTimeout time.Duration, g func(co
 	})
 }
 
-func NewTask(id string, name string, runTimeout time.Duration, f func(context.Context) (interface{}, error)) *Task {
+func NewTask(id TaskId, name string, runTimeout time.Duration, f func(context.Context) (interface{}, error)) *Task {
 	return (&Task{}).Initialize(id, name, runTimeout, f)
 }
 
-func (t *Task) Initialize(id string, name string, runTimeout time.Duration, f func(context.Context) (interface{}, error)) *Task {
+func (t *Task) Initialize(id TaskId, name string, runTimeout time.Duration, f func(context.Context) (interface{}, error)) *Task {
 	assert.Must(t.done == nil)
 
 	t.ID = id

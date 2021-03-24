@@ -69,6 +69,11 @@ func (opt *KVWriteOption) ToPB() *kvpb.KVWriteOption {
 	return (&kvpb.KVWriteOption{}).SetFlagSafe(opt.flag)
 }
 
+func (opt KVWriteOption) WithTxnRecord() KVWriteOption {
+	opt.flag |= CommonWriteOptBitMaskTxnRecord
+	return opt
+}
+
 func (opt KVWriteOption) WithClearWriteIntent() KVWriteOption {
 	opt.flag |= CommonWriteOptBitMaskClearWriteIntent
 	return opt

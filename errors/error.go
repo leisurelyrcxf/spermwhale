@@ -99,9 +99,7 @@ func ToPBError(e error) *commonpb.Error {
 }
 
 func IsNotExistsErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeKeyNotExists ||
-		code == consts.ErrCodeVersionNotExists
+	return GetErrorCode(e) == consts.ErrCodeKeyOrVersionNotExists
 }
 
 func IsRetryableTransactionErr(e error) bool {

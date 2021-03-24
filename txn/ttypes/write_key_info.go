@@ -67,8 +67,36 @@ func (ks WriteKeyInfos) GetWriteKeyTasks() []*types.ListTask {
 	return ks.tasks
 }
 
-func (ks WriteKeyInfos) GetCopiedWriteKeyTasks() []*types.ListTask {
-	return append(make([]*types.ListTask, 0, len(ks.tasks)), ks.tasks...)
+func (ks WriteKeyInfos) GetCopiedWriteKeyTasks() []*basic.Task {
+	tasks := make([]*basic.Task, 0, len(ks.tasks)+1)
+	for _, t := range ks.tasks {
+		tasks = append(tasks, &t.Task)
+	}
+	return tasks
+}
+
+func (ks WriteKeyInfos) GetCopiedWriteKeyTasksEx() ([]*basic.Task, []*types.ListTask) {
+	tasks := make([]*basic.Task, 0, len(ks.tasks)+1) // for append
+	listTasks := make([]*types.ListTask, 0, len(ks.tasks))
+	for _, t := range ks.tasks {
+		tasks = append(tasks, &t.Task)
+		listTasks = append(listTasks, t)
+	}
+	return tasks, listTasks
+}
+
+func (ks WriteKeyInfos) GetLastWriteKeyTasks(allWriteKeyTasks []*types.ListTask) []*types.ListTask {
+	if len(ks.keys) == len(allWriteKeyTasks) {
+		return allWriteKeyTasks
+	}
+	// Has write after write
+	tasks := make([]*types.ListTask, 0, len(ks.keys))
+	for _, v := range ks.keys {
+		if v.LastTask != nil {
+			tasks = append(tasks, v.LastTask)
+		}
+	}
+	return tasks
 }
 
 func (ks WriteKeyInfos) ForEachWrittenKey(f func(key string, info WriteKeyInfo)) {
@@ -183,7 +211,7 @@ func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
 
 // Below are write methods, need pass pointers
 
-func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicListScheduler, key string, val types.Value, opt types.KVCCWriteOption) error {
+func (ks *WriteKeyInfos) WriteKey(s *scheduler.ConcurrentDynamicListScheduler, key string, val types.Value, opt types.KVCCWriteOption) error {
 	assert.Must(!ks.completed)
 	var v = WriteKeyInfo{LastWrittenVersion: 0}
 	if ks.keys == nil {
@@ -196,13 +224,13 @@ func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicL
 	}
 	v.LastWrittenVersion++
 	val = val.WithInternalVersion(v.LastWrittenVersion)
-	task := types.NewListTaskWithResult(taskId, "set", ks.TaskTimeout, func(ctx context.Context, prevResult interface{}) (i interface{}, err error) {
+	task := types.NewListTaskWithResult(basic.NewTaskId(val.Version, key), "write-key", ks.TaskTimeout, func(ctx context.Context, prevResult interface{}) (i interface{}, err error) {
 		if err := ks.KV.Set(ctx, key, val, opt); err != nil {
 			return nil, err
 		}
 		return basic.DummyTaskResult, nil
 	})
-	if err := s.Schedule(task); err != nil { // TODO add context for schedule
+	if err := s.ScheduleListTask(task); err != nil { // TODO add context for schedule
 		return errors.Annotatef(err, "schedule write task of key '%s' failed", key)
 	}
 	task.Data = val.InternalVersion
@@ -216,4 +244,12 @@ func (ks *WriteKeyInfos) WriteKey(taskId string, s *scheduler.ConcurrentDynamicL
 // MarkWrittenKeyCompleted, keys and LastWrittenVersion won't change after this call.
 func (ks *WriteKeyInfos) MarkWrittenKeyCompleted() {
 	ks.completed = true
+}
+
+// only sued for test
+
+func (ks WriteKeyInfos) setLastTask(key string, t *types.ListTask) {
+	v := ks.keys[key]
+	v.LastTask = t
+	ks.keys[key] = v
 }

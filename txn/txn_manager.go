@@ -4,10 +4,6 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/leisurelyrcxf/spermwhale/types/basic"
-
-	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
-
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -18,7 +14,9 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/scheduler"
 	"github.com/leisurelyrcxf/spermwhale/topo"
+	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
@@ -33,7 +31,11 @@ func (s *Scheduler) ScheduleClearJobTree(root *types.TreeTask) error { // TODO a
 	return s.clearJobScheduler.ScheduleTree(root)
 }
 
-func (s *Scheduler) ScheduleWriteJob(t *types.ListTask) error {
+func (s *Scheduler) ScheduleWriteKeyJob(t *types.ListTask) error {
+	return s.writeJobScheduler.ScheduleListTask(t)
+}
+
+func (s *Scheduler) ScheduleWriteTxnRecordJob(t *basic.Task) error {
 	return s.writeJobScheduler.Schedule(t)
 }
 

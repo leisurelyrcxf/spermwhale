@@ -54,17 +54,23 @@ func withContextRetryRaw(ctx context.Context, interval, timeout time.Duration, s
 		err := f(fCtx)
 		if err == nil || !isRetryable(err) {
 			if err != nil {
-				glog.Errorf("[withContextRetryRaw][%s] returned non-retryable error: '%v'", caller, err)
+				if glog.V(1) {
+					glog.Errorf("[withContextRetryRaw][%s] returned non-retryable error: '%v'", caller, err)
+				}
 			}
 			return err
 		}
 		select {
 		case <-timeoutCtx.Done():
 			cost := time.Since(start)
-			glog.Errorf("[withContextRetryRaw][%s] failed after retrying for %s, last error: '%v'", caller, cost, err)
+			if glog.V(1) {
+				glog.Errorf("[withContextRetryRaw][%s] failed after retrying for %s, last error: '%v'", caller, cost, err)
+			}
 			return errors.Annotatef(err, "failed after retrying for %s", cost)
 		case <-time.After(interval):
-			glog.Warningf("[withContextRetryRaw][%s] run failed with error '%v', retrying after %s...", caller, err, interval)
+			if glog.V(8) {
+				glog.Warningf("[withContextRetryRaw][%s] run failed with error '%v', retrying after %s...", caller, err, interval)
+			}
 		}
 	}
 }
