@@ -55,6 +55,10 @@ var (
 		Code: consts.ErrCodeNotSupported,
 		Msg:  "not supported",
 	}
+	ErrNotAllowed = &Error{
+		Code: consts.ErrCodeNotAllowed,
+		Msg:  "not allowed",
+	}
 	ErrInvalidRequest = &Error{
 		Code: consts.ErrCodeInvalidRequest,
 		Msg:  "invalid request",
@@ -166,5 +170,9 @@ var (
 	ErrSnapshotReadRetriedTooManyTimes = &Error{
 		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
 		Msg:  "snapshot read retried too many times",
+	}
+	ErrSnapshotViolated = &Error{
+		Code: consts.ErrCodeSnapshotViolated,
+		Msg:  "snapshot violated",
 	}
 )

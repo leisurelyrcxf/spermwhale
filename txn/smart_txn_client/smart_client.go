@@ -61,7 +61,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 		if err := ctx.Err(); err != nil {
 			return nil, i + 1, err
 		}
-		tx, err := c.TxnManager.BeginTransaction(ctx, typ)
+		tx, err := c.TxnManager.BeginTransaction(ctx, typ, 0)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue

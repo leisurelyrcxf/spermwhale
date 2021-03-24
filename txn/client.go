@@ -29,8 +29,8 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Begin(ctx context.Context, typ types.TxnType) (TransactionInfo, error) {
-	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{Type: typ.ToPB()})
+func (c *Client) Begin(ctx context.Context, typ types.TxnType, snapshotVersion uint64) (TransactionInfo, error) {
+	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{Type: typ.ToPB(), SnapshotVersion: snapshotVersion})
 	if err != nil {
 		return InvalidTransactionInfo(0), err
 	}
@@ -181,8 +181,8 @@ func (m *ClientTxnManager) SetRecordValues(b bool) *ClientTxnManager {
 	return m
 }
 
-func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnType) (types.Txn, error) {
-	txnInfo, err := m.c.Begin(ctx, typ)
+func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnType, snapshotVersion uint64) (types.Txn, error) {
+	txnInfo, err := m.c.Begin(ctx, typ, snapshotVersion)
 	if err != nil {
 		return nil, err
 	}

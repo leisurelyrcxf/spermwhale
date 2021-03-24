@@ -24,6 +24,7 @@ var (
 		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
 		consts.ErrCodeTxnRollbacking:                              {},
 		consts.ErrCodeTxnRollbacked:                               {},
+		consts.ErrCodeSnapshotReadRetriedTooManyTimes:             {},
 	})
 )
 

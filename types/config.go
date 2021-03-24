@@ -15,6 +15,7 @@ type TxnManagerConfig struct {
 	ClearerNum, WriterNum, ReaderNum int
 	ClearTimeout                     time.Duration
 	MaxTaskBufferedPerPartition      int
+	SnapshotBackwardPeriod           time.Duration
 }
 
 func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
@@ -25,6 +26,7 @@ func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerC
 		WriterNum:                    consts.DefaultTxnManagerWriterNumber,
 		ReaderNum:                    consts.DefaultTxnManagerReaderNumber,
 		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxBufferedJobPerPartition,
+		SnapshotBackwardPeriod:       consts.DefaultSnapshotBackwardPeriod,
 	}
 }
 

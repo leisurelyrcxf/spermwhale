@@ -99,6 +99,65 @@ func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types
 	return nil
 }
 
+type ExecuteStatistic struct {
+	SumRetryTimes int
+	SumCost       time.Duration
+	Count         int
+
+	AverageRetryTimes float64
+	AverageCost       time.Duration
+}
+
+func (es *ExecuteStatistic) collect(info ExecuteInfo) {
+	es.SumRetryTimes += info.RetryTimes
+	es.SumCost += info.Cost
+	es.Count++
+}
+
+func (es *ExecuteStatistic) calc() {
+	es.AverageRetryTimes = float64(es.SumRetryTimes) / float64(es.Count)
+	es.AverageCost = es.SumCost / time.Duration(es.Count)
+}
+
+type ExecuteStatistics struct {
+	total      ExecuteStatistic
+	perTxnKind map[types.TxnKind]*ExecuteStatistic
+}
+
+func NewExecuteStatistics() *ExecuteStatistics {
+	return &ExecuteStatistics{perTxnKind: make(map[types.TxnKind]*ExecuteStatistic)}
+}
+
+func (ess *ExecuteStatistics) collect(info ExecuteInfo) {
+	ess.total.collect(info)
+
+	kind := info.GetTxnKind()
+	if ess.perTxnKind[kind] == nil {
+		ess.perTxnKind[kind] = &ExecuteStatistic{}
+	}
+	ess.perTxnKind[kind].collect(info)
+}
+
+func (ess *ExecuteStatistics) calc() ExecuteStatistics {
+	ess.total.calc()
+	for _, es := range ess.perTxnKind {
+		es.calc()
+	}
+	return *ess
+}
+
+func (ess *ExecuteStatistics) ForEachTxnKind(f func(types.TxnKind, ExecuteStatistic)) {
+	var kinds = make([]int, 0, len(ess.perTxnKind))
+	for kind := range ess.perTxnKind {
+		kinds = append(kinds, int(kind))
+	}
+	sort.Ints(kinds)
+	for _, kind := range kinds {
+		k := types.TxnKind(kind)
+		f(k, *ess.perTxnKind[k])
+	}
+}
+
 type ExecuteInfo struct {
 	types.Txn
 
@@ -108,6 +167,23 @@ type ExecuteInfo struct {
 	RetryTimes              int
 	Cost                    time.Duration
 	AdditionalInfo          interface{}
+}
+
+func (info ExecuteInfo) SortIndex() uint64 {
+	if info.GetType().IsSnapshotRead() {
+		return info.GetSnapshotVersion()
+	}
+	return info.ID
+}
+
+func (info ExecuteInfo) GetTxnKind() types.TxnKind {
+	if len(info.WriteValues) == 0 {
+		return types.TxnKindReadOnly
+	}
+	if len(info.ReadValues) == 0 {
+		return types.TxnKindWriteOnly
+	}
+	return types.TxnKindReadWrite
 }
 
 func (info ExecuteInfo) String() string {
@@ -120,7 +196,15 @@ func (txns ExecuteInfos) Len() int {
 	return len(txns)
 }
 func (txns ExecuteInfos) Less(i, j int) bool {
-	return txns[i].ID < txns[j].ID
+	txnI, txnJ := txns[i], txns[j]
+	indexI, indexJ := txnI.SortIndex(), txnJ.SortIndex()
+	if indexI < indexJ {
+		return true
+	}
+	if indexI > indexJ {
+		return false
+	}
+	return !txnI.GetType().IsSnapshotRead()
 }
 func (txns ExecuteInfos) Swap(i, j int) {
 	txns[i], txns[j] = txns[j], txns[i]
@@ -141,14 +225,14 @@ func (txns ExecuteInfos) CheckReadForWriteOnly(assert *testifyassert.Assertions,
 func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) bool {
 	sort.Sort(txns)
 
-	findSnapshotTxnIndex := func(searchStart int, ssVersion uint64) int {
-		for j := searchStart; j >= 0; j-- {
-			if txns[j].ID <= ssVersion {
-				return j
-			}
-		}
-		return -1
-	}
+	//findSnapshotTxnIndex := func(searchStart int, ssVersion uint64) int {
+	//	for j := searchStart; j >= 0; j-- {
+	//		if txns[j].ID <= ssVersion {
+	//			return j
+	//		}
+	//	}
+	//	return -1
+	//}
 
 	findLastWriteVersion := func(searchStart int, key string, readVal types.Value) types.Value {
 		for j := searchStart; j >= 0; j-- {
@@ -160,21 +244,27 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 		return types.EmptyValue
 	}
 	for i := 0; i < len(txns); i++ {
+		var ssVersion = txns[i].GetSnapshotVersion()
 		for key, readVal := range txns[i].ReadValues {
-			var lastWriteVal types.Value
+			//var (
+			//	lastWriteVal types.Value
+			//)
 			if txns[i].GetType().IsSnapshotRead() {
-				ssVersion := txns[i].GetSnapshotVersion()
-				if !assert.NotEqual(ssVersion, uint64(0)) || !assert.LessOrEqual(ssVersion, txns[i].ID) {
+				if !assert.Equal(ssVersion, readVal.SnapshotVersion) {
 					return false
 				}
-				j := findSnapshotTxnIndex(i, ssVersion)
-				if j == -1 {
-					continue
-				}
-				lastWriteVal = findLastWriteVersion(j, key, readVal)
-			} else {
-				lastWriteVal = findLastWriteVersion(i-1, key, readVal)
 			}
+			//	if !assert.NotEqual(ssVersion, uint64(0)) || !assert.LessOrEqual(ssVersion, txns[i].ID) {
+			//		return false
+			//	}
+			//	j := findSnapshotTxnIndex(i, ssVersion)
+			//	if j == -1 {
+			//		continue
+			//	}
+			//	lastWriteVal = findLastWriteVersion(j, key, readVal)
+			//} else {
+			lastWriteVal := findLastWriteVersion(i-1, key, readVal)
+			//}
 			if lastWriteVal.IsEmpty() {
 				continue
 			}
@@ -186,25 +276,19 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 	return true
 }
 
-func (txns ExecuteInfos) AverageRetryTimes() float64 {
-	var totalRetryTimes int
+func (txns ExecuteInfos) Statistics() ExecuteStatistics {
+	ess := NewExecuteStatistics()
 	for _, info := range txns {
-		totalRetryTimes += info.RetryTimes
+		ess.collect(info)
 	}
-	return float64(totalRetryTimes) / float64(len(txns))
-}
-
-func (txns ExecuteInfos) AverageCost() time.Duration {
-	var totalCost time.Duration
-	for _, info := range txns {
-		totalCost += info.Cost
-	}
-	return totalCost / time.Duration(len(txns))
+	return ess.calc()
 }
 
 type TestCase struct {
 	t *testing.T
 	*testifyassert.Assertions
+
+	embeddedTablet bool
 
 	rounds   int
 	testFunc func(context.Context, *TestCase) bool
@@ -218,7 +302,14 @@ type TestCase struct {
 
 	GoRoutineNum       int
 	TxnNumPerGoRoutine int
+	timeoutPerRound    time.Duration
 	LogLevel           glog.Level
+
+	FailurePattern     FailurePattern
+	FailureProbability int
+
+	snapshotReadForReadonlyTxn bool
+	additionalParameters       map[string]interface{}
 
 	//output, can be set too
 	scs        []*smart_txn_client.SmartClient
@@ -227,25 +318,23 @@ type TestCase struct {
 	stopper    func()
 
 	executedTxnsPerGoRoutine [][]ExecuteInfo
-	timeoutPerRound          time.Duration
 	extraRounds              []bool
 	allExecutedTxns          ExecuteInfos
 }
 
 const (
-	defaultGoRoutineNumber = 6
 	defaultTimeoutPerRound = time.Minute
 )
 
 func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
-	return &TestCase{
+	return (&TestCase{
 		t:          t,
 		rounds:     rounds,
 		Assertions: types.NewAssertion(t),
 		testFunc:   testFunc,
 
 		LogLevel:           glog.Level(5),
-		GoRoutineNum:       defaultGoRoutineNumber,
+		GoRoutineNum:       6,
 		TxnNumPerGoRoutine: 1000,
 		DBType:             types.DBTypeMemory,
 		TxnType:            types.TxnTypeDefault,
@@ -255,8 +344,11 @@ func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestC
 		TableTxnCfg:   defaultTabletTxnConfig,
 
 		timeoutPerRound: defaultTimeoutPerRound,
-		extraRounds:     make([]bool, defaultGoRoutineNumber),
-	}
+	}).onGoRoutineNumChanged()
+}
+
+func NewEmbeddedTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet()
 }
 
 func (ts *TestCase) Run() {
@@ -272,26 +364,41 @@ func (ts *TestCase) Run() {
 }
 
 func (ts *TestCase) runOneRound(i int) bool {
+	ts.LogParameters(i)
+	ts.allExecutedTxns = nil
+
 	ctx, cancel := context.WithTimeout(context.Background(), ts.timeoutPerRound)
 	defer cancel()
 
-	ts.LogParameters(i)
-	if !ts.True(ts.GenTestEnv()) {
+	if genResult := ts.GenTestEnv(); !ts.True(genResult) {
 		return false
 	}
 	defer ts.Close()
 
-	if !ts.True(ts.testFunc(ctx, ts)) || !ts.CheckSerializability() {
+	start := time.Now()
+	if !ts.True(ts.testFunc(ctx, ts)) {
 		return false
 	}
-	ts.LogTxnExecuteInfo()
+	cost := time.Since(start)
+	if !ts.CheckSerializability() {
+		return false
+	}
+	ts.LogTxnExecuteInfo(float64(cost) / float64(time.Second))
 	return true
 }
 
 func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
+	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.TxnType, f)
+}
+func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
+	f func(ctx context.Context, txn types.Txn) error) bool {
+	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.GetReadonlyTxnType(), f)
+}
+func (ts *TestCase) doTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, txnType types.TxnType,
+	f func(ctx context.Context, txn types.Txn) error) bool {
 	start := time.Now()
-	if tx, retryTimes, err := sc.DoTransactionOfTypeEx(ctx, ts.TxnType, f); ts.NoError(err) {
+	if tx, retryTimes, err := sc.DoTransactionOfTypeEx(ctx, txnType, f); ts.NoError(err) {
 		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, time.Since(start))
 		return true
 	}
@@ -299,9 +406,26 @@ func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *s
 }
 
 func (ts *TestCase) GenTestEnv() bool {
-	if len(ts.scs) == 2 {
+	if len(ts.scs) > 0 {
 		return true
 	}
+
+	if ts.embeddedTablet {
+		titan := newDB(ts.Assertions, ts.DBType, 0)
+		if !ts.NotNil(titan) {
+			ts.Close()
+			return false
+		}
+		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, 0, ts.FailurePattern, ts.FailureProbability), ts.TableTxnCfg)
+		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
+		ts.stopper = func() {
+			ts.NoError(m.Close())
+		}
+		sc := smart_txn_client.NewSmartClient(m, 0)
+		ts.SetSmartClients(sc)
+		return true
+	}
+
 	if ts.txnServers, ts.clientTMs, ts.stopper = createCluster(ts.t, ts.DBType, ts.TxnManagerCfg,
 		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
 		return false
@@ -310,7 +434,6 @@ func (ts *TestCase) GenTestEnv() bool {
 	sc2 := smart_txn_client.NewSmartClient(ctm2, 10000)
 	sc1 := smart_txn_client.NewSmartClient(ctm1, 10000)
 	ts.scs = []*smart_txn_client.SmartClient{sc1, sc2}
-	ts.executedTxnsPerGoRoutine = make([][]ExecuteInfo, ts.GoRoutineNum)
 	return true
 }
 
@@ -332,6 +455,10 @@ func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, ret
 }
 
 func (ts *TestCase) CheckSerializability() bool {
+	if len(ts.allExecutedTxns) > 0 {
+		// already checked by user
+		return true
+	}
 	if !ts.Len(ts.executedTxnsPerGoRoutine, ts.GoRoutineNum) {
 		return false
 	}
@@ -353,49 +480,68 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
+func (ts *TestCase) SetEmbeddedTablet() *TestCase { ts.embeddedTablet = true; return ts }
 func (ts *TestCase) GetGate1() *gate.Gate {
 	return ts.txnServers[0].tm.kv.(*gate.Gate)
 }
-
 func (ts *TestCase) GetGate2() *gate.Gate {
 	return ts.txnServers[1].tm.kv.(*gate.Gate)
 }
+func (ts *TestCase) GetReadonlyTxnType() types.TxnType {
+	if ts.snapshotReadForReadonlyTxn {
+		return types.TxnTypeSnapshotRead
+	}
+	return ts.TxnType
+}
 
+func (ts *TestCase) SetSnapshotReadForReadonlyTxn() *TestCase {
+	ts.snapshotReadForReadonlyTxn = true
+	return ts
+}
 func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase {
 	ts.TxnType = typ
 	return ts
 }
-
 func (ts *TestCase) SetWaitNoWriteIntent() *TestCase {
 	ts.ReadOpt = ts.ReadOpt.WithWaitNoWriteIntent()
 	return ts
 }
-
 func (ts *TestCase) SetDBType(typ types.DBType) *TestCase {
 	ts.DBType = typ
 	return ts
 }
-
 func (ts *TestCase) SetTimeoutPerRound(timeout time.Duration) *TestCase {
 	ts.timeoutPerRound = timeout
 	return ts
 }
-
 func (ts *TestCase) SetExtraRound(goRoutineIndex int) *TestCase {
 	ts.extraRounds[goRoutineIndex] = true
 	return ts
 }
-
 func (ts *TestCase) SetStaleWriteThreshold(thr time.Duration) *TestCase {
 	ts.TxnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(thr)
 	ts.TableTxnCfg = defaultTabletTxnConfig.WithStaleWriteThreshold(thr)
 	return ts
 }
-
 func (ts *TestCase) SetSmartClients(scs ...*smart_txn_client.SmartClient) *TestCase {
 	ts.scs = scs
 	return ts
 }
+func (ts *TestCase) SetAdditionalParameters(key string, obj interface{}) *TestCase {
+	if ts.additionalParameters == nil {
+		ts.additionalParameters = make(map[string]interface{})
+	}
+	ts.additionalParameters[key] = obj
+	return ts
+}
+func (ts *TestCase) SetGoRoutineNum(num int) *TestCase {
+	ts.GoRoutineNum = num
+	return ts.onGoRoutineNumChanged()
+}
+func (ts *TestCase) SetTxnNumPerGoRoutine(num int) *TestCase      { ts.TxnNumPerGoRoutine = num; return ts }
+func (ts *TestCase) SetLogLevel(lvl int) *TestCase                { ts.LogLevel = glog.Level(lvl); return ts }
+func (ts *TestCase) SetFailureProbability(prob int) *TestCase     { ts.FailureProbability = prob; return ts }
+func (ts *TestCase) SetFailurePattern(p FailurePattern) *TestCase { ts.FailurePattern = p; return ts }
 
 func (ts *TestCase) Close() {
 	if ts.stopper != nil {
@@ -413,16 +559,21 @@ func (ts *TestCase) Close() {
 
 func (ts *TestCase) LogParameters(round int) {
 	ts.t.Logf("%s @round %d\n"+
-		"db type: \"%s\", txn type: \"%s\", wait no write intent: %v\n"+
+		"db type: \"%s\", txn type: \"%s\", read only txn type: \"%s\", wait no write intent: %v\n"+
 		"stale threshold: %s, wound threshold: %s\n"+
 		"go routine number: %d, txn number per go routine: %d, log level: %d", ts.t.Name(), round,
-		ts.DBType, ts.TxnType, ts.ReadOpt.IsWaitNoWriteIntent(),
+		ts.DBType, ts.TxnType, ts.GetReadonlyTxnType(), ts.ReadOpt.IsWaitNoWriteIntent(),
 		ts.TableTxnCfg.StaleWriteThreshold, ts.TxnManagerCfg.WoundUncommittedTxnThreshold,
 		ts.GoRoutineNum, ts.TxnNumPerGoRoutine, ts.LogLevel)
 }
 
-func (ts *TestCase) LogTxnExecuteInfo() {
-	ts.t.Logf("Excuted %d txns, average latency: %s, average retry: %.2f times", len(ts.allExecutedTxns), ts.allExecutedTxns.AverageCost(), ts.allExecutedTxns.AverageRetryTimes())
+func (ts *TestCase) LogTxnExecuteInfo(totalCostInSeconds float64) {
+	stats := ts.allExecutedTxns.Statistics()
+	ts.t.Logf("Excuted %d txns, throughput: %.1ftps, average latency: %s, average retry: %.2f times",
+		len(ts.allExecutedTxns), float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
+	stats.ForEachTxnKind(func(txnKind types.TxnKind, ss ExecuteStatistic) {
+		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.2f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)
+	})
 }
 
 func (ts *TestCase) MustRouteToDifferentShards(key1 string, key2 string) bool {
@@ -433,6 +584,12 @@ func (ts *TestCase) MustRouteToDifferentShards(key1 string, key2 string) bool {
 	}
 	return ts.True(gAte1.MustRoute(types.TxnKeyUnion{Key: key1}).ID != gAte1.MustRoute(types.TxnKeyUnion{Key: key2}).ID) &&
 		ts.True(gAte2.MustRoute(types.TxnKeyUnion{Key: key1}).ID != gAte2.MustRoute(types.TxnKeyUnion{Key: key2}).ID)
+}
+
+func (ts *TestCase) onGoRoutineNumChanged() *TestCase {
+	ts.executedTxnsPerGoRoutine = make([][]ExecuteInfo, ts.GoRoutineNum)
+	ts.extraRounds = make([]bool, ts.GoRoutineNum)
+	return ts
 }
 
 func createCluster(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {

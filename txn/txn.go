@@ -65,18 +65,8 @@ func (i *TransactionInfo) GetType() types.TxnType {
 	return i.TxnType
 }
 
-func (i *TransactionInfo) InitializeSnapshotVersion() {
-	if i.SnapshotVersion == 0 {
-		i.SnapshotVersion = i.ID.Version()
-	}
-}
-
 func (i *TransactionInfo) GetSnapshotVersion() uint64 {
 	return i.SnapshotVersion
-}
-
-func (i *TransactionInfo) GetSnapshotReadOption() types.KVCCReadOption {
-	return types.NewKVCCReadOption(0).WithSnapshotRead(i.SnapshotVersion)
 }
 
 type Txn struct {
@@ -85,8 +75,9 @@ type Txn struct {
 	TransactionInfo
 	ttypes.WriteKeyInfos
 
-	preventWriteFlags    map[string]bool
-	readForWriteReadKeys map[string]struct{}
+	preventWriteFlags              map[string]bool
+	readForWriteOrSnapshotReadKeys types.ReadResult
+	explicitSnapshotVersion        bool
 
 	txnRecordTask *basic.Task
 
@@ -109,9 +100,10 @@ func NewTxn(
 	destroy func(*Txn)) *Txn {
 	return &Txn{
 		TransactionInfo: TransactionInfo{
-			ID:       id,
-			TxnState: types.TxnStateUncommitted,
-			TxnType:  typ,
+			ID:              id,
+			TxnState:        types.TxnStateUncommitted,
+			TxnType:         typ,
+			SnapshotVersion: id.Version(),
 		},
 		WriteKeyInfos: ttypes.WriteKeyInfos{
 			KV:          kv,
@@ -166,10 +158,25 @@ func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_
 	if key == "" {
 		return types.EmptyValue, errors.ErrEmptyKey
 	}
+
 	txn.Lock()
 	defer txn.Unlock()
 
+	if txn.IsSnapshotRead() {
+		return txn.getSnapshot(ctx, key)
+	}
 	return txn.getLatest(ctx, key, opt)
+}
+
+func (txn *Txn) getSnapshot(ctx context.Context, key string) (_ types.Value, err error) {
+	val, err := txn.kv.Get(ctx, key, txn.getSnapshotReadOption())
+	if err != nil {
+		return types.EmptyValue, err
+	}
+	assert.Must(val.SnapshotVersion <= txn.SnapshotVersion && val.Version <= val.SnapshotVersion)
+	txn.SnapshotVersion = val.SnapshotVersion
+	txn.addSnapshotReadValue(key, val)
+	return val.Value, nil
 }
 
 func (txn *Txn) getLatest(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
@@ -188,7 +195,7 @@ func (txn *Txn) getLatest(ctx context.Context, key string, opt types.TxnReadOpti
 
 	for i := 0; ; i++ {
 		val, err := txn.get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt).
-			CondReadForWrite(txn.IsReadForWrite()).CondReadForWriteFirstReadOfKey(!utils.Contains(txn.readForWriteReadKeys, key)))
+			CondReadForWrite(txn.IsReadForWrite()).CondReadForWriteFirstReadOfKey(!txn.readForWriteOrSnapshotReadKeys.Contains(key)))
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
 			return val.Value, err
 		}
@@ -220,10 +227,10 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 		}
 	}
 	if txn.IsReadForWrite() {
-		if txn.readForWriteReadKeys == nil {
-			txn.readForWriteReadKeys = make(map[string]struct{})
+		if txn.readForWriteOrSnapshotReadKeys == nil {
+			txn.readForWriteOrSnapshotReadKeys = make(map[string]types.ValueCC)
 		}
-		txn.readForWriteReadKeys[key] = struct{}{}
+		txn.readForWriteOrSnapshotReadKeys[key] = types.EmptyValueCC // TODO change this?
 	}
 	if lastWriteTask == nil {
 		vv, err = txn.kv.Get(ctx, key, readOpt)
@@ -298,89 +305,66 @@ func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption
 		return values, nil
 	}
 
-	//values := make([]types.ValueCC, 0, len(keys))
-	//var snapshotVersion = txn.ID.Version()
-	//for idx, key := range keys {
-	//	val, err := txn.get(ctx, key, types.NewKVCCReadOption(snapshotVersion).WithSnapshotRead())
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	assert.Must(!val.HasWriteIntent() && val.SnapshotVersion <= snapshotVersion)
-	//	values = append(values, val)
-	//	snapshotVersion = utils.MinUint64(snapshotVersion, val.SnapshotVersion)
-	//	for j := 0; j < idx; j++ {
-	//		if snapshotVersion < values[j].Version {
-	//			val, err := txn.get(ctx, keys[j], types.NewKVCCReadOption(snapshotVersion).WithSnapshotRead())
-	//			if err != nil {
-	//				return nil, err
-	//			}
-	//			assert.Must(!val.HasWriteIntent() && val.SnapshotVersion <= snapshotVersion)
-	//			values[j] = val
-	//		}
-	//	}
-	//}
-
-	txn.InitializeSnapshotVersion()
-	ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
-	defer cancel()
-
-	values, err := txn.parallelRead(ctx, keys, txn.GetSnapshotReadOption())
-	if err != nil {
-		return nil, err
-	}
-
-	for _, val := range values {
-		txn.SnapshotVersion = utils.MinUint64(txn.SnapshotVersion, val.SnapshotVersion)
-	}
-
-	var (
-		needRereadKeys       []string
-		needRereadKeyIndexes []int
-	)
-	for idx, value := range values {
-		assert.Must(!value.HasWriteIntent())
-		if value.Version > txn.SnapshotVersion {
-			needRereadKeys = append(needRereadKeys, keys[idx])
-			needRereadKeyIndexes = append(needRereadKeyIndexes, idx)
-		} else {
-			//if consts.BuildOption.IsDebug() {
-			//	// TODO remove this
-			//	assert.Must(value.SnapshotVersion >= txn.SnapshotVersion)
-			//	val, err := txn.kv.Get(ctx, keys[idx], txn.GetSnapshotReadOption())
-			//	assert.MustNoError(err)
-			//	assert.Must(val.Version == values[idx].Version)
-			//	assert.Must(val.SnapshotVersion == txn.SnapshotVersion)
-			//}
-			values[idx].SnapshotVersion = txn.SnapshotVersion
-		}
-	}
-
-	if len(needRereadKeys) == 0 {
-		return types.ValueCCs(values).ToValues(), nil
-	}
-
-	assert.Must(txn.SnapshotVersion < txn.ID.Version())
-	rereadValues, err := txn.parallelRead(ctx, needRereadKeys, txn.GetSnapshotReadOption())
-	if err != nil {
-		return nil, err
-	}
-	for rereadIdx, rereadValue := range rereadValues {
-		values[needRereadKeyIndexes[rereadIdx]] = rereadValue
-	}
-	return types.ValueCCs(values).ToValues(), nil
-}
-
-func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.KVCCReadOption) ([]types.ValueCC, error) {
 	if len(keys) == 1 {
-		val, err := txn.kv.Get(ctx, keys[0], readOpt)
+		val, err := txn.getSnapshot(ctx, keys[0])
 		if err != nil {
 			return nil, err
 		}
-		return []types.ValueCC{val}, nil
+		return []types.Value{val}, nil
+	}
+
+	readResult, readKeys := make(types.ReadResult), make(basic.Set)
+	for _, key := range keys {
+		readKeys.Insert(key)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
+	defer cancel()
+	for ctx.Err() == nil {
+		if err := txn.parallelRead(ctx, readKeys, txn.getSnapshotReadOptionUnsafe(), readResult); err != nil {
+			return nil, err
+		}
+		oldTxnSnapshotVersion := txn.SnapshotVersion
+		for readKey := range readKeys {
+			readValSnapshot := readResult[readKey].SnapshotVersion
+			assert.Must(readValSnapshot > 0 && readValSnapshot <= oldTxnSnapshotVersion)
+			txn.SnapshotVersion = utils.MinUint64(txn.SnapshotVersion, readValSnapshot)
+		}
+
+		readKeys.Reset()
+		for key, value := range readResult {
+			assert.Must(!value.HasWriteIntent())
+			if value.Version > txn.SnapshotVersion {
+				readKeys.Insert(key)
+			} else {
+				value.SnapshotVersion = txn.SnapshotVersion
+				readResult[key] = value
+			}
+		}
+		if len(readKeys) == 0 {
+			txn.assertSnapshot()
+			//if err := txn.addSnapshotReadValues(keys, values); err != nil {
+			//	return nil, err
+			//}
+			return readResult.ToValues(keys), nil
+		}
+	}
+	return nil, ctx.Err()
+}
+
+func (txn *Txn) parallelRead(ctx context.Context, keys basic.Set, readOpt types.KVCCReadOption, readResult types.ReadResult) error {
+	if len(keys) == 1 {
+		key := keys.MustFirst()
+		val, err := txn.kv.Get(ctx, key, readOpt)
+		if err != nil {
+			return err
+		}
+		readResult[key] = val
+		return nil
 	}
 
 	var tasks = make([]*basic.Task, 0, len(keys))
-	for _, key := range keys {
+	for key := range keys {
 		var key = key
 		task := basic.NewTask(basic.NewTaskId(txn.ID.Version(), key), "get", consts.DefaultReadTimeout, func(ctx context.Context) (i interface{}, err error) {
 			return txn.kv.Get(ctx, key, readOpt)
@@ -389,7 +373,7 @@ func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.K
 			for _, t := range tasks {
 				t.Cancel()
 			}
-			return nil, err
+			return err
 		}
 		tasks = append(tasks, task)
 	}
@@ -399,18 +383,18 @@ func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.K
 			for _, t := range tasks {
 				t.Cancel()
 			}
-			return nil, ctx.Err()
+			assert.Must(ctx.Err() != nil)
+			return ctx.Err()
 		}
 	}
 
-	values := make([]types.ValueCC, 0, len(keys))
 	for _, task := range tasks {
 		if err := task.Err(); err != nil {
-			return nil, err
+			return err
 		}
-		values = append(values, task.Result().(types.ValueCC))
+		readResult[task.ID.Key] = task.Result().(types.ValueCC)
 	}
-	return values, nil
+	return nil
 }
 
 func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) {
@@ -493,6 +477,9 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	if key == "" {
 		return errors.ErrEmptyKey
 	}
+	if txn.IsSnapshotRead() {
+		return errors.Annotatef(errors.ErrNotAllowed, "can't write in snapshot isolation level")
+	}
 
 	txn.Lock()
 	defer txn.Unlock()
@@ -533,7 +520,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	if txn.GetWrittenKeyCount() == 0 {
-		if txn.IsReadForWrite() && len(txn.readForWriteReadKeys) > 0 { // todo commit instead?
+		if txn.IsReadForWrite() && len(txn.readForWriteOrSnapshotReadKeys) > 0 { // todo commit instead?
 			_ = txn.rollback(ctx, txn.ID, false, "readForWrite transaction write no keys")
 			return errors.ErrReadForWriteTransactionCommitWithNoWrittenKeys
 		}
@@ -803,7 +790,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 func (txn *Txn) getToClearKeys(rollback bool) map[string]bool /* key->isWrittenKey */ {
 	var m = make(map[string]bool)
 	if txn.IsReadForWrite() {
-		for readKey := range txn.readForWriteReadKeys {
+		for readKey := range txn.readForWriteOrSnapshotReadKeys {
 			m[readKey] = false
 		}
 	}

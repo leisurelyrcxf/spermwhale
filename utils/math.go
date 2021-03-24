@@ -23,6 +23,13 @@ func MinUint64(a, b uint64) uint64 {
 	return a
 }
 
+func MaxUint64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func MaxDuration(a, b time.Duration) time.Duration {
 	if a > b {
 		return a

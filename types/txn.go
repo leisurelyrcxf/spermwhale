@@ -112,7 +112,7 @@ func (tk TxnKeyUnion) String() string {
 }
 
 type TxnManager interface {
-	BeginTransaction(ctx context.Context, typ TxnType) (Txn, error)
+	BeginTransaction(ctx context.Context, typ TxnType, snapshotVersion uint64) (Txn, error)
 	Close() error
 }
 
@@ -160,13 +160,40 @@ func (s TxnState) IsTerminated() bool {
 	return s.IsAborted() || s.IsCommitted()
 }
 
+type TxnKind uint8
+
+const (
+	TxnKindReadOnly  TxnKind = 1 << iota
+	TxnKindReadWrite         // include read for write, read after write, write k1, read k2, etc.
+	TxnKindWriteOnly
+	TxnKindReadForWrite
+	TxnKindSnapshotIsolation
+)
+
+func (k TxnKind) String() string {
+	switch k {
+	case TxnKindReadOnly:
+		return "txn_readonly"
+	case TxnKindReadWrite:
+		return "txn_read_write"
+	case TxnKindWriteOnly:
+		return "txn_write_only"
+	case TxnKindReadForWrite:
+		return "txn_read_for_write"
+	case TxnKindSnapshotIsolation:
+		return "txn_snapshot_isolation"
+	default:
+		panic("unsupported")
+	}
+}
+
 type TxnType uint8
 
 const (
 	TxnTypeInvalid      TxnType = 0
-	TxnTypeDefault      TxnType = 1
-	TxnTypeReadForWrite TxnType = 2
-	TxnTypeSnapshotRead TxnType = 3
+	TxnTypeDefault              = TxnType(TxnKindReadWrite)
+	TxnTypeReadForWrite         = TxnType(TxnKindReadWrite | TxnKindReadForWrite)
+	TxnTypeSnapshotRead         = TxnType(TxnKindReadOnly | TxnKindSnapshotIsolation)
 
 	TxnTypeDefaultDesc      = "default"
 	TxnTypeReadForWriteDesc = "read_for_write"

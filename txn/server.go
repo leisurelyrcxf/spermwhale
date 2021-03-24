@@ -24,7 +24,7 @@ type Stub struct {
 }
 
 func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.BeginResponse, error) {
-	txn, err := s.m.BeginTransaction(ctx, types.TxnType(req.Type))
+	txn, err := s.m.BeginTransaction(ctx, types.TxnType(req.Type), req.SnapshotVersion)
 	if err != nil {
 		return &txnpb.BeginResponse{Err: errors.ToPBError(err)}, nil
 	}

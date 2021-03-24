@@ -31,13 +31,15 @@ const (
 	ErrCodeTabletWriteTransactionNotFound            = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten = 92
 	ErrCodeSnapshotReadRetriedTooManyTimes           = 93
+	ErrCodeSnapshotViolated                          = 94
 
 	ErrCodeNilResponse                                    = 99
 	ErrCodeInvalidResponse                                = 100
 	ErrCodeTxnRetriedTooManyTimes                         = 101
 	ErrCodeNotSupported                                   = 111
-	ErrCodeInvalidRequest                                 = 222
-	ErrCodeSchedulerClosed                                = 333
+	ErrCodeNotAllowed                                     = 222
+	ErrCodeInvalidRequest                                 = 333
+	ErrCodeSchedulerClosed                                = 555
 	ErrCodeDontUseThisBeforeTaskFinished                  = 666
 	ErrCodeGoRoutineExited                                = 667
 	ErrCodeInvalidTopoData                                = 777
