@@ -170,6 +170,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	if !snapshotRead {
 		val, err = kv.db.Get(ctx, key, opt.ToKVReadOption())
 	} else {
+		assert.Must(!getMaxReadVersion)
 		for i := 0; ; i++ {
 			if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); err != nil || !val.HasWriteIntent() {
 				break
@@ -188,25 +189,18 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(txnKey, opt.ReaderVersion)
 		//kv.lm.RUnlock(key) TODO if put here performance will down for read-for-write txn, reason unknown.
 	}
-
-	if getMaxReadVersion {
-		if maxReadVersion == 0 {
-			maxReadVersion = kv.tsCache.GetMaxReadVersion(txnKey)
-		}
-	} else {
-		maxReadVersion = 0 // since protobuffer will skip empty values thus could save network bandwidth
-	}
 	kv.lm.RUnlock(txnKey)
 
-	var valCC = val.WithMaxReadVersion(maxReadVersion)
-	if err != nil || !valCC.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
+	if err != nil || !val.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
 		if glog.V(60) {
 			if err != nil {
 				glog.Errorf("txn-%d get %s failed: '%v', cost: %s", opt.ReaderVersion, txnKey, err, bench.Elapsed())
 			} else {
-				glog.Infof("txn-%d get %s succeeded, has write intent: %v, cost: %s", opt.ReaderVersion, txnKey, valCC.HasWriteIntent(), bench.Elapsed())
+				glog.Infof("txn-%d get %s succeeded, has write intent: %v, cost: %s", opt.ReaderVersion, txnKey, val.HasWriteIntent(), bench.Elapsed())
 			}
 		}
+
+		valCC := kv.addMaxReadVersion(txnKey, val, getMaxReadVersion, maxReadVersion)
 		if snapshotRead {
 			return valCC.WithSnapshotVersion(opt.ReaderVersion), err
 		}
@@ -214,24 +208,31 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 	assert.Must(!snapshotRead)
 	assert.Must(key != "")
-	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(valCC.Version), key)
+	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(val.Version), key)
 	if err != nil {
 		code := errors.GetErrorCode(err)
 		if code != consts.ErrCodeWriteIntentQueueFull && glog.V(40) {
 			glog.Infof("txn-%d get register key event failed: '%v', cost: %s", opt.ReaderVersion, err, bench.Elapsed())
 		}
+		valCC := kv.addMaxReadVersion(txnKey, val, getMaxReadVersion, maxReadVersion)
 		if code == consts.ErrCodeTabletWriteTransactionNotFound {
-			return valCC, err
+			return valCC, err // retryable
 		}
 		return valCC, nil // Let upper layer handle this.
 	}
+	var valCC types.ValueCC
 	if waiter != nil {
 		var waitErr error
-		if event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/10); waitErr != nil {
-			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, valCC.Version, waitErr)
+		event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/10)
+		valCC = kv.addMaxReadVersionForce(txnKey, val, getMaxReadVersion)
+		if waitErr != nil {
+			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, val.Version, waitErr)
 			return valCC, nil // Let upper layer handle this.
 		}
+	} else {
+		valCC = kv.addMaxReadVersion(txnKey, val, getMaxReadVersion, maxReadVersion)
 	}
+
 	assert.Must(event.Key == key)
 	switch event.Type {
 	case transaction.KeyEventTypeClearWriteIntent:
@@ -244,8 +245,8 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return valCC, errors.ErrReadUncommittedDataPrevTxnToBeRollbacked
 	case transaction.KeyEventTypeVersionRemoved:
 		// TODO remove this in product
-		vv, _ := kv.db.Get(ctx, key, types.NewKVReadOption(valCC.Version+1))
-		assert.Must(vv.Version < valCC.Version)
+		vv, _ := kv.db.Get(ctx, key, types.NewKVReadOption(val.Version+1))
+		assert.Must(vv.Version < val.Version)
 		return valCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 	default:
 		panic(fmt.Sprintf("impossible event type: '%s'", event.Type))
@@ -350,4 +351,21 @@ func (kv *KVCC) Close() error {
 	kv.tsCache.m.Clear()
 	kv.txnManager.Close()
 	return kv.db.Close()
+}
+
+func (kv *KVCC) addMaxReadVersion(txnKey types.TxnKeyUnion, val types.Value, getMaxReadVersion bool, maxReadVersion uint64) types.ValueCC {
+	if !getMaxReadVersion {
+		return val.WithMaxReadVersion(0)
+	}
+	if maxReadVersion != 0 {
+		return val.WithMaxReadVersion(maxReadVersion)
+	}
+	return val.WithMaxReadVersion(kv.tsCache.GetMaxReadVersion(txnKey)) // TODO maybe return max reader version to user?
+}
+
+func (kv *KVCC) addMaxReadVersionForce(txnKey types.TxnKeyUnion, val types.Value, getMaxReadVersion bool) types.ValueCC {
+	if !getMaxReadVersion {
+		return val.WithMaxReadVersion(0)
+	}
+	return val.WithMaxReadVersion(kv.tsCache.GetMaxReadVersion(txnKey))
 }
