@@ -311,12 +311,13 @@ type TestCase struct {
 	snapshotReadForReadonlyTxn bool
 	additionalParameters       map[string]interface{}
 
-	//output, can be set too
-	scs        []*smart_txn_client.SmartClient
+	// output
+	scs        []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
 	txnServers []*Server
 	clientTMs  []*ClientTxnManager
 	stopper    func()
 
+	// statistics
 	executedTxnsPerGoRoutine [][]ExecuteInfo
 	extraRounds              []bool
 	allExecutedTxns          ExecuteInfos
@@ -365,7 +366,10 @@ func (ts *TestCase) Run() {
 
 func (ts *TestCase) runOneRound(i int) bool {
 	ts.LogParameters(i)
+
 	ts.allExecutedTxns = nil
+	ts.executedTxnsPerGoRoutine = make([][]ExecuteInfo, ts.GoRoutineNum)
+	ts.extraRounds = make([]bool, ts.GoRoutineNum)
 
 	ctx, cancel := context.WithTimeout(context.Background(), ts.timeoutPerRound)
 	defer cancel()

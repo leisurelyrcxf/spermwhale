@@ -30,7 +30,7 @@ func TestTxnLostUpdateReadForWrite(t *testing.T) {
 }
 
 func TestTxnLostUpdateWaitNoWriteIntent(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().SetStaleWriteThreshold(time.Millisecond * 10).Run()
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetWaitNoWriteIntent().SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
 
 func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
@@ -73,7 +73,7 @@ func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 			defer wg.Done()
 
 			for i := 0; i < ts.TxnNumPerGoRoutine; i++ {
-				ts.DoTransaction(ctx, goRoutineIndex, ts.scs[0], func(ctx context.Context, txn types.Txn) error {
+				ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 					val, err := txn.Get(ctx, key, ts.ReadOpt)
 					if err != nil {
 						return err
@@ -83,7 +83,7 @@ func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 						return err
 					}
 					return txn.Set(ctx, key, types.NewIntValue(v1+delta).V)
-				})
+				}))
 			}
 		}(i)
 	}
