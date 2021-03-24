@@ -27,11 +27,11 @@ type RVVS struct {
 	cli                    *redis.Client
 	discardedTimestampBits int
 
-	once sync.Once
+	once *sync.Once
 }
 
 func NewVersionedValues(cli *redis.Client, discardedTimestampBits int) *RVVS {
-	return &RVVS{cli: cli, discardedTimestampBits: discardedTimestampBits}
+	return &RVVS{cli: cli, discardedTimestampBits: discardedTimestampBits, once: &sync.Once{}}
 }
 
 func (vvs RVVS) encodeRedis(version uint64, val kv.Value) redis.Z {

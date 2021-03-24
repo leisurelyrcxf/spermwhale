@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	testifyassert "github.com/stretchr/testify/assert"
@@ -19,10 +21,10 @@ func TestWriteKeyInfos_GetLastWriteKeyTasks(t *testing.T) {
 	keys := WriteKeyInfos{}
 	keys.InitializeWrittenKeys(map[string]types.TxnInternalVersion{"k1": 123, "k2": 224, "k3": 100}, true)
 	keys.tasks = []*types.ListTask{
-		{ID: types.ListTaskID{Key: "k1"}},
-		{ID: types.ListTaskID{Key: "k1"}},
-		{ID: types.ListTaskID{Key: "k2"}},
-		{ID: types.ListTaskID{Key: "k3"}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k1")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k1")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k2")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k3")}},
 	}
 	keys.setLastTask("k1", keys.tasks[1])
 	keys.setLastTask("k2", keys.tasks[2])
@@ -38,12 +40,9 @@ func TestWriteKeyInfos_GetLastWriteKeyTasks2(t *testing.T) {
 	keys := WriteKeyInfos{}
 	keys.InitializeWrittenKeys(map[string]types.TxnInternalVersion{"k1": 123, "k2": 224, "k3": 100}, true)
 	keys.tasks = []*types.ListTask{
-		{ID: types.ListTaskID{Key: "k1"}},
-		{ID: types.ListTaskID{Key: "k2"}},
-		{ID: types.ListTaskID{Key: "k3"}},
-	}
-	for idx := range keys.tasks {
-		keys.tasks[idx].Task.ID = keys.tasks[idx].ID.Key
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k1")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k2")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k3")}},
 	}
 	keys.setLastTask("k1", keys.tasks[0])
 	keys.setLastTask("k2", keys.tasks[1])
@@ -54,7 +53,7 @@ func TestWriteKeyInfos_GetLastWriteKeyTasks2(t *testing.T) {
 	lastTasks := keys.GetLastWriteKeyTasks(tasks)
 	testifyassert.Len(t, lastTasks, 3)
 
-	another := &types.ListTask{ID: types.ListTaskID{Key: "k4"}}
+	another := &types.ListTask{Task: basic.Task{ID: basic.NewTaskId(0, "k4")}}
 	tasks = append(tasks, another)
 	lastTasks = append(lastTasks, another)
 	testifyassert.Len(t, tasks, 4)
@@ -70,12 +69,9 @@ func TestWriteKeyInfos_GetLastWriteKeyTasks3(t *testing.T) {
 	keys := WriteKeyInfos{}
 	keys.InitializeWrittenKeys(map[string]types.TxnInternalVersion{"k1": 123, "k2": 224, "k3": 100}, true)
 	keys.tasks = []*types.ListTask{
-		{ID: types.ListTaskID{Key: "k1"}},
-		{ID: types.ListTaskID{Key: "k2"}},
-		{ID: types.ListTaskID{Key: "k3"}},
-	}
-	for idx := range keys.tasks {
-		keys.tasks[idx].Task.ID = keys.tasks[idx].ID.Key
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k1")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k2")}},
+		{Task: basic.Task{ID: basic.NewTaskId(0, "k3")}},
 	}
 	keys.setLastTask("k1", keys.tasks[0])
 	keys.setLastTask("k2", keys.tasks[1])
@@ -86,8 +82,8 @@ func TestWriteKeyInfos_GetLastWriteKeyTasks3(t *testing.T) {
 	lastTasks := keys.GetLastWriteKeyTasks(tasks)
 	testifyassert.Len(t, lastTasks, 3)
 
-	tasks = append(tasks, &types.ListTask{ID: types.ListTaskID{Key: "k4"}})
-	lastTasks = append(lastTasks, &types.ListTask{ID: types.ListTaskID{Key: "k5"}})
+	tasks = append(tasks, &types.ListTask{Task: basic.Task{ID: basic.NewTaskId(0, "k4")}})
+	lastTasks = append(lastTasks, &types.ListTask{Task: basic.Task{ID: basic.NewTaskId(0, "k5")}})
 	testifyassert.Len(t, tasks, 4)
 	testifyassert.Len(t, lastTasks, 4)
 	for idx, task := range tasks {
