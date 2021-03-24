@@ -33,6 +33,7 @@ message TxnReadOption {
 
 message BeginRequest {
     TxnType type = 1;
+    uint64 snapshot_version = 2;
 }
 
 message BeginResponse {

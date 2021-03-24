@@ -107,7 +107,7 @@ func (m *TransactionManager) SetRecordValuesTxn(b bool) *TransactionManager {
 	return m
 }
 
-func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnType) (types.Txn, error) {
+func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnType, snapshotVersion uint64) (types.Txn, error) {
 	ts, err := utils.FetchTimestampWithRetry(m)
 	if err != nil {
 		return nil, err
@@ -119,6 +119,11 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnTy
 	txn := m.newTxn(txnID, typ)
 	err = m.txns.Insert(txnID, txn)
 	assert.MustNoError(err)
+
+	if typ.IsSnapshotRead() && snapshotVersion > 0 {
+		txn.setSnapshotVersion(snapshotVersion)
+	}
+
 	if !m.recordValues {
 		return txn, nil
 	}

@@ -9,6 +9,7 @@ import (
 const rounds = 1000
 
 func newDB() (*kv.DB, error) {
+	//return NewDB("localhost:37037", nil)
 	return NewDB("localhost:27017", nil)
 }
 

@@ -21,6 +21,7 @@ const (
 	DefaultTxnManagerWriterNumber               = 32
 	DefaultTxnManagerReaderNumber               = 32
 	DefaultTxnManagerMaxBufferedJobPerPartition = 10000
+	DefaultSnapshotBackwardPeriod               = time.Second
 )
 
 const (

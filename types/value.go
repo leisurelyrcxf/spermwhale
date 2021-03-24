@@ -184,3 +184,25 @@ func (vs ValueCCs) ToValues() []Value {
 	}
 	return ret
 }
+
+type ReadResult map[string]ValueCC
+
+func (r ReadResult) MustFirst() string {
+	for key := range r {
+		return key
+	}
+	panic("empty ReadResult")
+}
+
+func (r ReadResult) Contains(key string) bool {
+	_, ok := r[key]
+	return ok
+}
+
+func (r ReadResult) ToValues(keys []string) []Value {
+	ret := make([]Value, 0, len(keys))
+	for _, key := range keys {
+		ret = append(ret, r[key].Value)
+	}
+	return ret
+}

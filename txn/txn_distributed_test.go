@@ -21,6 +21,10 @@ func TestDistributedTxnReadConsistency(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnReadConsistency).Run()
 }
 
+func TestDistributedTxnReadConsistencySnapshotRead(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetSnapshotReadForReadonlyTxn().Run()
+}
+
 func TestDistributedTxnReadConsistencyDeadlock(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).Run()
 }
@@ -119,18 +123,21 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 			for round := 0; round < rounds; round++ {
 				if goRoutineIndex == 0 {
 					var (
-						txn        types.Txn
-						values     []types.Value
-						retryTimes int
-						txnStart   = time.Now()
-						err        error
+						values  []types.Value
+						readTxn types.Txn
+						err     error
 					)
-					if txn, retryTimes, err = sc1.DoTransactionOfTypeEx(ctx, types.TxnTypeSnapshotRead, func(ctx context.Context, txn types.Txn) (err error) {
-						values, err = txn.MGet(ctx, []string{key1, key2, key1, key2, key1, key2}, ts.ReadOpt)
+					if ts.True(ts.DoReadOnlyTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) (err error) {
+						if values, err = txn.MGet(ctx, []string{key1, key2, key1, key2, key1, key2}, ts.ReadOpt); err == nil {
+							readTxn = txn
+						}
 						return
-					}); ts.NoError(err) && ts.Len(values, 6) {
-						ts.CollectExecutedTxnInfo(goRoutineIndex, txn, retryTimes, time.Since(txnStart))
-
+					})); ts.NoError(err) && ts.Len(values, 6) {
+						txn := ts.executedTxnsPerGoRoutine[goRoutineIndex][len(ts.executedTxnsPerGoRoutine[goRoutineIndex])-1]
+						ts.Equal(readTxn.GetId(), txn.GetId())
+						if !readTxn.GetType().IsSnapshotRead() {
+							continue
+						}
 						var ints = make([]int, len(values))
 						for idx, val := range values {
 							ts.True(!val.HasWriteIntent())
@@ -196,7 +203,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 					}))
 				}
 			}
-			ts.t.Logf("cost %s per round @goRoutine %d", time.Since(start)/time.Duration(rounds), goRoutineIndex)
+			ts.t.Logf("cost %s per txn @goRoutine %d", time.Since(start)/time.Duration(rounds), goRoutineIndex)
 		}(i)
 	}
 
@@ -345,7 +352,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 					}))
 				}
 			}
-			ts.t.Logf("%s cost %v per round @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
+			ts.t.Logf("%s cost %v per txn @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
 		}(i)
 	}
 
@@ -481,7 +488,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 					}))
 				}
 			}
-			ts.t.Logf("%s cost %v per round @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
+			ts.t.Logf("%s cost %v per txn @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
 		}(i)
 	}
 
@@ -606,7 +613,7 @@ func testDistributedTxnExtraWriteSimple(ctx context.Context, ts *TestCase) (b bo
 					}))
 				}
 			}
-			ts.t.Logf("%s cost %v per round @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
+			ts.t.Logf("%s cost %v per txn @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
 		}(i)
 	}
 
@@ -826,7 +833,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 					}))
 				}
 			}
-			ts.t.Logf("%s cost %v per round @goroutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
+			ts.t.Logf("%s cost %v per txn @goRoutine %d", ts.t.Name(), time.Now().Sub(start)/time.Duration(ts.TxnNumPerGoRoutine), goRoutineIndex)
 		}(i)
 	}
 
