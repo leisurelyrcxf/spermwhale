@@ -24,39 +24,52 @@ const (
 )
 
 const (
-	ReadOptBitMaskNotUpdateTimestampCache    = 1
-	ReadOptBitMaskNotGetMaxReadVersion       = 1 << 1
-	ReadOptBitMaskReadForWrite               = 1 << 2
-	ReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 3
-	ReadOptBitMaskSnapshotRead               = 1 << 4
+	KVCCReadOptBitMaskTxnRecord                  = 1
+	KVCCReadOptBitMaskNotUpdateTimestampCache    = 1 << 1
+	KVCCReadOptBitMaskNotGetMaxReadVersion       = 1 << 2
+	KVCCReadOptBitMaskReadForWrite               = 1 << 3
+	KVCCReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 4
+	KVCCReadOptBitMaskSnapshotRead               = 1 << 5 // NOTE run out of all bits...
 
-	commonReadOptBitOffset                      = 6
-	commonReadOptBitMask                        = uint8((0xffff << commonReadOptBitOffset) & 0xff)
-	CommonReadOptBitMaskWaitNoWriteIntent       = 1 << commonReadOptBitOffset
-	RevertCommonReadOptBitMaskWaitNoWriteIntent = ^CommonReadOptBitMaskWaitNoWriteIntent & 0xff
+	txnKVCCCommonReadOptBitOffset                     = 6
+	txnKVCCCommonReadOptBitMask                       = uint8((0xffff << txnKVCCCommonReadOptBitOffset) & 0xff)
+	TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent      = 1 << txnKVCCCommonReadOptBitOffset
+	TxnKVCCCommonReadOptBitMaskClearWaitNoWriteIntent = ^TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent & 0xff
 
-	WriteOptBitMaskClearWriteIntent                   = 1
-	WriteOptBitMaskRemoveVersion                      = 1 << 1
-	WriteOptBitMaskRemoveVersionRollback              = 1 << 2
-	WriteOptBitMaskReadForWrite                       = 1 << 3
-	WriteOptBitMaskReadForWriteRollbackOrClearReadKey = 1 << 4
-	WriteOptBitMaskTxnRecord                          = 1 << 5
-	WriteOptBitMaskWriteByDifferentTxn                = 1 << 6
+	KVReadOptBitMaskTxnRecord    = 1
+	KVReadOptBitMaskExactVersion = 1 << 7
+)
 
+const (
+	CommonWriteOptBitMaskTxnRecord        = 1
+	CommonWriteOptBitMaskClearWriteIntent = 1 << 1
+	CommonWriteOptBitMaskRemoveVersion    = 1 << 2
+
+	KVCCWriteOptBitMaskWriteByDifferentTxn                = 1 << 3
+	KVCCWriteOptBitMaskRemoveVersionRollback              = 1 << 4
+	KVCCWriteOptBitMaskReadForWrite                       = 1 << 5
+	KVCCWriteOptBitMaskReadForWriteRollbackOrClearReadKey = 1 << 6
+)
+
+const (
 	ValueMetaBitMaskHasWriteIntent   = 1
 	ValueMetaBitMaskClearWriteIntent = 0xfe
 )
 
+func IsWriteTxnRecord(flag uint8) bool {
+	return flag&CommonWriteOptBitMaskTxnRecord == CommonWriteOptBitMaskTxnRecord
+}
+
 func IsWriteOptClearWriteIntent(flag uint8) bool {
-	return flag&WriteOptBitMaskClearWriteIntent == WriteOptBitMaskClearWriteIntent
+	return flag&CommonWriteOptBitMaskClearWriteIntent == CommonWriteOptBitMaskClearWriteIntent
 }
 
 func IsWriteOptRemoveVersion(flag uint8) bool {
-	return flag&WriteOptBitMaskRemoveVersion == WriteOptBitMaskRemoveVersion
+	return flag&CommonWriteOptBitMaskRemoveVersion == CommonWriteOptBitMaskRemoveVersion
 }
 
 func IsWriteOptRollbackVersion(flag uint8) bool {
-	return flag&WriteOptBitMaskRemoveVersionRollback == WriteOptBitMaskRemoveVersionRollback
+	return flag&KVCCWriteOptBitMaskRemoveVersionRollback == KVCCWriteOptBitMaskRemoveVersionRollback
 }
 
 const (
@@ -84,8 +97,8 @@ const (
 	DefaultReadTimeout = time.Second * 10
 )
 
-func InheritReadCommonFlag(flag1, flag2 uint8) uint8 {
-	return flag1 | (flag2 & commonReadOptBitMask)
+func InheritReadCommonFlag(flag1, from uint8) uint8 {
+	return flag1 | (from & txnKVCCCommonReadOptBitMask)
 }
 
 const (

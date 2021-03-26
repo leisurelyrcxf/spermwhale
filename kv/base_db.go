@@ -102,7 +102,7 @@ func (db *DB) Get(ctx context.Context, key string, opt types.KVReadOption) (type
 		version = opt.Version
 		err     error
 	)
-	if opt.ExactVersion {
+	if opt.IsGetExactVersion() {
 		val, err = db.vvs.Get(ctx, key, version)
 	} else {
 		val, version, err = db.vvs.FindMaxBelow(ctx, key, version)

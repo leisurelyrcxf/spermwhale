@@ -71,7 +71,7 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
 	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, preventedFutureWrite bool, err error) {
-	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithExactVersion(txnID.Version())
+	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithExactVersion(txnID.Version()).WithTxnRecord()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}
