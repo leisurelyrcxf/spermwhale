@@ -22,3 +22,7 @@ func (x *ValueMeta) SetFlag(flag uint8) *ValueMeta {
 	x.Flag = uint32(flag)
 	return x
 }
+
+func (x *Value) IsEmpty() bool {
+	return x == nil || x.Meta == nil || x.Meta.Version == 0
+}

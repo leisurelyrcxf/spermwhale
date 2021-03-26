@@ -276,10 +276,10 @@ func (pq *readForWriteQueue) notify() {
 
 func (pq *readForWriteQueue) verifyInvariant() {
 	return // TODO change this
-	assert.Must(len(pq.kMaxReaders) <= pq.maxReadersCount)
-	if len(pq.kMaxReaders) == 0 {
-		return
-	}
-	kthMax := algo.KthMaxInPlace(append(make(readers, 0, pq.Len()), pq.readers...), len(pq.kMaxReaders)).(*reader)
-	assert.Must(pq.kMaxReaders.head().ReaderVersion == kthMax.ReaderVersion)
+	//assert.Must(len(pq.kMaxReaders) <= pq.maxReadersCount)
+	//if len(pq.kMaxReaders) == 0 {
+	//	return
+	//}
+	//kthMax := algo.KthMaxInPlace(append(make(readers, 0, pq.Len()), pq.readers...), len(pq.kMaxReaders)).(*reader)
+	//assert.Must(pq.kMaxReaders.head().ReaderVersion == kthMax.ReaderVersion)
 }

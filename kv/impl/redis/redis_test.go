@@ -47,7 +47,7 @@ func testConcurrentInsert(t *testing.T) (b bool) {
 	cli := mustNewClient("localhost:6379", "")
 	const key = "key_update"
 
-	if !assert.NoError(cli.Put(context.Background(), key, types.NewValue([]byte("111"), 1))) {
+	if !assert.NoError(cli.Upsert(context.Background(), key, types.NewValue([]byte("111"), 1))) {
 		return
 	}
 
@@ -67,14 +67,14 @@ func testConcurrentInsert(t *testing.T) (b bool) {
 
 	wg.Wait()
 	val, err := cli.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.True(val.HasWriteIntent()) {
+	if !assert.NoError(err) || !assert.True(!val.HasWriteIntent()) {
 		return
 	}
 	return true
 }
 
 func TestConcurrentUpdate(t *testing.T) {
-	for i := 0; i < rounds; i++ {
+	for i := 0; i < 10000; i++ {
 		if !testConcurrentUpdate(t) {
 			t.Errorf("testConcurrentUpdate failed")
 			return
@@ -86,20 +86,33 @@ func TestConcurrentUpdate(t *testing.T) {
 func testConcurrentUpdate(t *testing.T) (b bool) {
 	assert := types.NewAssertion(t)
 	cli := mustNewClient("localhost:6379", "")
-	const key = "key_update"
+	defer cli.Close()
+	const key = "k1"
 
-	if !assert.NoError(cli.Put(context.Background(), key, types.NewValue([]byte("111"), 1))) {
+	if !assert.NoError(cli.Upsert(context.Background(), key, types.NewValue([]byte("111"), 1))) {
 		return
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100; i++ {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
 			if err := cli.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !assert.NoError(err) {
+				return
+			}
+		}()
+	}
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if _, err := cli.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion()); !assert.NoError(err) {
 				return
 			}
 		}()
@@ -128,7 +141,7 @@ func testConcurrentRemoveIf(t *testing.T) (b bool) {
 	cli := mustNewClient("localhost:6379", "")
 	const key = "key"
 
-	if !assert.NoError(cli.Put(context.Background(), key, types.NewValue([]byte("111"), 1))) {
+	if !assert.NoError(cli.Upsert(context.Background(), key, types.NewValue([]byte("111"), 1))) {
 		return
 	}
 

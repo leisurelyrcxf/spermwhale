@@ -70,7 +70,7 @@ func RegisterVersionFlags() {
 func CheckVersionFlag() {
 	if *flagVersion {
 		fmt.Println(utils.Version())
-		os.Exit(1)
+		os.Exit(0)
 	}
 }
 

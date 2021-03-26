@@ -6,21 +6,17 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
-
-	"github.com/leisurelyrcxf/spermwhale/kv"
-	"github.com/leisurelyrcxf/spermwhale/txn"
-
-	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
-
-	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
-
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
+	testconsts "github.com/leisurelyrcxf/spermwhale/integration_test/consts"
 	"github.com/leisurelyrcxf/spermwhale/integration_test/types"
-	"github.com/leisurelyrcxf/spermwhale/integration_test/utils"
+	"github.com/leisurelyrcxf/spermwhale/kv"
+	"github.com/leisurelyrcxf/spermwhale/txn"
+	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
+	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 var (

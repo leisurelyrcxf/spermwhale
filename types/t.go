@@ -1,10 +1,10 @@
 package types
 
 import (
-	"fmt"
-	"os"
 	"runtime/debug"
 	"strings"
+
+	"github.com/golang/glog"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )
@@ -28,9 +28,7 @@ func (t MyT) Errorf(format string, args ...interface{}) {
 		t.t.Errorf(format, args...)
 		return
 	}
-	print(fmt.Sprintf(format, args...))
-	_ = os.Stderr.Sync()
-	os.Exit(1)
+	glog.Fatalf(format, args...)
 }
 
 func isMain() bool {

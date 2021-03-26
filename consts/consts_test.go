@@ -23,13 +23,3 @@ func TestReadOptBitMask(t *testing.T) {
 	flag1 &= RevertCommonReadOptBitMaskWaitNoWriteIntent
 	assert.Equal(uint8(ReadOptBitMaskNotUpdateTimestampCache), flag1)
 }
-
-func TestIsValidTxnInternalVersion(t *testing.T) {
-	assert := testifyassert.New(t)
-
-	assert.False(IsValidTxnInternalVersion(0))
-	for v := MinTxnInternalVersion; v <= 254; v++ {
-		assert.True(IsValidTxnInternalVersion(v))
-	}
-	assert.False(IsValidTxnInternalVersion(255))
-}

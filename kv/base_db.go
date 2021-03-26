@@ -3,6 +3,8 @@ package kv
 import (
 	"context"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
@@ -16,42 +18,30 @@ var (
 )
 
 type VersionedValues interface {
-	Get(version uint64) (types.Value, error)
-	Put(val types.Value) error
-	UpdateFlag(version uint64, modifyFlag func(types.Value) types.Value) error
-	Max() (types.Value, error)
-	Min() (types.Value, error)
-	FindMaxBelow(upperVersion uint64) (types.Value, error)
-	Remove(version uint64) error
-	RemoveIf(version uint64, pred func(prev types.Value) error) error
-}
-
-type VersionedValuesFactory struct {
-	Get     func(key string) (VersionedValues, error)
-	GetLazy func(key string) VersionedValues // if key not exists, create a new one
+	Get(key string, version uint64) (types.Value, error)
+	Upsert(key string, val types.Value) error
+	UpdateFlag(key string, version uint64, modifyFlag func(val types.Value) types.Value, onNotExists func(err error) error) error
+	FindMaxBelow(key string, upperVersion uint64) (types.Value, error)
+	Remove(key string, version uint64) error
+	RemoveIf(key string, version uint64, pred func(prev types.Value) error) error
+	Close() error
+	//MaxVersion(key string) (types.Value, error)
+	//MinVersion(key string) (types.Value, error)
 }
 
 type DB struct {
-	factory VersionedValuesFactory
-	onClose func() error
+	vvs VersionedValues
 }
 
-func NewDB(getVersionedValues VersionedValuesFactory, onClose func() error) *DB {
-	return &DB{
-		factory: getVersionedValues,
-		onClose: onClose,
-	}
+func NewDB(getVersionedValues VersionedValues) *DB {
+	return &DB{vvs: getVersionedValues}
 }
 
 func (db *DB) Get(_ context.Context, key string, opt types.KVReadOption) (types.Value, error) {
-	vvs, err := db.factory.Get(key)
-	if err != nil {
-		return types.EmptyValue, err
-	}
 	if opt.ExactVersion {
-		return vvs.Get(opt.Version)
+		return db.vvs.Get(key, opt.Version)
 	}
-	return vvs.FindMaxBelow(opt.Version)
+	return db.vvs.FindMaxBelow(key, opt.Version)
 }
 
 func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
@@ -59,33 +49,30 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		if utils.IsDebug() {
 			return db.updateFlagRaw(key, val.Version, func(value types.Value) types.Value {
 				return value.WithNoWriteIntent()
-			}, func(key string, version uint64) {
+			}, func(err error) error {
 				if !Testing {
-					glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", version, key)
+					glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", val.Version, key)
 				}
+				return err
 			})
 		}
-		vvs, err := db.factory.Get(key)
+		oldVal, err := db.vvs.Get(key, val.Version)
 		if err != nil {
+			if errors.IsNotExistsErr(err) && !Testing {
+				glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", val.Version, key)
+			}
 			return errors.Annotatef(err, "key: %s", key)
 		}
-		oldVal, err := vvs.Get(val.Version)
-		if err != nil {
-			return errors.Annotatef(err, "key: %s", key)
+		if !oldVal.HasWriteIntent() {
+			return nil
 		}
-		return vvs.Put(oldVal.WithNoWriteIntent())
+		return db.vvs.Upsert(key, oldVal.WithNoWriteIntent())
 	}
 	if opt.IsRemoveVersion() {
-		if val.HasWriteIntent() {
-			return errors.Annotatef(errors.ErrNotSupported, "soft remove")
-		}
-		vvs, err := db.factory.Get(key)
-		if err != nil {
-			return errors.Annotatef(err, "key: %s", key)
-		}
+		assert.Must(!val.HasWriteIntent())
 		// TODO can remove the check in the future if stable enough
 		if utils.IsDebug() {
-			return vvs.RemoveIf(val.Version, func(prev types.Value) error {
+			return db.vvs.RemoveIf(key, val.Version, func(prev types.Value) error {
 				if !prev.HasWriteIntent() {
 					if !Testing {
 						glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, val.Version)
@@ -95,39 +82,32 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 				return nil
 			})
 		}
-		return vvs.Remove(val.Version)
-
+		return db.vvs.Remove(key, val.Version)
 	}
-	return db.Put(ctx, key, val)
+	return db.Upsert(ctx, key, val)
 }
 
 func (db *DB) updateFlag(key string, version uint64, modifyFlag func(types.Value) types.Value) error {
-	return db.updateFlagRaw(key, version, modifyFlag, func(key string, version uint64) {
+	return db.updateFlagRaw(key, version, modifyFlag, func(err error) error {
 		glog.Errorf("failed to modify flag for version %d of key %s: version not exist", version, key)
+		return err
 	})
 }
 
-func (db *DB) updateFlagRaw(key string, version uint64, modifyFlag func(types.Value) types.Value, onVersionNotExists func(key string, version uint64)) error {
-	vvs, err := db.factory.Get(key)
-	if err != nil {
-		return errors.Annotatef(err, "key: %s", key)
-	}
-	if err := vvs.UpdateFlag(version, modifyFlag); err != nil {
-		if errors.IsNotExistsErr(err) {
-			onVersionNotExists(key, version)
-		}
+func (db *DB) updateFlagRaw(key string, version uint64, modifyFlag func(types.Value) types.Value, onNotExists func(err error) error) error {
+	if err := db.vvs.UpdateFlag(key, version, modifyFlag, onNotExists); err != nil {
 		return errors.Annotatef(err, "key: %s", key)
 	}
 	return nil
 }
 
-func (db *DB) Put(_ context.Context, key string, val types.Value) error {
-	if err := db.factory.GetLazy(key).Put(val); err != nil {
+func (db *DB) Upsert(_ context.Context, key string, val types.Value) error {
+	if err := db.vvs.Upsert(key, val); err != nil {
 		return errors.Annotatef(err, "key: %s", key)
 	}
 	return nil
 }
 
 func (db *DB) Close() error {
-	return db.onClose()
+	return db.vvs.Close()
 }

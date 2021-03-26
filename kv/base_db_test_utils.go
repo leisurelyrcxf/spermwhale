@@ -58,7 +58,7 @@ func TestDB(t types.T, db *DB) (b bool) {
 	{
 		// Prepare test
 		for version := range versions {
-			if err := db.Put(ctx, key, types.NewValue(nil, version)); !assert.NoError(err) {
+			if err := db.Upsert(ctx, key, types.NewValue(nil, version)); !assert.NoError(err) {
 				return
 			}
 			if err := db.Set(ctx, key, types.NewValue(nil, version).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !errors.AssertNilOrErr(assert, err, errors.ErrVersionNotExists) {

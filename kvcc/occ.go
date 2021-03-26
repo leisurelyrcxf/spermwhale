@@ -235,7 +235,9 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		}
 
 		if isWrittenKey {
-			err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+			if err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption()); err != nil && glog.V(10) {
+				glog.Errorf("txn-%d set key '%s' failed: %v", txnId, key, err)
+			}
 			checkWrittenKeyDone = err == nil && !opt.IsWriteByDifferentTransaction()
 		}
 
@@ -248,8 +250,8 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 				kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key,
 					transaction.GetReadForWriteKeyEventTypeClearWriteIntent(err == nil)))
 			}
-			if glog.V(60) {
-				glog.Infof("txn-%d write intent cleared, cost: %s", txnId, bench.Elapsed())
+			if err == nil && glog.V(60) {
+				glog.Infof("txn-%d write intent for key '%s' cleared, cost: %s", txnId, key, bench.Elapsed())
 			}
 		} else if opt.IsRollbackKey() {
 			if isWrittenKey {
@@ -259,6 +261,9 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 			if opt.IsReadForWrite() {
 				kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key,
 					transaction.GetReadForWriteKeyEventTypeRemoveVersion(err == nil)))
+			}
+			if err == nil && glog.V(60) {
+				glog.Infof("txn-%d key '%s' rollbacked, cost: %s", txnId, key, bench.Elapsed())
 			}
 		}
 		return err
@@ -287,13 +292,19 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 	kv.lm.Unlock(key)
 
-	if err == nil && opt.IsReadForWrite() {
+	if err != nil {
+		if glog.V(10) {
+			glog.Errorf("txn-%d set key '%s' failed: '%v", txnId, key, err)
+		}
+		return err
+	}
+	if opt.IsReadForWrite() {
 		kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key, transaction.ReadForWriteKeyEventTypeKeyWritten))
 	}
 	if !opt.IsTxnRecord() && bool(glog.V(60)) {
-		glog.Infof("txn-%d set key('%s': v%d) finished, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
+		glog.Infof("txn-%d set key('%s': v%d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
 	}
-	return err
+	return nil
 }
 
 func (kv *KVCC) Close() error {

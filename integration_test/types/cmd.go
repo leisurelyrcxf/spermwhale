@@ -13,7 +13,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/integration_test/consts"
-	testutils "github.com/leisurelyrcxf/spermwhale/integration_test/utils"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
@@ -79,20 +78,20 @@ func (cmd *Command) StartProcess(onStop func()) (err error) {
 	if err := cmd.cmd.Start(); err != nil {
 		return err
 	}
-	cmd.startTime.Store(testutils.Now())
+	cmd.startTime.Store(utils.Now())
 
 	var cmdErr error
 
 	go func() {
 		if cmdErr = cmd.cmd.Wait(); cmdErr != nil {
-			if !cmd.IsFake() || !testutils.IsKilled(cmdErr) {
+			if !cmd.IsFake() || !utils.IsKilled(cmdErr) {
 				glog.Warningf("[StartProcess] command '%s'%s stopped with error '%v'", cmdString, desc, cmdErr)
 			}
 		} else {
 			glog.Infof("[StartProcess] command '%s'%s stopped peacefully", cmdString, desc)
 		}
 
-		cmd.stopTime.Store(testutils.Now())
+		cmd.stopTime.Store(utils.Now())
 		onStop()
 		cmd.NotifyStop()
 	}()
@@ -107,7 +106,7 @@ func (cmd *Command) StartProcess(onStop func()) (err error) {
 		go func() {
 			if err := utils.WithContextRetryEx(context.Background(), time.Millisecond*560, time.Second*30, func(ctx context.Context) error {
 				for _, port := range cmd.WaitPorts {
-					if testutils.IsPortAvailable(port) {
+					if utils.IsPortAvailable(port) {
 						return errors.Annotatef(consts.ErrPortNotListened, "port:%d", port)
 					}
 				}

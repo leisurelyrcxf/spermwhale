@@ -28,3 +28,13 @@ func TestMaxTxnVersion(t *testing.T) {
 	testifyassert.Equal(t, uint64(0), MaxTxnVersion&((1<<12)-1))
 	t.Logf("max txn version date: %s(%d)", date.String(), date.UnixNano())
 }
+
+func TestIsValidTxnInternalVersion(t *testing.T) {
+	assert := testifyassert.New(t)
+
+	assert.False(TxnInternalVersion(0).IsValid())
+	for v := TxnInternalVersionMin; v <= 254; v++ {
+		assert.True(v.IsValid())
+	}
+	assert.False(TxnInternalVersion(255).IsValid())
+}

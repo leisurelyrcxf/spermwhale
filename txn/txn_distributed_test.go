@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
 	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
@@ -1010,8 +1013,10 @@ func testDistributedTxnConsistencyStandalone(t *testing.T, round int) (b bool) {
 }
 
 func TestDistributedTxnConsistencyIntegrateRedis(t *testing.T) {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 5))
+	_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	testifyassert.NoError(t, utils.MkdirIfNotExists(consts.DefaultTestLogDir))
+	_ = flag.Set("v", fmt.Sprintf("%d", 150))
+	_ = flag.Set("log_dir", consts.DefaultTestLogDir)
 
 	for _, threshold := range []int{10000} {
 		for i := 0; i < rounds; i++ {

@@ -20,8 +20,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-const defaultLogDir = "/tmp/spermwhale"
-
 type ExecuteInfo struct {
 	reader
 	retryTimes int
@@ -41,9 +39,11 @@ func NewExecuteInfos(t *testing.T, length int) ExecuteInfos {
 		t:          t,
 	}
 }
-func (rs ExecuteInfos) Len() int           { return len(rs.infos) }
-func (rs ExecuteInfos) Swap(i, j int)      { rs.infos[i], rs.infos[j] = rs.infos[j], rs.infos[i] }
-func (rs ExecuteInfos) Less(i, j int) bool { return rs.infos[i].id < rs.infos[j].id }
+func (rs ExecuteInfos) Len() int      { return len(rs.infos) }
+func (rs ExecuteInfos) Swap(i, j int) { rs.infos[i], rs.infos[j] = rs.infos[j], rs.infos[i] }
+func (rs ExecuteInfos) Less(i, j int) bool {
+	return rs.infos[i].ReaderVersion < rs.infos[j].ReaderVersion
+}
 func (rs ExecuteInfos) AverageTryTimes() float64 {
 	var totalRetryTimes int
 	for _, e := range rs.infos {
@@ -66,16 +66,16 @@ func (rs ExecuteInfos) Check() {
 func (rs ExecuteInfos) PrintString() string {
 	strs := make([]string, len(rs.infos))
 	for i := range rs.infos {
-		strs[i] = fmt.Sprintf("%d", rs.infos[i].id)
+		strs[i] = fmt.Sprintf("%d", rs.infos[i].ReaderVersion)
 	}
 	return strings.Join(strs, ",")
 }
 
 func TestPriorityQueue_Timeouted(t *testing.T) {
 	_ = flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
-	testifyassert.NoError(t, utils.MkdirIfNotExists(defaultLogDir))
+	testifyassert.NoError(t, utils.MkdirIfNotExists(consts.DefaultTestLogDir))
 	_ = flag.Set("v", fmt.Sprintf("%d", 50))
-	_ = flag.Set("log_dir", defaultLogDir)
+	_ = flag.Set("log_dir", consts.DefaultTestLogDir)
 
 	const (
 		key1   = "k1"
@@ -108,7 +108,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 			for retryTimes := 1; ; retryTimes++ {
 				txnId := types.TxnId(o.MustFetchTimestamp())
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, txnId)
+				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict || errors.GetErrorCode(err) == consts.ErrCodeReadForWriteQueueFull {
 					//t.Logf("txn %d rollbacked due to %v, retrying...", txnId, err)
 					rand.Seed(time.Now().UnixNano())
@@ -120,16 +120,18 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					//t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.SignalReadForWriteKeyEvent(key1, txnId)
+					tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeVersionRemoved))
 					rand.Seed(time.Now().UnixNano())
 					time.Sleep(arriveIntervalUnit * time.Duration(1+rand.Intn(10)))
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						id:               txnId,
+						KVCCReadOption: types.KVCCReadOption{
+							ReaderVersion: txnId.Version(),
+						},
 						readForWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
@@ -180,7 +182,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 			defer wg.Done()
 
 			for retryTimes, txnId := 1, types.TxnId(txnIds[i]); ; retryTimes, txnId = retryTimes+1, txnId+10 {
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, txnId)
+				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict {
 					t.Logf("txn %d rollbacked due to %v", txnId, err)
 					continue
@@ -192,10 +194,10 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 					return
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						id:               txnId,
+						KVCCReadOption:   types.NewKVCCReadOption(txnId.Version()),
 						readForWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
@@ -248,7 +250,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 			defer wg.Done()
 
 			for retryTimes, txnId := 1, types.TxnId(txnIds[i]); ; retryTimes, txnId = retryTimes+1, txnId+10 {
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, txnId)
+				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict {
 					t.Logf("txn %d rollbacked due to %v, retrying...", txnId, err)
 					continue
@@ -259,7 +261,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				if cond.NotifyTime > 0 {
 					executedTxns.infos[i] = ExecuteInfo{
 						reader: reader{
-							id:               txnId,
+							KVCCReadOption:   types.NewKVCCReadOption(txnId.Version()),
 							readForWriteCond: *cond,
 						},
 						retryTimes: retryTimes,
@@ -268,14 +270,16 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.SignalReadForWriteKeyEvent(key1, txnId)
+					tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeVersionRemoved))
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(key1, txnId)
+				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						id:               txnId,
+						KVCCReadOption: types.KVCCReadOption{
+							ReaderVersion: txnId.Version(),
+						},
 						readForWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
