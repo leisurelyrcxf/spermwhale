@@ -279,13 +279,13 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version && vv.MaxReadVersion >= txn.ID.Version() /* > vv.Version */)
-	committed, aborted := writeTxn.checkCommitState(ctx, txn, map[string]types.ValueCC{key: vv}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
-	if committed {
+	writeTxn.checkCommitState(ctx, txn, map[string]types.ValueCC{key: vv}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
+	if writeTxn.State.IsCommitted() {
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
 		return vv, nil
 	}
-	if aborted {
+	if writeTxn.State.IsAborted() {
 		if writeTxn.IsWrittenKeyRollbacked(key) {
 			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 		}
@@ -430,7 +430,7 @@ func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.K
 	return values, nil
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) (committed bool, aborted bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) {
 	switch txn.State {
 	case types.TxnStateStaging:
 		assert.Must(txn.AreWrittenKeysCompleted() && txn.GetWrittenKeyCount() > 0)
@@ -453,7 +453,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 					txn.State = types.TxnStateRollbacking
 					_ = txn.rollback(ctx, callerTxn.ID, true,
 						"Txn::CheckCommitState (version below latest version or key '%s' not exists) and max read version(%d) > txnId(%d)", key, vv.MaxReadVersion, txn.ID) // help rollback since original txn coordinator may have gone
-					return false, true
+					return
 				}
 			}
 		} else {
@@ -467,7 +467,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			}
 			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, true, maxRetry)
 			if err != nil {
-				return false, false
+				return
 			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version() && vv.InternalVersion > 0)
@@ -475,7 +475,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 					txn.State = types.TxnStateCommitted
 					txn.MarkCommittedCleared(key, vv.Value)
 					txn.onCommitted(callerTxn.ID, "[CheckCommitState] key '%s' write intent cleared", key) // help commit since original txn coordinator may have gone
-					return true, false
+					return
 				}
 				if vv.InternalVersion == txnWrittenKeys[key] {
 					continue
@@ -489,20 +489,18 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				txn.State = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, callerTxn.ID, true,
 					"Txn::CheckCommitState (version below latest version or key '%s' not exists) and max read version(%d) > txnId(%d)", key, vv.MaxReadVersion, txn.ID) // help rollback since original txn coordinator may have gone
-				return false, true
+				return
 			}
-			return false, false // unable to determine transaction status
+			return // unable to determine transaction status
 		}
 		txn.State = types.TxnStateCommitted
 		txn.onCommitted(callerTxn.ID, "[CheckCommitState] all keys exist and match latest internal txn version") // help commit since original txn coordinator may have gone
-		return true, false
-	case types.TxnStateCommitted:
-		return true, false
+		return
 	case types.TxnStateRollbacking:
 		_ = txn.rollback(ctx, callerTxn.ID, false, "transaction rollbacking, txn error: %v", txn.err) // help rollback since original txn coordinator may have gone
-		return false, true
-	case types.TxnStateRollbacked:
-		return false, true
+		return
+	case types.TxnStateRollbacked, types.TxnStateCommitted:
+		return
 	default:
 		panic(fmt.Sprintf("impossible transaction state %s", txn.State))
 	}
@@ -627,13 +625,11 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	assert.Must(txn.State == types.TxnStateStaging)
 	succeededKeys := txn.GetSucceededWrittenKeysUnsafe()
 	assert.Must(len(succeededKeys) != txn.GetWrittenKeyCount() || txn.txnRecordTask.Err() != nil)
-	committed, aborted := txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
-	if committed {
-		assert.Must(txn.State == types.TxnStateCommitted)
+	txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
+	if txn.State.IsCommitted() {
 		return nil
 	}
-	if aborted {
-		assert.Must(txn.State.IsAborted())
+	if txn.State.IsAborted() {
 		return txn.genAbortErr(lastNonRollbackableIOErr)
 	}
 	txn.State = types.TxnStateInvalid
