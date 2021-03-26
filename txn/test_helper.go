@@ -8,6 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
+
+	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
+
+	"github.com/leisurelyrcxf/spermwhale/kv/impl/mongodb"
+
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -51,28 +57,32 @@ func (p FailurePattern) IsReqLost() bool {
 	return p&FailurePatternReqLost == FailurePatternReqLost
 }
 
-type memoryDB struct {
+type testDB struct {
 	types.KV
 	latency                                  time.Duration
 	probabilityOfTxnRecordFailureDenominator int
 	failurePattern                           FailurePattern
 }
 
-func newMemoryDB(latency time.Duration, failurePattern FailurePattern, failureProbability int) *memoryDB {
-	return &memoryDB{
-		KV:                                       memory.NewMemoryDB(),
+func newTestMemoryDB(latency time.Duration, failurePattern FailurePattern, failureProbability int) *testDB {
+	return newTestDB(memory.NewMemoryDB(), latency, failurePattern, failureProbability)
+}
+
+func newTestDB(db types.KV, latency time.Duration, failurePattern FailurePattern, failureProbability int) *testDB {
+	return &testDB{
+		KV:                                       db,
 		latency:                                  latency,
 		probabilityOfTxnRecordFailureDenominator: failureProbability,
 		failurePattern:                           failurePattern,
 	}
 }
 
-func (d *memoryDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+func (d *testDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
 	time.Sleep(d.latency)
 	return d.KV.Get(ctx, key, opt)
 }
 
-func (d *memoryDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
 	time.Sleep(d.latency)
 	if d.failurePattern.IsReqLost() {
 		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
@@ -150,20 +160,111 @@ func (ss ExecuteInfos) Check(assert *testifyassert.Assertions) bool {
 	return true
 }
 
-func createCluster(t *testing.T, txnManagerCfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
-	return createClusterEx(t, types.DBTypeMemory, txnManagerCfg, tabletCfg)
+type TestCase struct {
+	t *testing.T
+	*testifyassert.Assertions
+
+	DBType  types.DBType
+	TxnType types.TxnType
+	ReadOpt types.TxnReadOption
+
+	TxnManagerCfg types.TxnManagerConfig
+	TableTxnCfg   types.TabletTxnConfig
+
+	GoRoutineNum       int
+	TxnNumPerGoRoutine int
+	LogLevel           glog.Level
+
+	//output, can be set too
+	scs        []*smart_txn_client.SmartClient
+	txnServers []*Server
+	clientTMs  []*ClientTxnManager
+	stopper    func()
 }
 
-func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+func NewTestCase(t *testing.T) *TestCase {
+	return &TestCase{
+		t:          t,
+		Assertions: types.NewAssertion(t),
+
+		LogLevel:           glog.Level(7),
+		GoRoutineNum:       6,
+		TxnNumPerGoRoutine: 1000,
+		DBType:             types.DBTypeMemory,
+		TxnType:            types.TxnTypeDefault,
+		ReadOpt:            types.NewTxnReadOption(),
+
+		TxnManagerCfg: defaultTxnManagerConfig,
+		TableTxnCfg:   defaultTabletTxnConfig,
+	}
+}
+
+func (ts *TestCase) genIntegrateTestEnv() bool {
+	if len(ts.scs) == 2 {
+		return true
+	}
+	if ts.txnServers, ts.clientTMs, ts.stopper = createCluster(ts.t, ts.DBType, ts.TxnManagerCfg,
+		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
+		return false
+	}
+	ctm1, ctm2 := ts.clientTMs[0], ts.clientTMs[1]
+	sc1 := smart_txn_client.NewSmartClient(ctm1, 10000)
+	sc2 := smart_txn_client.NewSmartClient(ctm2, 10000)
+	ts.scs = []*smart_txn_client.SmartClient{sc1, sc2}
+	return true
+}
+
+func (ts *TestCase) Close() {
+	if ts.stopper != nil {
+		ts.stopper()
+	}
+
+	for _, sc := range ts.scs {
+		ts.NoError(sc.Close())
+	}
+	ts.scs = nil
+	ts.txnServers = nil
+	ts.clientTMs = nil
+	ts.stopper = nil
+}
+
+func (ts *TestCase) SetStaleWriteThreshold(thr time.Duration) *TestCase {
+	ts.TxnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(thr)
+	ts.TableTxnCfg = defaultTabletTxnConfig.WithStaleWriteThreshold(thr)
+	return ts
+}
+
+func (ts *TestCase) SetSmartClients(scs ...*smart_txn_client.SmartClient) *TestCase {
+	ts.scs = scs
+	return ts
+}
+
+func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase {
+	ts.TxnType = typ
+	return ts
+}
+
+func (ts *TestCase) SetWaitNoWriteIntent() *TestCase {
+	ts.ReadOpt = ts.ReadOpt.WithWaitNoWriteIntent()
+	return ts
+}
+
+func (ts *TestCase) SetDBType(typ types.DBType) *TestCase {
+	ts.DBType = typ
+	return ts
+}
+
+func createCluster(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
 	assert := testifyassert.New(t)
 
-	gates, stopper := createGates(t, dbType, tabletCfg)
-	if !assert.Len(gates, 2) {
+	gates, stopTablets, stopGates := createTabletsGates(t, dbType, tabletCfg)
+	if !assert.Len(gates, 2) || !assert.NotNil(stopTablets) || !assert.NotNil(stopGates) {
 		return nil, nil, nil
 	}
+	stop := stopTablets
 	defer func() {
 		if len(txnServers) == 0 {
-			stopper()
+			stop()
 		}
 	}()
 
@@ -177,33 +278,33 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConf
 		if err := oracleServer.Start(); !assert.NoError(err) {
 			return nil, nil, nil
 		}
-		os := stopper
-		stopper = func() {
+		stopTablets := stop
+		stop = func() {
 			_ = oracleServer.Close()
-			os()
+			stopTablets()
 		}
 	}
 
-	g1, g2 := gates[0], gates[1]
 	{
-		const txnServer1Port = 50000
+		// Create txn server 1
+		const txnServer1Port = 16666
 		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}
 
-		s1, err := NewServer(txnServer1Port, g1, cfg, topo.NewStore(cli, defaultClusterName))
+		txnServer1, err := NewServer(txnServer1Port, gates[0], cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}
-		if !assert.NoError(s1.Start()) {
+		if !assert.NoError(txnServer1.Start()) {
 			return nil, nil, nil
 		}
-		txnServers = append(txnServers, s1)
-		oos := stopper
-		stopper = func() {
-			_ = s1.Close()
-			oos()
+		txnServers = append(txnServers, txnServer1)
+		stopOracleTablets := stop
+		stop = func() {
+			assert.NoError(txnServer1.Close())
+			stopOracleTablets()
 		}
 		tmCli1, err := NewClient(fmt.Sprintf("localhost:%d", txnServer1Port))
 		if !assert.NoError(err) {
@@ -213,24 +314,25 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConf
 	}
 
 	{
-		const txnServer2Port = 60000
+		// Create txn server 2
+		const txnServer2Port = 17777
 		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}
 
-		s2, err := NewServer(txnServer2Port, g2, cfg, topo.NewStore(cli, defaultClusterName))
+		txnServer2, err := NewServer(txnServer2Port, gates[1], cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
 			return nil, nil, nil
 		}
-		if !assert.NoError(s2.Start()) {
+		if !assert.NoError(txnServer2.Start()) {
 			return nil, nil, nil
 		}
-		txnServers = append(txnServers, s2)
-		oos := stopper
-		stopper = func() {
-			_ = s2.Close()
-			oos()
+		txnServers = append(txnServers, txnServer2)
+		stopOracleTablets := stop
+		stop = func() {
+			assert.NoError(txnServer2.Close())
+			stopOracleTablets()
 		}
 		tmCli2, err := NewClient(fmt.Sprintf("localhost:%d", txnServer2Port))
 		if !assert.NoError(err) {
@@ -238,61 +340,91 @@ func createClusterEx(t *testing.T, dbType types.DBType, cfg types.TxnManagerConf
 		}
 		clientTxnManagers = append(clientTxnManagers, NewClientTxnManager(tmCli2))
 	}
-	return txnServers, clientTxnManagers, stopper
+	return txnServers, clientTxnManagers, stop
 }
 
-func createGates(t *testing.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, _ func()) {
+func createTabletsGates(t *testing.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
 	assert := testifyassert.New(t)
 
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	const (
 		tablet1Port = 20000
 		tablet2Port = 30000
 	)
-	stopper := func() {}
+	stopTablets = func() {}
 	defer func() {
 		if len(gates) == 0 {
-			stopper()
+			stopTablets()
+			stopTablets = nil
 		}
 	}()
 	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
 	if !assert.NotNil(tablet1) {
-		return nil, nil
+		return
 	}
 	if !assert.NoError(tablet1.Start()) {
-		return nil, nil
+		return
 	}
-	stopper = func() {
+	stopTablets = func() {
 		assert.NoError(tablet1.Close())
 	}
 	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
 	if !assert.NotNil(tablet2) {
-		return nil, nil
+		return
 	}
 	if !assert.NoError(tablet2.Start()) {
-		return nil, nil
+		return
 	}
-	oldStopper := stopper
-	stopper = func() {
-		oldStopper()
+	oldStopper := stopTablets
+	stopTablets = func() {
 		assert.NoError(tablet2.Close())
+		oldStopper()
 	}
 
-	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
-	if !assert.NoError(err) {
-		return nil, nil
+	stopGates = func() {}
+	defer func() {
+		if len(gates) == 0 {
+			stopGates()
+			stopGates = nil
+		}
+	}()
+	{
+
+		topoCLi, err := client.NewClient("fs", "/tmp/", "", time.Minute)
+		if !assert.NoError(err) {
+			return
+		}
+		g1, err := gate.NewGate(topo.NewStore(topoCLi, defaultClusterName))
+		if !assert.NoError(err) {
+			return
+		}
+		gates = append(gates, g1)
+		stopGates = func() {
+			assert.NoError(g1.Close())
+		}
 	}
-	var g1, g2 *gate.Gate
-	if g1, err = gate.NewGate(topo.NewStore(cli, defaultClusterName)); !assert.NoError(err) {
-		return nil, nil
+
+	{
+
+		topoCli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
+		if !assert.NoError(err) {
+			return
+		}
+		g2, err := gate.NewGate(topo.NewStore(topoCli, defaultClusterName))
+		if !assert.NoError(err) {
+			return
+		}
+		gates = append(gates, g2)
+		stopGate1 := stopGates
+		stopGates = func() {
+			assert.NoError(g2.Close())
+			stopGate1()
+		}
 	}
-	if g2, err = gate.NewGate(topo.NewStore(cli, defaultClusterName)); !assert.NoError(err) {
-		return nil, nil
-	}
-	return []*gate.Gate{g1, g2}, stopper
+	return gates, stopTablets, stopGates
 }
 
 func createGate(t types.T, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
@@ -354,17 +486,11 @@ func createTabletServer(assert *testifyassert.Assertions, port int, dbType types
 	if !assert.NoError(err) {
 		return nil
 	}
-	db := getDB(assert, dbType, gid)
+	db := newDB(assert, dbType, gid)
 	if !assert.NotNil(db) {
 		return nil
 	}
 	return kvcc.NewServerForTesting(port, db, cfg, gid, topo.NewStore(cli, defaultClusterName))
-}
-
-var gid2RedisPort = map[int]int{
-	0: 6379,
-	1: 16379,
-	2: 26379,
 }
 
 func createOracleServer(assert *testifyassert.Assertions, port int, dbType types.DBType) *impl.Server {
@@ -376,23 +502,46 @@ func createOracleServer(assert *testifyassert.Assertions, port int, dbType types
 	switch dbType {
 	case types.DBTypeRedis:
 		ora = physical.NewLoosedPrecisionOracle()
-	case types.DBTypeMemory:
+	case types.DBTypeMemory, types.DBTypeMongo:
 		ora = physical.NewOracle()
 	default:
-		assert.Failf("getDB failed", "unsupported db type %s", dbType)
+		assert.Failf("newDB failed", "unsupported db type %s", dbType)
 		return nil
 	}
 	return impl.NewServer(port, ora, topo.NewStore(oracleTopoCli, defaultClusterName))
 }
 
-func getDB(assert *testifyassert.Assertions, dbType types.DBType, gid int) types.KV {
+var gid2RedisPort = map[int]int{
+	0: 6379,
+	1: 16379,
+	2: 26379,
+}
+
+var gid2MongoPort = map[int]int{
+	0: 27017,
+	1: 37037,
+	2: 47047,
+	3: 57057,
+}
+
+func newDB(assert *testifyassert.Assertions, dbType types.DBType, gid int) types.KV {
 	switch dbType {
+	case types.DBTypeMongo:
+		port, ok := gid2MongoPort[gid]
+		if !ok {
+			panic(fmt.Sprintf("gid(%d) too big", gid))
+		}
+		db, err := mongodb.NewDB(fmt.Sprintf("127.0.0.1:%d", port), nil)
+		if !assert.NoError(err) {
+			return nil
+		}
+		return db
 	case types.DBTypeRedis:
 		port, ok := gid2RedisPort[gid]
 		if !ok {
 			panic(fmt.Sprintf("gid(%d) too big", gid))
 		}
-		cli, err := redis.NewClient(fmt.Sprintf("127.0.0.1:%d", port), "")
+		cli, err := redis.NewDB(fmt.Sprintf("127.0.0.1:%d", port), "")
 		if !assert.NoError(err) {
 			return nil
 		}
@@ -400,7 +549,7 @@ func getDB(assert *testifyassert.Assertions, dbType types.DBType, gid int) types
 	case types.DBTypeMemory:
 		return memory.NewMemoryDB()
 	default:
-		assert.Failf("getDB failed", "unsupported db type %s", dbType)
+		assert.Failf("newDB failed", "unsupported db type %s", dbType)
 		return nil
 	}
 }

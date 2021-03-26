@@ -201,17 +201,17 @@ func (vvs RVVS) Close() error {
 	return vvs.cli.Close()
 }
 
-func mustNewClient(sourceAddr string, auth string) *kv.DB {
-	cli, err := newClient(sourceAddr, auth, 0)
+func mustNewDB(sourceAddr string, auth string) *kv.DB {
+	cli, err := newDB(sourceAddr, auth, 0)
 	assert.MustNoError(err)
 	return cli
 }
 
-func NewClient(sourceAddr string, auth string) (*kv.DB, error) {
-	return newClient(sourceAddr, auth, consts.LoosedOracleDiscardedBits)
+func NewDB(sourceAddr string, auth string) (*kv.DB, error) {
+	return newDB(sourceAddr, auth, consts.LoosedOracleDiscardedBits)
 }
 
-func newClient(sourceAddr string, auth string, discardedTimestampBits int) (*kv.DB, error) {
+func newDB(sourceAddr string, auth string, discardedTimestampBits int) (*kv.DB, error) {
 	cli := redis.NewClient(&redis.Options{
 		Network:      "tcp",
 		Addr:         sourceAddr,

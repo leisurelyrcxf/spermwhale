@@ -3,9 +3,8 @@ package mongodb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
-
-	"go.mongodb.org/mongo-driver/bson/bsontype"
 
 	"github.com/golang/glog"
 
@@ -15,21 +14,25 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 const (
-	defaultDatabase = "spermwhale_db"
+	defaultDatabase     = "spermwhale_db"
+	collectionKeys      = "keys"
+	collectionTxnRecord = "txn_records"
 
-	attrId              = "_id"
+	attrId        = "_id"
+	attrIdKey     = "key"
+	attrIdVersion = "version"
+
 	attrFlag            = "flag"
 	attrInternalVersion = "internal_version"
 	attrValue           = "V"
 )
-
-var allAttrs = []string{attrId, attrFlag, attrInternalVersion, attrValue}
 
 type MongoVVS struct {
 	cli *mongo.Client
@@ -39,73 +42,88 @@ func newMongoVVS(cli *mongo.Client) MongoVVS {
 	return MongoVVS{cli: cli}
 }
 
-func (m MongoVVS) encode(version uint64, val kv.Value) bson.D {
+func pkEqual(key string, version uint64) bson.D {
+	return bson.D{{"_id", bson.D{
+		{Key: "$eq", Value: bson.D{
+			{attrIdKey, key},
+			{attrIdVersion, version}},
+		}},
+	}}
+}
+
+//func encode(key string, version uint64, val kv.Value) bson.D {
+//	return bson.D{
+//		{"_id", bson.D{
+//		{attrIdKey, key},
+//		{attrIdVersion, version},
+//	}},
+//		{attrFlag, val.Flag},
+//		{attrInternalVersion, val.InternalVersion},
+//		{attrValue, val.V},
+//	}
+//}
+
+func encodeValue(val kv.Value) bson.D {
 	return bson.D{
-		{"_id", version},
 		{attrFlag, val.Flag},
 		{attrInternalVersion, val.InternalVersion},
 		{attrValue, val.V},
 	}
 }
 
-func (m MongoVVS) encodeValue(val kv.Value) bson.D {
-	return bson.D{
-		{attrFlag, val.Flag},
-		{attrInternalVersion, val.InternalVersion},
-		{attrValue, val.V},
+func getCollection(key string) string {
+	if strings.HasPrefix(key, "txn-") {
+		return collectionTxnRecord
 	}
+	return collectionKeys
 }
 
 func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (kv.Value, error) {
-	res := m.cli.Database(defaultDatabase).Collection(key).FindOne(ctx, bson.D{
-		{"_id", bson.D{
-			{"$eq", version},
-		}},
-	})
-	val, _, err := m.getOne(res)
-	return val, err
+	gotKey, val, _, err := m.getOne(key, m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOne(ctx, pkEqual(key, version)))
+	if err != nil {
+		return kv.EmptyValue, err
+	}
+	assert.Must(gotKey == key)
+	return val, nil
+}
+
+func (m MongoVVS) FindMaxBelow(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+	gotKey, value, version, err := m.getOne(key, m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOne(ctx, bson.D{
+		{attrId, bson.D{
+			{"$lte", bson.D{
+				{attrIdKey, key},
+				{attrIdVersion, upperVersion}},
+			}},
+		}}, options.FindOne().SetSort(bson.D{{attrId, -1}})))
+	if err != nil {
+		return kv.EmptyValue, 0, err
+	}
+	if gotKey != key {
+		assert.Must(gotKey < key)
+		return kv.EmptyValue, 0, errors.ErrVersionNotExists
+	}
+	return value, version, nil
 }
 
 func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val kv.Value) error {
-	collection := m.cli.Database(defaultDatabase).Collection(key)
-	single, err := collection.UpdateOne(ctx, bson.D{
-		{"_id", bson.D{
-			{"$eq", version},
-		}},
-	}, bson.D{
-		{"$set", m.encodeValue(val)},
-	}, options.Update().SetUpsert(true))
+	collection := m.cli.Database(defaultDatabase).Collection(getCollection(key))
+	single, err := collection.ReplaceOne(ctx, pkEqual(key, version),
+		encodeValue(val), options.Replace().SetUpsert(true))
 	if err != nil {
+		glog.Errorf("[MongoVVS][Upsert] txn-%d upsert key '%s' failed: '%v'", version, key, err)
 		return err
 	}
-	glog.Infof("inserted one document with id: '%v'", single.UpsertedID)
+	glog.V(80).Infof("inserted one document with id: '%v'", single.UpsertedID)
 	return nil
 }
 
 func (m MongoVVS) UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error {
-	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(key).FindOneAndUpdate(
-		ctx, bson.D{
-			{"_id", bson.D{
-				{"$eq", version},
-			}},
-		},
+	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(getCollection(key)).FindOneAndUpdate(ctx, pkEqual(key, version),
 		bson.D{{"$set", bson.D{{attrFlag, newFlag}}}}).Err(), mongo.ErrNoDocuments, errors.ErrVersionNotExists)
 }
 
-func (m MongoVVS) FindMaxBelow(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
-	return m.getOne(m.cli.Database(defaultDatabase).Collection(key).FindOne(ctx, bson.D{
-		{"_id", bson.D{
-			{"$lte", upperVersion},
-		}},
-	}, options.FindOne().SetSort(bson.D{{"_id", -1}})))
-}
-
 func (m MongoVVS) Remove(ctx context.Context, key string, version uint64) error {
-	_, err := m.cli.Database(defaultDatabase).Collection(key).DeleteOne(ctx, bson.D{
-		{"_id", bson.D{
-			{"$eq", version},
-		}},
-	})
+	_, err := m.cli.Database(defaultDatabase).Collection(getCollection(key)).DeleteOne(ctx, pkEqual(key, version))
 	return err
 }
 
@@ -126,44 +144,67 @@ func (m MongoVVS) Close() error {
 	return m.cli.Disconnect(ctx)
 }
 
-func (m MongoVVS) getOne(res *mongo.SingleResult) (kv.Value, uint64, error) {
+func (m MongoVVS) getOne(key string, res *mongo.SingleResult) (gotKey string, value kv.Value, version uint64, _ error) {
 	if err := res.Err(); err != nil {
-		return kv.EmptyValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrVersionNotExists)
+		return "", kv.EmptyValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrVersionNotExists)
 	}
 	raw, err := res.DecodeBytes()
 	if err != nil {
-		return kv.EmptyValue, 0, err
+		return "", kv.EmptyValue, 0, err
+	}
+	elements, err := raw.Elements()
+	if err != nil {
+		return "", kv.EmptyValue, 0, err
 	}
 
-	fields := make(map[string]interface{})
-	for _, attr := range allAttrs {
-		val, err := raw.LookupErr(attr)
-		if err != nil {
-			return kv.EmptyValue, 0, err
-		}
-		switch attr {
+	var (
+		gotAttrs int
+	)
+	for _, ele := range elements {
+		switch attr, val := ele.Key(), ele.Value(); attr {
 		case attrId:
-			id, ok := val.Int64OK()
+			idDoc, ok := ele.Value().DocumentOK()
 			assert.Must(ok)
-			fields[attr] = uint64(id)
+			idElements, err := idDoc.Elements()
+			if err != nil {
+				return "", kv.EmptyValue, 0, err
+			}
+			for _, idEle := range idElements {
+				switch idAttr, idVal := idEle.Key(), idEle.Value(); idAttr {
+				case attrIdKey:
+					idKey, ok := idVal.StringValueOK()
+					assert.Must(ok)
+					gotKey = idKey
+					gotAttrs++
+				case attrIdVersion:
+					txnId, ok := idVal.Int64OK()
+					assert.Must(ok)
+					version = uint64(txnId)
+					gotAttrs++
+				}
+			}
 		case attrFlag:
-			flag, ok := val.Int32OK()
+			v, ok := val.Int32OK()
 			assert.Must(ok)
-			fields[attr] = uint8(flag)
+			value.Flag = uint8(v)
+			gotAttrs++
 		case attrInternalVersion:
 			iVersion, ok := val.Int32OK()
 			assert.Must(ok)
-			fields[attr] = types.TxnInternalVersion(iVersion)
+			value.InternalVersion = types.TxnInternalVersion(iVersion)
+			gotAttrs++
 		case attrValue:
 			switch val.Type {
 			case bsontype.Null:
-				fields[attr] = ([]byte)(nil)
+				value.V = ([]byte)(nil)
+				gotAttrs++
 			case bsontype.Binary:
 				_, bytes, ok := val.BinaryOK()
 				if !ok {
 					panic(!ok) // TODO remove the asserts
 				}
-				fields[attr] = bytes
+				value.V = bytes
+				gotAttrs++
 			default:
 				panic(fmt.Sprintf("unknown type: '%v'", val.Type))
 			}
@@ -171,28 +212,22 @@ func (m MongoVVS) getOne(res *mongo.SingleResult) (kv.Value, uint64, error) {
 			assert.Must(false)
 		}
 	}
-	if len(fields) != 4 {
-		return kv.EmptyValue, 0, fmt.Errorf("expect 4 fields, got %v", fields)
+
+	if gotAttrs != 5 {
+		return "", kv.EmptyValue, 0, fmt.Errorf("expect 5 fields but got '%v'", gotAttrs)
 	}
-	glog.Errorf("doc: %v", fields)
-	return kv.Value{
-		Meta: kv.Meta{
-			Flag:            fields[attrFlag].(uint8),
-			InternalVersion: fields[attrInternalVersion].(types.TxnInternalVersion),
-		},
-		V: fields[attrValue].([]byte),
-	}, fields[attrId].(uint64), nil
+	return gotKey, value, version, nil
 }
 
 func NewDB(addr string, credential *options.Credential) (*kv.DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cli := options.Client()
+	opt := options.Client().SetMaxPoolSize(400).SetMinPoolSize(50)
 	if credential != nil {
-		cli.SetAuth(*credential)
+		opt.SetAuth(*credential)
 	}
-	client, err := mongo.Connect(ctx, cli.ApplyURI(fmt.Sprintf("mongodb://%s", addr)))
+	client, err := mongo.Connect(ctx, opt.ApplyURI(fmt.Sprintf("mongodb://%s", addr)))
 	if err != nil {
 		return nil, err
 	}

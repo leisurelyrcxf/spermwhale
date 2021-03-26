@@ -14,7 +14,7 @@ func TestMongo(t *testing.T) {
 	if !testifyassert.NoError(t, err) {
 		return
 	}
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 100; i++ {
 		for _, dbug := range []bool{true, false} {
 			utils.SetCustomizedDebugFlag(dbug)
 			if !kv.TestDB(t, cli) {
