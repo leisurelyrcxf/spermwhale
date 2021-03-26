@@ -1,7 +1,11 @@
 package scheduler
 
 import (
+	"context"
 	"sync"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 
@@ -68,7 +72,9 @@ func (s *BasicScheduler) start() {
 				}
 
 				if err := task.Run(); err != nil {
-					glog.Errorf("task %s failed: %v", task.Name, err)
+					if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
+						glog.Errorf("task %s failed: %v", task.Name, err)
+					}
 				}
 			}
 		}()

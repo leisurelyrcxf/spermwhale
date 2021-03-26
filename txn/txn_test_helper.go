@@ -13,6 +13,7 @@ import (
 
 	testifyassert "github.com/stretchr/testify/assert"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
@@ -131,11 +132,10 @@ func NewExecuteStatistics() *ExecuteStatistics {
 func (ess *ExecuteStatistics) collect(info ExecuteInfo) {
 	ess.total.collect(info)
 
-	kind := info.GetTxnKind()
-	if ess.perTxnKind[kind] == nil {
-		ess.perTxnKind[kind] = &ExecuteStatistic{}
+	if ess.perTxnKind[info.Kind] == nil {
+		ess.perTxnKind[info.Kind] = &ExecuteStatistic{}
 	}
-	ess.perTxnKind[kind].collect(info)
+	ess.perTxnKind[info.Kind].collect(info)
 }
 
 func (ess *ExecuteStatistics) calc() ExecuteStatistics {
@@ -162,11 +162,36 @@ type ExecuteInfo struct {
 	types.Txn
 
 	ID                      uint64
-	State                   types.TxnState
+	Kind                    types.TxnKind
 	ReadValues, WriteValues map[string]types.Value
-	RetryTimes              int
-	Cost                    time.Duration
-	AdditionalInfo          interface{}
+
+	RetryTimes int
+	Cost       time.Duration
+
+	AdditionalInfo interface{}
+}
+
+func NewExecuteInfo(tx types.Txn, retryTimes int, cost time.Duration) ExecuteInfo {
+	txn := ExecuteInfo{
+		Txn:         tx,
+		ID:          tx.GetId().Version(),
+		ReadValues:  tx.GetReadValues(),
+		WriteValues: tx.GetWriteValues(),
+		RetryTimes:  retryTimes,
+		Cost:        cost,
+	}
+	txn.Kind = types.TxnKindReadWrite
+	if len(txn.WriteValues) == 0 {
+		txn.Kind = types.TxnKindReadOnly
+	} else if len(txn.ReadValues) == 0 {
+		txn.Kind = types.TxnKindWriteOnly
+	}
+	return txn
+}
+
+func (info ExecuteInfo) WithAdditionalInfo(object interface{}) ExecuteInfo {
+	info.AdditionalInfo = object
+	return info
 }
 
 func (info ExecuteInfo) SortIndex() uint64 {
@@ -176,18 +201,8 @@ func (info ExecuteInfo) SortIndex() uint64 {
 	return info.ID
 }
 
-func (info ExecuteInfo) GetTxnKind() types.TxnKind {
-	if len(info.WriteValues) == 0 {
-		return types.TxnKindReadOnly
-	}
-	if len(info.ReadValues) == 0 {
-		return types.TxnKindWriteOnly
-	}
-	return types.TxnKindReadWrite
-}
-
 func (info ExecuteInfo) String() string {
-	return fmt.Sprintf("Txn{id: %d, state: %s, read: %v, write: %v}", info.ID, info.State.String(), info.ReadValues, info.WriteValues)
+	return fmt.Sprintf("Txn{id: %d, state: %s, read: %v, write: %v}", info.ID, info.GetState().String(), info.ReadValues, info.WriteValues)
 }
 
 type ExecuteInfos []ExecuteInfo
@@ -225,50 +240,23 @@ func (txns ExecuteInfos) CheckReadForWriteOnly(assert *testifyassert.Assertions,
 func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) bool {
 	sort.Sort(txns)
 
-	//findSnapshotTxnIndex := func(searchStart int, ssVersion uint64) int {
-	//	for j := searchStart; j >= 0; j-- {
-	//		if txns[j].ID <= ssVersion {
-	//			return j
-	//		}
-	//	}
-	//	return -1
-	//}
-
-	findLastWriteVersion := func(searchStart int, key string, readVal types.Value) types.Value {
-		for j := searchStart; j >= 0; j-- {
-			ptx := txns[j]
-			if writeVal, ok := ptx.WriteValues[key]; ok {
-				return writeVal
-			}
-		}
-		return types.EmptyValue
-	}
+	lastWriteTxns := make(map[string]int)
 	for i := 0; i < len(txns); i++ {
+		for key := range txns[i].WriteValues {
+			lastWriteTxns[key] = i
+		}
+
 		var ssVersion = txns[i].GetSnapshotVersion()
 		for key, readVal := range txns[i].ReadValues {
-			//var (
-			//	lastWriteVal types.Value
-			//)
 			if txns[i].GetType().IsSnapshotRead() {
-				if !assert.Equal(ssVersion, readVal.SnapshotVersion) {
+				if !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
 					return false
 				}
 			}
-			//	if !assert.NotEqual(ssVersion, uint64(0)) || !assert.LessOrEqual(ssVersion, txns[i].ID) {
-			//		return false
-			//	}
-			//	j := findSnapshotTxnIndex(i, ssVersion)
-			//	if j == -1 {
-			//		continue
-			//	}
-			//	lastWriteVal = findLastWriteVersion(j, key, readVal)
-			//} else {
-			lastWriteVal := findLastWriteVersion(i-1, key, readVal)
-			//}
-			if lastWriteVal.IsEmpty() {
+			if lastWriteTxns[key] == 0 {
 				continue
 			}
-			if !assert.Equal(readVal.Version, lastWriteVal.Version) {
+			if !assert.Equal(readVal.Version, txns[lastWriteTxns[key]].WriteValues[key].Version) {
 				return false
 			}
 		}
@@ -276,10 +264,19 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 	return true
 }
 
+//func (txns ExecuteInfos) findLastWriteVersion(searchStart int, key string) types.Value {
+//	for j := searchStart; j >= 0; j-- {
+//		if writeVal, ok := txns[j].WriteValues[key]; ok {
+//			return writeVal
+//		}
+//	}
+//	return types.EmptyValue
+//}
+
 func (txns ExecuteInfos) Statistics() ExecuteStatistics {
 	ess := NewExecuteStatistics()
-	for _, info := range txns {
-		ess.collect(info)
+	for _, txn := range txns {
+		ess.collect(txn)
 	}
 	return ess.calc()
 }
@@ -352,9 +349,15 @@ func NewEmbeddedTestCase(t *testing.T, rounds int, testFunc func(context.Context
 	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet()
 }
 
+func NewEmbeddedSnapshotReadTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet().SetSnapshotReadForReadonlyTxn()
+}
+
 func (ts *TestCase) Run() {
-	testifyassert.NoError(ts.t, flag.Set("logtostderr", fmt.Sprintf("%t", true)))
-	testifyassert.NoError(ts.t, flag.Set("v", fmt.Sprintf("%d", ts.LogLevel)))
+	ts.NoError(utils.MkdirIfNotExists(consts.DefaultTestLogDir))
+	ts.NoError(flag.Set("log_dir", consts.DefaultTestLogDir))
+	ts.NoError(flag.Set("alsologtostderr", fmt.Sprintf("%t", true)))
+	ts.NoError(flag.Set("v", fmt.Sprintf("%d", ts.LogLevel)))
 
 	for i := 0; i < ts.rounds; i++ {
 		if !ts.runOneRound(i) {
@@ -387,7 +390,7 @@ func (ts *TestCase) runOneRound(i int) bool {
 	if !ts.CheckSerializability() {
 		return false
 	}
-	ts.LogTxnExecuteInfo(float64(cost) / float64(time.Second))
+	ts.LogExecuteInfos(float64(cost) / float64(time.Second))
 	return true
 }
 
@@ -442,17 +445,9 @@ func (ts *TestCase) GenTestEnv() bool {
 }
 
 func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, retryTimes int, cost time.Duration) {
-	txn := ExecuteInfo{
-		Txn:         tx,
-		ID:          tx.GetId().Version(),
-		State:       tx.GetState(),
-		ReadValues:  tx.GetReadValues(),
-		WriteValues: tx.GetWriteValues(),
-		RetryTimes:  retryTimes,
-		Cost:        cost,
-	}
+	txn := NewExecuteInfo(tx, retryTimes, cost)
 	ts.False(txn.ID == 0)
-	ts.True(txn.State == types.TxnStateCommitted)
+	ts.True(txn.GetState() == types.TxnStateCommitted)
 	ts.False(types.IsInvalidReadValues(txn.ReadValues))
 	ts.False(types.IsInvalidWriteValues(txn.WriteValues))
 	ts.executedTxnsPerGoRoutine[goRoutineIndex] = append(ts.executedTxnsPerGoRoutine[goRoutineIndex], txn)
@@ -485,35 +480,24 @@ func (ts *TestCase) CheckSerializability() bool {
 }
 
 func (ts *TestCase) SetEmbeddedTablet() *TestCase { ts.embeddedTablet = true; return ts }
-func (ts *TestCase) GetGate1() *gate.Gate {
-	return ts.txnServers[0].tm.kv.(*gate.Gate)
-}
-func (ts *TestCase) GetGate2() *gate.Gate {
-	return ts.txnServers[1].tm.kv.(*gate.Gate)
-}
+func (ts *TestCase) GetGate1() *gate.Gate         { return ts.txnServers[0].tm.kv.(*gate.Gate) }
+func (ts *TestCase) GetGate2() *gate.Gate         { return ts.txnServers[1].tm.kv.(*gate.Gate) }
 func (ts *TestCase) GetReadonlyTxnType() types.TxnType {
 	if ts.snapshotReadForReadonlyTxn {
 		return types.TxnTypeSnapshotRead
 	}
 	return ts.TxnType
 }
-
 func (ts *TestCase) SetSnapshotReadForReadonlyTxn() *TestCase {
 	ts.snapshotReadForReadonlyTxn = true
 	return ts
 }
-func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase {
-	ts.TxnType = typ
-	return ts
-}
+func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase { ts.TxnType = typ; return ts }
 func (ts *TestCase) SetWaitNoWriteIntent() *TestCase {
 	ts.ReadOpt = ts.ReadOpt.WithWaitNoWriteIntent()
 	return ts
 }
-func (ts *TestCase) SetDBType(typ types.DBType) *TestCase {
-	ts.DBType = typ
-	return ts
-}
+func (ts *TestCase) SetDBType(typ types.DBType) *TestCase { ts.DBType = typ; return ts }
 func (ts *TestCase) SetTimeoutPerRound(timeout time.Duration) *TestCase {
 	ts.timeoutPerRound = timeout
 	return ts
@@ -571,10 +555,10 @@ func (ts *TestCase) LogParameters(round int) {
 		ts.GoRoutineNum, ts.TxnNumPerGoRoutine, ts.LogLevel)
 }
 
-func (ts *TestCase) LogTxnExecuteInfo(totalCostInSeconds float64) {
+func (ts *TestCase) LogExecuteInfos(totalCostInSeconds float64) {
 	stats := ts.allExecutedTxns.Statistics()
-	ts.t.Logf("Excuted %d txns, throughput: %.1ftps, average latency: %s, average retry: %.2f times",
-		len(ts.allExecutedTxns), float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
+	ts.t.Logf("Excuted %d txns in %.1fs, throughput: %.1ftxn/s, average latency: %s, average retry: %.2f times",
+		len(ts.allExecutedTxns), totalCostInSeconds, float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
 	stats.ForEachTxnKind(func(txnKind types.TxnKind, ss ExecuteStatistic) {
 		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.2f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)
 	})

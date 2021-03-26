@@ -34,7 +34,7 @@ func TestTxnLostUpdateWaitNoWriteIntent(t *testing.T) {
 }
 
 func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
+	NewEmbeddedTestCase(t, 10, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
 }
 
 func TestTxnLostUpdateInjectErr(t *testing.T) {
@@ -49,10 +49,6 @@ func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
 func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
 		SetSnapshotReadForReadonlyTxn().Run()
-}
-
-func TestTxnSnapshotRead(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnSnapshotRead).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).SetSnapshotReadForReadonlyTxn().Run()
 }
 
 func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
@@ -206,61 +202,6 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 	return true
 }
 
-func testTxnSnapshotRead(ctx context.Context, ts *TestCase) (b bool) {
-	const (
-		key1, key2, key3 = "k1", "k2", "k3"
-	)
-	sc := ts.scs[0]
-	if !ts.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-		ts.NoError(txn.Set(ctx, key1, types.NewIntValue(1).V))
-		ts.NoError(txn.Set(ctx, key2, types.NewIntValue(1).V))
-		ts.NoError(txn.Set(ctx, key3, types.NewIntValue(1).V))
-		return nil
-	})) {
-		return
-	}
-	time.Sleep(time.Millisecond * 100) // wait write intent cleared
-	var wg sync.WaitGroup
-	for i := 0; i < ts.GoRoutineNum; i++ {
-		if i&3 == 0 {
-			ts.SetExtraRound(i)
-		}
-
-		wg.Add(1)
-		go func(goRoutineIdx int) {
-			defer wg.Done()
-
-			rounds := ts.TxnNumPerGoRoutine
-			if goRoutineIdx&3 == 0 {
-				rounds = rounds * 10
-			}
-			for j := 0; j < rounds; j++ {
-				if goRoutineIdx&3 == 0 {
-					ts.True(ts.DoReadOnlyTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-						_, err := txn.MGet(ctx, []string{key1, key2, key3}, ts.ReadOpt)
-						return err
-					}))
-				} else if goRoutineIdx&3 == 1 {
-					ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-						return txn.Set(ctx, key1, types.NewIntValue(j).V)
-					}))
-				} else if goRoutineIdx&3 == 2 {
-					ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-						return txn.Set(ctx, key2, types.NewIntValue(j*10).V)
-					}))
-				} else {
-					ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-						return txn.Set(ctx, key3, types.NewIntValue(j*100).V)
-					}))
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	return true
-}
-
 func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 	const (
 		initialValue    = 101
@@ -336,7 +277,7 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
@@ -368,10 +309,6 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 		go func(i int) {
 			defer wg.Done()
 
-			var (
-				readValues  = map[string]types.Value{}
-				writeValues = map[string]types.Value{}
-			)
 			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				{
 					val, err := txn.Get(ctx, "k1", readOpt)
@@ -382,10 +319,7 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					if !assert.NoError(err) {
 						return err
 					}
-					readValues["k1"] = val
-					v1 += delta
-					writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
-					if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
+					if err := txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V); err != nil {
 						return err
 					}
 				}
@@ -398,21 +332,13 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					if !assert.NoError(err) {
 						return err
 					}
-					readValues["k2"] = val
-					v2 += delta
-					writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
-					if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
+					if err := txn.Set(ctx, "k2", types.NewIntValue(v2+delta).V); err != nil {
 						return err
 					}
 				}
 				return nil
 			}); assert.NoError(err) {
-				txns[i] = ExecuteInfo{
-					ID:          tx.GetId().Version(),
-					State:       tx.GetState(),
-					ReadValues:  readValues,
-					WriteValues: writeValues,
-				}
+				txns[i] = NewExecuteInfo(tx, 0, 0)
 			}
 		}(i)
 	}
@@ -471,7 +397,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
@@ -504,9 +430,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 			defer wg.Done()
 
 			var (
-				readValues  = map[string]types.Value{}
-				writeValues = map[string]types.Value{}
-				readOpt     = types.NewTxnReadOption()
+				readOpt = types.NewTxnReadOption()
 			)
 
 			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
@@ -520,10 +444,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						if !assert.NoError(err) {
 							return err
 						}
-						readValues["k1"] = val
-						v1 += delta
-						writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
-						if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
+						if err := txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V); err != nil {
 							return err
 						}
 					}
@@ -536,10 +457,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						if !assert.NoError(err) {
 							return err
 						}
-						readValues["k2"] = val
-						v2 += delta
-						writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
-						if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
+						if err := txn.Set(ctx, "k2", types.NewIntValue(v2+delta).V); err != nil {
 							return err
 						}
 					}
@@ -553,10 +471,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						if !assert.NoError(err) {
 							return err
 						}
-						readValues["k2"] = val
-						v2 += delta
-						writeValues["k2"] = types.NewIntValue(v2).WithVersion(txn.GetId().Version())
-						if err := txn.Set(ctx, "k2", writeValues["k2"].V); err != nil {
+						if err := txn.Set(ctx, "k2", types.NewIntValue(v2+delta).V); err != nil {
 							return err
 						}
 					}
@@ -569,22 +484,14 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						if !assert.NoError(err) {
 							return err
 						}
-						readValues["k1"] = val
-						v1 += delta
-						writeValues["k1"] = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
-						if err := txn.Set(ctx, "k1", writeValues["k1"].V); err != nil {
+						if err := txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V); err != nil {
 							return err
 						}
 					}
 				}
 				return nil
 			}); assert.NoError(err) {
-				txns[i] = ExecuteInfo{
-					ID:          tx.GetId().Version(),
-					State:       tx.GetState(),
-					ReadValues:  readValues,
-					WriteValues: writeValues,
-				}
+				txns[i] = NewExecuteInfo(tx, 0, 0)
 			}
 		}(i)
 	}
@@ -646,7 +553,7 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(t)
@@ -678,9 +585,7 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 			defer wg.Done()
 
 			var (
-				readValues  = map[string]types.Value{}
-				writeValues = map[string]types.Value{}
-				readOpt     = types.NewTxnReadOption()
+				readOpt = types.NewTxnReadOption()
 			)
 
 			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
@@ -694,21 +599,13 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 					if !assert.NoError(err) {
 						return err
 					}
-					readValues[key] = val
-					v += delta
-					writeValues[key] = types.NewIntValue(v).WithVersion(txn.GetId().Version())
-					if err := txn.Set(ctx, key, writeValues[key].V); err != nil {
+					if err := txn.Set(ctx, key, types.NewIntValue(v+delta).V); err != nil {
 						return err
 					}
 				}
 				return nil
 			}); assert.NoError(err) {
-				txns[i] = ExecuteInfo{
-					ID:          tx.GetId().Version(),
-					State:       tx.GetState(),
-					ReadValues:  readValues,
-					WriteValues: writeValues,
-				}
+				txns[i] = NewExecuteInfo(tx, 0, 0)
 			}
 		}(i)
 	}
@@ -761,7 +658,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 
 	db := memory.NewMemoryDB()
 	kvcc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
+	m := NewTransactionManager(kvcc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	assert := types.NewAssertion(t)
 
@@ -852,13 +749,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 				}
 				return nil
 			}); assert.NoError(err) {
-				txns[i] = ExecuteInfo{
-					ID:             tx.GetId().Version(),
-					State:          tx.GetState(),
-					ReadValues:     readValues,
-					WriteValues:    writeValues,
-					AdditionalInfo: [2]func(int) int{g1, g2},
-				}
+				txns[i] = NewExecuteInfo(tx, 0, 0).WithAdditionalInfo([2]func(int) int{g1, g2})
 			}
 		}(i)
 	}
@@ -1048,9 +939,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 					if !assert.NoError(err) {
 						return err, true
 					}
-					v1 += delta
-
-					return txn.Set(ctx, "k1", types.NewIntValue(v1).V), true
+					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V), true
 				}, func() error {
 					return errors.ErrInject
 				}, nil)
@@ -1066,9 +955,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 					if !assert.NoError(err) {
 						return err
 					}
-					v1 += delta
-
-					return txn.Set(ctx, "k1", types.NewIntValue(v1).V)
+					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V)
 				}))
 			}
 		}(i)
@@ -1147,9 +1034,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 					if !assert.NoError(err) {
 						return err, true
 					}
-					v1 += delta
-
-					return txn.Set(ctx, "k1", types.NewIntValue(v1).V), true
+					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V), true
 				}, nil, func() error {
 					return errors.ErrInject
 				})
@@ -1169,9 +1054,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 					if !assert.NoError(err) {
 						return err
 					}
-					v1 += delta
-
-					return txn.Set(ctx, "k1", types.NewIntValue(v1).V)
+					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V)
 				}))
 			}
 		}(i)

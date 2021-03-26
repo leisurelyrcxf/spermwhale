@@ -10,6 +10,7 @@ message KVCCReadOption {
     uint64 reader_version = 1;
     uint32 flag = 2;
     uint64 exact_version = 3;
+    uint64 min_allowed_snapshot_version = 4;
 }
 
 message KVCCWriteOption {

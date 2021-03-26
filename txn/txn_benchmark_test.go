@@ -39,7 +39,7 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 
 	start := time.Now()
 	kvc := kvcc.NewKVCCForTesting(newTestMemoryDB(time.Millisecond*10, FailurePatternNone, 0), defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	tm := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold))
+	tm := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
 	sc := smart_txn_client.NewSmartClient(tm, 0)
 	defer sc.Close()
 	assert := types.NewAssertion(b)
@@ -59,32 +59,23 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 			defer wg.Done()
 
 			var (
-				readValue, writeValue types.Value
-				readOpt               = types.NewTxnReadOption()
+				readOpt = types.NewTxnReadOption()
 			)
 			if waitNoWriteIntent {
 				readOpt = readOpt.WithWaitNoWriteIntent()
 			}
-			if tx, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
-					return err, true
+					return err
 				}
 				v1, err := val.Int()
 				if !assert.NoError(err) {
-					return err, false
+					return err
 				}
-				readValue = val
-				v1 += delta
-				writeValue = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
-				return txn.Set(ctx, "k1", writeValue.V), true
-			}, nil, nil); assert.NoError(err) {
-				txns[i] = ExecuteInfo{
-					ID:          tx.GetId().Version(),
-					State:       tx.GetState(),
-					ReadValues:  map[string]types.Value{"k1": readValue},
-					WriteValues: map[string]types.Value{"k1": writeValue},
-				}
+				return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V)
+			}); assert.NoError(err) {
+				txns[i] = NewExecuteInfo(tx, 0, 0)
 			}
 		}(i)
 	}

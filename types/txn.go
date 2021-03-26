@@ -340,6 +340,9 @@ func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
 func (txn *RecordValuesTxn) Get(ctx context.Context, key string, opt TxnReadOption) (Value, error) {
 	val, err := txn.Txn.Get(ctx, key, opt)
 	if err == nil {
+		if txn.GetType().IsSnapshotRead() {
+			assert.Must(val.SnapshotVersion == txn.GetSnapshotVersion() && val.Version <= val.SnapshotVersion)
+		}
 		txn.readValues[key] = val
 	}
 	return val, err
@@ -348,6 +351,11 @@ func (txn *RecordValuesTxn) Get(ctx context.Context, key string, opt TxnReadOpti
 func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string, opt TxnReadOption) ([]Value, error) {
 	values, err := txn.Txn.MGet(ctx, keys, opt)
 	if err == nil {
+		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotVersion(); txnType.IsSnapshotRead() {
+			for _, val := range values {
+				assert.Must(val.SnapshotVersion == ssVersion && val.Version <= val.SnapshotVersion)
+			}
+		}
 		for idx, val := range values {
 			txn.readValues[keys[idx]] = val
 		}

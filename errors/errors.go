@@ -171,8 +171,8 @@ var (
 		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
 		Msg:  "snapshot read retried too many times",
 	}
-	ErrSnapshotViolated = &Error{
-		Code: consts.ErrCodeSnapshotViolated,
-		Msg:  "snapshot violated",
+	ErrReadVersionViolatesMinAllowedSnapshot = &Error{
+		Code: consts.ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion,
+		Msg:  "reader version violates min allowed snapshot version",
 	}
 )

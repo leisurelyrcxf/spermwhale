@@ -124,6 +124,11 @@ func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
 	return v
 }
 
+func (v Value) WithSnapshotVersion(snapshotVersion uint64) Value {
+	v.SnapshotVersion = snapshotVersion
+	return v
+}
+
 type ValueCC struct {
 	Value
 
@@ -170,11 +175,6 @@ func (v ValueCC) WithNoWriteIntent() ValueCC {
 	}
 }
 
-func (v ValueCC) WithSnapshotVersion(snapshotVersion uint64) ValueCC {
-	v.SnapshotVersion = snapshotVersion
-	return v
-}
-
 type ValueCCs []ValueCC
 
 func (vs ValueCCs) ToValues() []Value {
@@ -185,24 +185,26 @@ func (vs ValueCCs) ToValues() []Value {
 	return ret
 }
 
-type ReadResult map[string]ValueCC
+type ReadResultCC map[string]ValueCC
 
-func (r ReadResult) MustFirst() string {
+func (r ReadResultCC) MustFirst() string {
 	for key := range r {
 		return key
 	}
-	panic("empty ReadResult")
+	panic("empty ReadResultCC")
 }
 
-func (r ReadResult) Contains(key string) bool {
+func (r ReadResultCC) Contains(key string) bool {
 	_, ok := r[key]
 	return ok
 }
 
-func (r ReadResult) ToValues(keys []string) []Value {
+func (r ReadResultCC) ToValues(keys []string, newSnapshotVersion uint64) []Value {
 	ret := make([]Value, 0, len(keys))
 	for _, key := range keys {
-		ret = append(ret, r[key].Value)
+		val := r[key].Value
+		val.SnapshotVersion = newSnapshotVersion
+		ret = append(ret, val)
 	}
 	return ret
 }
