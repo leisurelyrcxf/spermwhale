@@ -11,6 +11,10 @@ var (
 		Code: consts.ErrCodeWriteReadConflict,
 		Msg:  "write read conflict",
 	}
+	ErrStaleWrite = &Error{
+		Code: consts.ErrCodeStaleWrite,
+		Msg:  "stale write",
+	}
 	ErrReadUncommittedDataPrevTxnStatusUndetermined = &Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined,
 		Msg:  "read uncommitted data previous txn state undetermined",
@@ -23,9 +27,17 @@ var (
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
 		Msg:  "read uncommitted data previous txn to be rollbacked",
 	}
-	ErrStaleWrite = &Error{
-		Code: consts.ErrCodeStaleWrite,
-		Msg:  "stale write",
+	ErrReadAfterWriteFailed = &Error{
+		Code: consts.ErrCodeReadAfterWriteFailed,
+		Msg:  "read after write failed",
+	}
+	ErrTxnRollbacking = &Error{
+		Code: consts.ErrCodeTxnRollbacking,
+		Msg:  "txn rollbacking",
+	}
+	ErrTxnRollbacked = &Error{
+		Code: consts.ErrCodeTxnRollbacked,
+		Msg:  "txn rollbacked",
 	}
 	ErrShardsNotReady = &Error{
 		Code: consts.ErrCodeShardsNotReady,
@@ -94,10 +106,6 @@ var (
 	ErrSchedulerClosed = &Error{
 		Code: consts.ErrCodeSchedulerClosed,
 		Msg:  "scheduler closed",
-	}
-	ErrReadAfterWriteFailed = &Error{
-		Code: consts.ErrCodeReadAfterWriteFailed,
-		Msg:  "read after write failed",
 	}
 	ErrEmptyKey = &Error{
 		Code: consts.ErrCodeEmptyKey,

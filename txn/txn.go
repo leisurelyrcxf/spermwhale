@@ -279,13 +279,13 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version && vv.MaxReadVersion >= txn.ID.Version() /* > vv.Version */)
-	committed, rollbackedOrSafeToRollback := writeTxn.checkCommitState(ctx, txn, map[string]types.ValueCC{key: vv}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
+	committed, aborted := writeTxn.checkCommitState(ctx, txn, map[string]types.ValueCC{key: vv}, preventFutureWrite, consts.MaxRetryResolveFoundedWriteIntent)
 	if committed {
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
 		return vv, nil
 	}
-	if rollbackedOrSafeToRollback {
+	if aborted {
 		if writeTxn.IsWrittenKeyRollbacked(key) {
 			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 		}
@@ -430,7 +430,7 @@ func (txn *Txn) parallelRead(ctx context.Context, keys []string, readOpt types.K
 	return values, nil
 }
 
-func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) (committed bool, rollbackedOrSafeToRollback bool) {
+func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWriteIntent map[string]types.ValueCC, preventFutureWrite bool, maxRetry int) (committed bool, aborted bool) {
 	switch txn.State {
 	case types.TxnStateStaging:
 		assert.Must(txn.AreWrittenKeysCompleted() && txn.GetWrittenKeyCount() > 0)
@@ -621,20 +621,20 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			return nil
 		}
 		if txn.State.IsAborted() {
-			return lastNonRollbackableIOErr
+			return txn.genAbortErr(lastNonRollbackableIOErr)
 		}
 	}
 	assert.Must(txn.State == types.TxnStateStaging)
 	succeededKeys := txn.GetSucceededWrittenKeysUnsafe()
 	assert.Must(len(succeededKeys) != txn.GetWrittenKeyCount() || txn.txnRecordTask.Err() != nil)
-	committed, rollbacked := txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
+	committed, aborted := txn.checkCommitState(ctx, txn, succeededKeys, true, maxRetry)
 	if committed {
 		assert.Must(txn.State == types.TxnStateCommitted)
 		return nil
 	}
-	if rollbacked {
+	if aborted {
 		assert.Must(txn.State.IsAborted())
-		return lastNonRollbackableIOErr
+		return txn.genAbortErr(lastNonRollbackableIOErr)
 	}
 	txn.State = types.TxnStateInvalid
 	return lastNonRollbackableIOErr
@@ -920,4 +920,12 @@ func (txn *Txn) GetReadValues() map[string]types.Value {
 
 func (txn *Txn) GetWriteValues() map[string]types.Value {
 	return types.InvalidWriteValues
+}
+
+func (txn *Txn) genAbortErr(reason error) error {
+	assert.Must(txn.State.IsAborted())
+	if txn.State == types.TxnStateRollbacking {
+		return errors.Annotatef(errors.ErrTxnRollbacking, "reason: '%v'", reason.Error())
+	}
+	return errors.Annotatef(errors.ErrTxnRollbacked, "reason: '%v'", reason.Error())
 }
