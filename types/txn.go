@@ -237,13 +237,72 @@ func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
 	return opt.flag&consts.CommonReadOptBitMaskWaitNoWriteIntent == consts.CommonReadOptBitMaskWaitNoWriteIntent
 }
 
+var (
+	InvalidReadValues   = map[string]Value{"haha": {Meta: Meta{Version: 1111}}}
+	IsInvalidReadValues = func(values map[string]Value) bool { return values["haha"].Version == 1111 }
+
+	InvalidWriteValues   = map[string]Value{"biubiu": {Meta: Meta{Version: 1111}}}
+	IsInvalidWriteValues = func(values map[string]Value) bool { return values["biubiu"].Version == 1111 }
+)
+
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
 	GetType() TxnType
+	GetSnapshotVersion() uint64 // only used when txn type is snapshot
 	MGet(ctx context.Context, keys []string, opt TxnReadOption) (values []Value, err error)
 	Get(ctx context.Context, key string, opt TxnReadOption) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
+
+	GetReadValues() map[string]Value
+	GetWriteValues() map[string]Value
+}
+
+type RecordValuesTxn struct {
+	Txn
+	readValues, writeValues map[string]Value
+}
+
+func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
+	return &RecordValuesTxn{
+		Txn:         txn,
+		readValues:  make(map[string]Value),
+		writeValues: make(map[string]Value),
+	}
+}
+
+func (txn *RecordValuesTxn) Get(ctx context.Context, key string, opt TxnReadOption) (Value, error) {
+	val, err := txn.Txn.Get(ctx, key, opt)
+	if err == nil {
+		txn.readValues[key] = val
+	}
+	return val, err
+}
+
+func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string, opt TxnReadOption) ([]Value, error) {
+	values, err := txn.Txn.MGet(ctx, keys, opt)
+	if err == nil {
+		for idx, val := range values {
+			txn.readValues[keys[idx]] = val
+		}
+	}
+	return values, err
+}
+
+func (txn *RecordValuesTxn) Set(ctx context.Context, key string, val []byte) error {
+	err := txn.Txn.Set(ctx, key, val)
+	if err == nil {
+		txn.writeValues[key] = NewValue(val, txn.Txn.GetId().Version())
+	}
+	return err
+}
+
+func (txn *RecordValuesTxn) GetReadValues() map[string]Value {
+	return txn.readValues
+}
+
+func (txn *RecordValuesTxn) GetWriteValues() map[string]Value {
+	return txn.writeValues
 }

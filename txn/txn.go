@@ -76,6 +76,10 @@ func (i *TransactionInfo) InitializeSnapshotVersion() {
 	}
 }
 
+func (i *TransactionInfo) GetSnapshotVersion() uint64 {
+	return i.SnapshotVersion
+}
+
 func (i *TransactionInfo) GetSnapshotReadOption() types.KVCCReadOption {
 	return types.NewKVCCReadOption(0).WithSnapshotRead(i.SnapshotVersion)
 }
@@ -908,4 +912,12 @@ func (txn *Txn) gc() {
 
 func (txn *Txn) couldBeWounded() bool {
 	return utils.IsTooOld(txn.ID.Version(), txn.cfg.WoundUncommittedTxnThreshold)
+}
+
+func (txn *Txn) GetReadValues() map[string]types.Value {
+	return types.InvalidReadValues
+}
+
+func (txn *Txn) GetWriteValues() map[string]types.Value {
+	return types.InvalidWriteValues
 }

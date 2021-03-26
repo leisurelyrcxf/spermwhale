@@ -168,11 +168,17 @@ func (c *Client) Close() error {
 }
 
 type ClientTxnManager struct {
-	c *Client
+	c            *Client
+	recordValues bool
 }
 
 func NewClientTxnManager(c *Client) *ClientTxnManager {
 	return &ClientTxnManager{c: c}
+}
+
+func (m *ClientTxnManager) SetRecordValues(b bool) *ClientTxnManager {
+	m.recordValues = b
+	return m
 }
 
 func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnType) (types.Txn, error) {
@@ -181,10 +187,11 @@ func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnTy
 		return nil, err
 	}
 	assert.Must(txnInfo.Type == typ)
-	return &ClientTxn{
-		TransactionInfo: txnInfo,
-		c:               m.c,
-	}, nil
+	txn := newClientTxn(txnInfo, m.c)
+	if !m.recordValues {
+		return txn, nil
+	}
+	return types.NewRecordValuesTxn(txn), nil
 }
 
 func (m *ClientTxnManager) Close() error {
@@ -195,6 +202,13 @@ type ClientTxn struct {
 	TransactionInfo
 
 	c *Client
+}
+
+func newClientTxn(txnInfo TransactionInfo, c *Client) *ClientTxn {
+	return &ClientTxn{
+		TransactionInfo: txnInfo,
+		c:               c,
+	}
 }
 
 func (txn *ClientTxn) Get(ctx context.Context, key string, opt types.TxnReadOption) (types.Value, error) {
@@ -230,4 +244,12 @@ func (txn *ClientTxn) Rollback(ctx context.Context) error {
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return err
+}
+
+func (txn *ClientTxn) GetReadValues() map[string]types.Value {
+	return types.InvalidReadValues
+}
+
+func (txn *ClientTxn) GetWriteValues() map[string]types.Value {
+	return types.InvalidWriteValues
 }

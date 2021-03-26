@@ -96,7 +96,7 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, dbType types.DBType, txn
 			defer wg.Done()
 
 			var readValue, writeValue types.Value
-			if tx, err := sc.DoTransactionRaw(ctx, txnType, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, _, err := sc.DoTransactionRaw(ctx, txnType, func(ctx context.Context, txn types.Txn) (error, bool) {
 				val, err := txn.Get(ctx, "k1", readOpt)
 				if err != nil {
 					return err, true
@@ -201,7 +201,7 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 			defer wg.Done()
 
 			var readValues, writeValues = map[string]types.Value{}, map[string]types.Value{}
-			if tx, err := sc.DoTransactionRaw(ctx, txnType, func(ctx context.Context, txn types.Txn) (error, bool) {
+			if tx, _, err := sc.DoTransactionRaw(ctx, txnType, func(ctx context.Context, txn types.Txn) (error, bool) {
 				if i&1 == 1 {
 					val, err := txn.Get(ctx, key, readOpt)
 					if err != nil {
@@ -249,7 +249,7 @@ func testTxnLostUpdateWriteAfterWriteOneRound(t *testing.T, round int, txnType t
 		return
 	}
 
-	txns.Check(assert)
+	txns.CheckSerializability(assert)
 	for _, cur := range txns {
 		if _, isWrite := cur.WriteValues[key]; !isWrite {
 			continue
@@ -386,7 +386,7 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 				readValues  = map[string]types.Value{}
 				writeValues = map[string]types.Value{}
 			)
-			if tx, err := sc.DoTransactionExOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
+			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				{
 					val, err := txn.Get(ctx, "k1", readOpt)
 					if err != nil {
@@ -523,7 +523,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 				readOpt     = types.NewTxnReadOption()
 			)
 
-			if tx, err := sc.DoTransactionExOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
+			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				if i&1 == 1 {
 					{
 						val, err := txn.Get(ctx, "k1", readOpt)
@@ -697,7 +697,7 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 				readOpt     = types.NewTxnReadOption()
 			)
 
-			if tx, err := sc.DoTransactionExOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
+			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				for i := 0; i < N; i++ {
 					var key = fmt.Sprintf("k%d", i)
 					val, err := txn.Get(ctx, key, readOpt)
@@ -1053,7 +1053,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 			defer wg.Done()
 
 			if i%100 == 0 {
-				_, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
+				_, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
 					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true
@@ -1152,7 +1152,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 			defer wg.Done()
 
 			if i%100 == 0 {
-				_, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
+				_, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
 					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
 					if err != nil {
 						return err, true

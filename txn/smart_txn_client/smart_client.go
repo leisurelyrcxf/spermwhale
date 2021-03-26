@@ -29,7 +29,7 @@ func NewSmartClient(tm types.TxnManager, maxRetry int) *SmartClient {
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
-	_, err := c.DoTransactionExOfType(ctx, types.TxnTypeDefault, f)
+	_, _, err := c.DoTransactionOfTypeEx(ctx, types.TxnTypeDefault, f)
 	if err != nil {
 		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
 	}
@@ -37,7 +37,7 @@ func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Cont
 }
 
 func (c *SmartClient) DoTransactionOfType(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) error {
-	_, err := c.DoTransactionExOfType(ctx, typ, f)
+	_, _, err := c.DoTransactionOfTypeEx(ctx, typ, f)
 	if err != nil {
 		glog.Errorf("[DoTransaction] do transaction failed: '%v'", err)
 	}
@@ -45,45 +45,46 @@ func (c *SmartClient) DoTransactionOfType(ctx context.Context, typ types.TxnType
 }
 
 func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) (types.Txn, error) {
-	return c.DoTransactionExOfType(ctx, types.TxnTypeDefault, f)
+	txn, _, err := c.DoTransactionOfTypeEx(ctx, types.TxnTypeDefault, f)
+	return txn, err
 }
 
-func (c *SmartClient) DoTransactionExOfType(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (types.Txn, error) {
+func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (types.Txn, int, error) {
 	return c.DoTransactionRaw(ctx, typ, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
 	}, nil, nil)
 }
 
 func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
-	beforeCommit, beforeRollback func() error) (types.Txn, error) {
+	beforeCommit, beforeRollback func() error) (types.Txn, int, error) {
 	for i := 0; i < c.maxRetry; i++ {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, i + 1, err
 		}
 		tx, err := c.TxnManager.BeginTransaction(ctx, typ)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue
 			}
-			return nil, err
+			return nil, i + 1, err
 		}
 
 		err, retry := f(ctx, tx)
 		if err == nil {
 			if beforeCommit != nil {
 				if err := beforeCommit(); err != nil {
-					return tx, err
+					return tx, i + 1, err
 				}
 			}
 			err := tx.Commit(ctx)
 			if err == nil {
-				return tx, nil
+				return tx, i + 1, nil
 			}
 			if !retry { //TODO FIXME
-				return tx, err
+				return tx, i + 1, err
 			}
 			if !tx.GetState().IsAborted() && !errors.IsRetryableTransactionErr(err) {
-				return tx, err
+				return tx, i + 1, err
 			}
 			rand.Seed(time.Now().UnixNano())
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
@@ -91,18 +92,18 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 		}
 		if beforeRollback != nil {
 			if err := beforeRollback(); err != nil {
-				return tx, err
+				return tx, i + 1, err
 			}
 		}
 		if !tx.GetState().IsAborted() {
 			_ = tx.Rollback(ctx)
 		}
 		if !retry || !errors.IsRetryableTransactionErr(err) {
-			return tx, err
+			return tx, i + 1, err
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 	}
-	return nil, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
+	return nil, c.maxRetry, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }
 
 func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {
@@ -122,7 +123,7 @@ func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ e
 }
 
 func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.TxnType) (values []types.Value, _ error) {
-	if _, err := c.DoTransactionExOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) (err error) {
+	if _, _, err := c.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) (err error) {
 		values, err = txn.MGet(ctx, keys, types.NewTxnReadOption())
 		return
 	}); err != nil {
