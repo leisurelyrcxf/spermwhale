@@ -10,6 +10,9 @@ const (
 	ErrCodeTxnRollbacking                              = 7
 	ErrCodeTxnRollbacked                               = 8
 
+	ErrCodeSnapshotReadRetriedTooManyTimes                      = 19
+	ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion = 20
+
 	ErrCodeKeyOrVersionNotExists = 27
 	ErrCodeShardsNotReady        = 28
 	ErrCodeEmptyKey              = 29
@@ -30,8 +33,6 @@ const (
 	ErrCodeCantRemoveCommittedValue                  = 90
 	ErrCodeTabletWriteTransactionNotFound            = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten = 92
-	ErrCodeSnapshotReadRetriedTooManyTimes           = 93
-	ErrCodeSnapshotViolated                          = 94
 
 	ErrCodeNilResponse                                    = 99
 	ErrCodeInvalidResponse                                = 100

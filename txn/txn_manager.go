@@ -121,7 +121,7 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnTy
 	assert.MustNoError(err)
 
 	if typ.IsSnapshotRead() && snapshotVersion > 0 {
-		txn.setSnapshotVersion(snapshotVersion)
+		txn.SetSnapshotVersion(snapshotVersion)
 	}
 
 	if !m.recordValues {

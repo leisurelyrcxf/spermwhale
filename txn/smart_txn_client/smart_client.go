@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
@@ -57,11 +59,12 @@ func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnTy
 
 func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) (types.Txn, int, error) {
+	var snapshotVersion = uint64(0)
 	for i := 0; i < c.maxRetry; i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, i + 1, err
 		}
-		tx, err := c.TxnManager.BeginTransaction(ctx, typ, 0)
+		tx, err := c.TxnManager.BeginTransaction(ctx, typ, snapshotVersion)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue
@@ -100,6 +103,10 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 		}
 		if !retry || !errors.IsRetryableTransactionErr(err) {
 			return tx, i + 1, err
+		}
+		if errors.IsSnapshotReadTabletErr(err) {
+			snapshotVersion = tx.GetSnapshotVersion()
+			assert.Must(snapshotVersion > 0)
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 	}

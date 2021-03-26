@@ -9,10 +9,10 @@ import (
 )
 
 type KVCCReadOption struct {
-	ReaderVersion uint64
-	flag          uint8
-	ExactVersion  uint64
-	//MinAllowedSnapshotVersion uint64 // inclusive
+	ReaderVersion             uint64
+	flag                      uint8
+	ExactVersion              uint64
+	MinAllowedSnapshotVersion uint64
 }
 
 func NewKVCCReadOption(readerVersion uint64) KVCCReadOption {
@@ -23,16 +23,18 @@ func NewKVCCReadOption(readerVersion uint64) KVCCReadOption {
 
 func NewKVCCReadOptionFromPB(x *kvccpb.KVCCReadOption) KVCCReadOption {
 	return KVCCReadOption{
-		ReaderVersion: x.ReaderVersion,
-		flag:          x.GetFlagSafe(),
-		ExactVersion:  x.ExactVersion,
+		ReaderVersion:             x.ReaderVersion,
+		flag:                      x.GetFlagSafe(),
+		ExactVersion:              x.ExactVersion,
+		MinAllowedSnapshotVersion: x.MinAllowedSnapshotVersion,
 	}
 }
 
 func (opt KVCCReadOption) ToPB() *kvccpb.KVCCReadOption {
 	return (&kvccpb.KVCCReadOption{
-		ReaderVersion: opt.ReaderVersion,
-		ExactVersion:  opt.ExactVersion,
+		ReaderVersion:             opt.ReaderVersion,
+		ExactVersion:              opt.ExactVersion,
+		MinAllowedSnapshotVersion: opt.MinAllowedSnapshotVersion,
 	}).SetFlagSafe(opt.flag)
 }
 
@@ -69,7 +71,7 @@ func (opt KVCCReadOption) WithSnapshotRead(snapshotVersion uint64, minAllowedSna
 	opt.flag |= KVCCReadOptBitMaskSnapshotRead
 	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
 	opt.ReaderVersion = snapshotVersion
-	//opt.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
+	opt.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
 	return opt
 }
 

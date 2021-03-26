@@ -2,6 +2,14 @@ package basic
 
 type Set map[string]struct{}
 
+func MakeSet(keys []string) Set {
+	s := make(Set)
+	for _, key := range keys {
+		s[key] = struct{}{}
+	}
+	return s
+}
+
 func (s Set) Contains(key string) bool {
 	_, ok := s[key]
 	return ok
