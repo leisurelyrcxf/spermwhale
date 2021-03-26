@@ -186,7 +186,7 @@ func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnTy
 	if err != nil {
 		return nil, err
 	}
-	assert.Must(txnInfo.Type == typ)
+	assert.Must(txnInfo.TxnType == typ)
 	txn := newClientTxn(txnInfo, m.c)
 	if !m.recordValues {
 		return txn, nil

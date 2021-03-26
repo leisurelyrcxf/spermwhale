@@ -115,6 +115,10 @@ func (s TxnState) String() string {
 	return stateStrings[s]
 }
 
+func (s TxnState) IsStaging() bool {
+	return s == TxnStateStaging
+}
+
 func (s TxnState) IsCommitted() bool {
 	return s == TxnStateCommitted
 }
@@ -124,7 +128,7 @@ func (s TxnState) IsAborted() bool {
 }
 
 func (s TxnState) IsTerminated() bool {
-	return s.IsAborted() || s == TxnStateCommitted
+	return s.IsAborted() || s.IsCommitted()
 }
 
 type TxnType uint8
@@ -158,6 +162,10 @@ func ParseTxnType(str string) (TxnType, error) {
 	}
 }
 
+func (t TxnType) ToPB() txnpb.TxnType {
+	return txnpb.TxnType(t)
+}
+
 func (t TxnType) String() string {
 	switch t {
 	case TxnTypeDefault:
@@ -169,10 +177,6 @@ func (t TxnType) String() string {
 	default:
 		return "invalid"
 	}
-}
-
-func (t TxnType) ToPB() txnpb.TxnType {
-	return txnpb.TxnType(t)
 }
 
 func (t TxnType) IsReadForWrite() bool {

@@ -1208,7 +1208,7 @@ func TestTxnEncode(t *testing.T) {
 	assert := types.NewAssertion(t)
 
 	txn := NewTxn(123, types.TxnTypeReadForWrite, kvcc.NewKVCCForTesting(memory.NewMemoryDB(), defaultTabletTxnConfig), defaultTxnManagerConfig, &TransactionStore{}, nil, nil)
-	txn.State = types.TxnStateRollbacking
+	txn.TxnState = types.TxnStateRollbacking
 	txn.InitializeWrittenKeys(ttypes.KeyVersions{"k1": 111, "k2": 222}, true)
 	bytes := txn.Encode()
 	t.Logf("txn:     %s", string(bytes))
@@ -1217,7 +1217,7 @@ func TestTxnEncode(t *testing.T) {
 	assert.NoError(err)
 	t.Logf("new_txn: %s", string(newTxn.Encode()))
 	assert.Equal(txn.ID, newTxn.ID)
-	assert.Equal(txn.Type, newTxn.Type)
-	assert.Equal(txn.State, newTxn.State)
+	assert.Equal(txn.TxnType, newTxn.TxnType)
+	assert.Equal(txn.TxnState, newTxn.TxnState)
 	assert.Equal(txn.GetWrittenKey2LastVersion(), newTxn.GetWrittenKey2LastVersion())
 }
