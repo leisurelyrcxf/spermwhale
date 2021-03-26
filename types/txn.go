@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	MaxTxnVersion = uint64(math.MaxUint64)
-	MaxTxnId      = TxnId(MaxTxnVersion)
+	MaxTxnVersionDate = "2200-01-01T00:00:00Z"
+	MaxTxnVersion     = uint64(7258118400000000000)
+	MaxTxnId          = TxnId(MaxTxnVersion)
 )
 
 func SafeIncr(version *uint64) {
