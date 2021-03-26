@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/errors"
 	testifyassert "github.com/stretchr/testify/assert"
+
+	"github.com/leisurelyrcxf/spermwhale/errors"
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
 
 func TestTask_Result(t *testing.T) {
@@ -24,7 +26,7 @@ func TestTask_Result(t *testing.T) {
 func testTaskResult(t *testing.T, round int) (b bool) {
 	assert := testifyassert.New(t)
 
-	task := NewTreeTaskNoResult("id", "name", 0, nil, func(ctx context.Context, childrenResult []interface{}) error {
+	task := NewTreeTaskNoResult(basic.NewTaskId(0, "id"), "name", 0, nil, func(ctx context.Context, childrenResult []interface{}) error {
 		return errors.ErrInject
 	})
 

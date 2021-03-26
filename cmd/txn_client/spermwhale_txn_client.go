@@ -77,15 +77,15 @@ func main() {
 			cmds := utils.TrimmedSplit(promptText, ";")
 			for i := 0; ; i++ {
 				if clientTxn, ok := tx.(*txn.ClientTxn); ok && clientTxn != nil {
-					if prevTxnState != types.TxnStateCommitted && clientTxn.State == types.TxnStateCommitted {
+					if prevTxnState != types.TxnStateCommitted && clientTxn.IsCommitted() {
 						fmt.Println("COMMITTED")
-					} else if !prevTxnState.IsAborted() && clientTxn.State.IsAborted() {
+					} else if !prevTxnState.IsAborted() && clientTxn.IsAborted() {
 						fmt.Println("ABORTED")
 					}
-					if autoClearTerminatedTxn && clientTxn.State.IsTerminated() {
+					if autoClearTerminatedTxn && clientTxn.IsTerminated() {
 						tx = nil
 					}
-					prevTxnState = clientTxn.State
+					prevTxnState = clientTxn.TxnState
 				}
 
 				if quit {
