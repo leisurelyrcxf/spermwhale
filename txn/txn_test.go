@@ -140,7 +140,7 @@ func testTxnLostUpdateOneRound(t *testing.T, round int, dbType types.DBType, txn
 	return true
 }
 
-func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
+func TestTxnLostUpdateWriteAfterWrite(t *testing.T) { // TODO test failed
 	testTxnLostUpdateWriteAfterWrite(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10})
 }
 

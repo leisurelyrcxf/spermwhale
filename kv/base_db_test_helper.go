@@ -346,6 +346,32 @@ func TestConcurrentInsert(t types.T, db *DB) (b bool) {
 	return true
 }
 
+func TestCausalConsistency(t types.T, db *DB) (b bool) {
+	assert := types.NewAssertion(t)
+	const key = "k1"
+
+	if !assert.NoError(db.Set(context.Background(), key, types.NewValue([]byte("111"), 1), types.NewKVWriteOption())) {
+		return
+	}
+	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	if !assert.NoError(err) || !assert.True(val.HasWriteIntent()) {
+		return false
+	}
+
+	var done = make(chan struct{})
+	go func() {
+		defer close(done)
+
+		if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !assert.NoError(err) {
+			return
+		}
+	}()
+
+	<-done
+	val, err = db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	return assert.NoError(err) && assert.True(!val.HasWriteIntent())
+}
+
 const (
 	writerNum = 1000
 	readerNum = 1000

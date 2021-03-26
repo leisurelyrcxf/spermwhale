@@ -16,6 +16,10 @@ func TestDB(t *testing.T) {
 	kv.RunTestCase(t, rounds, newRedis, kv.TestDB)
 }
 
+func TestCausalConsistency(t *testing.T) {
+	kv.RunTestCase(t, 100000, newRedis, kv.TestCausalConsistency)
+}
+
 func TestConcurrentClearWriteIntent(t *testing.T) {
 	kv.RunTestCase(t, rounds, newRedis, kv.TestConcurrentClearWriteIntent)
 }
