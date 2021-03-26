@@ -76,7 +76,7 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 				}
 				readValue = val
 				v1 += delta
-				writeValue = types.IntValue(v1).WithVersion(txn.GetId().Version())
+				writeValue = types.NewIntValue(v1).WithVersion(txn.GetId().Version())
 				return txn.Set(ctx, "k1", writeValue.V), true
 			}, nil, nil); assert.NoError(err) {
 				txns[i] = ExecuteInfo{

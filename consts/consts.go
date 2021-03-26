@@ -16,10 +16,11 @@ const (
 	DefaultMaxClockDrift                = time.Second
 	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
 
-	DefaultTxnManagerClearWorkerNumber             = 20
-	DefaultTxnManagerClearJobTimeout               = time.Second * 10
-	DefaultTxnManagerIOWorkerNumber                = 30
-	DefaultTxnManagerMaxIOTaskBufferedPerPartition = 10000
+	DefaultTxnManagerClearerNumber              = 20
+	DefaultTxnManagerClearJobTimeout            = time.Second * 10
+	DefaultTxnManagerWriterNumber               = 30
+	DefaultTxnManagerReaderNumber               = 20
+	DefaultTxnManagerMaxBufferedJobPerPartition = 10000
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	ReadOptBitMaskNotGetMaxReadVersion       = 1 << 1
 	ReadOptBitMaskReadForWrite               = 1 << 2
 	ReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 3
+	ReadOptBitMaskSnapshotRead               = 1 << 4
 
 	commonReadOptBitOffset                      = 6
 	commonReadOptBitMask                        = uint8((0xffff << commonReadOptBitOffset) & 0xff)
@@ -73,6 +75,7 @@ const (
 
 const (
 	MaxRetryTxnGet                    = 2
+	MaxRetrySnapshotRead              = 5
 	MaxRetryResolveFoundedWriteIntent = 2
 )
 

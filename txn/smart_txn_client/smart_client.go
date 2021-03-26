@@ -121,8 +121,8 @@ func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ e
 	return val, nil
 }
 
-func (c *SmartClient) MGet(ctx context.Context, keys []string) (values []types.Value, _ error) {
-	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
+func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.TxnType) (values []types.Value, _ error) {
+	if _, err := c.DoTransactionExOfType(ctx, txnType, func(ctx context.Context, txn types.Txn) (err error) {
 		values, err = txn.MGet(ctx, keys, types.NewTxnReadOption())
 		return
 	}); err != nil {
@@ -145,8 +145,8 @@ func (c *SmartClient) GetInt(ctx context.Context, key string) (int, error) {
 	return val.Int()
 }
 
-func (c *SmartClient) MGetInts(ctx context.Context, keys []string) ([]int, error) {
-	values, err := c.MGet(ctx, keys)
+func (c *SmartClient) MGetInts(ctx context.Context, keys []string, txnType types.TxnType) ([]int, error) {
+	values, err := c.MGet(ctx, keys, txnType)
 	if err != nil {
 		return nil, err
 	}

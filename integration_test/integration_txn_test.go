@@ -43,7 +43,7 @@ func testTransaction(t *testing.T) (b bool) {
 		//		}
 		//		v1 += delta
 		//
-		//		if err := txn.Set(ctx, "k1", types.IntValue(v1).V); err != nil {
+		//		if err := txn.Set(ctx, "k1", types.NewIntValue(v1).V); err != nil {
 		//			return err
 		//		}
 		//		return txn.Commit(ctx)

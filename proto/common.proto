@@ -11,7 +11,9 @@ message Error {
 
 message ValueMeta {
     uint64 version = 1;
-    uint32 flag = 2;
+    uint32 internal_version = 2;
+    uint32 flag = 3;
+    uint64 snapshot_version = 4;
 }
 
 message Value {

@@ -12,18 +12,23 @@ type Meta struct {
 	Version         uint64
 	InternalVersion TxnInternalVersion
 	Flag            uint8
+	SnapshotVersion uint64 // used only for snapshot read
 }
 
 func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
 	return Meta{
-		Version: x.Version,
-		Flag:    x.GetFlagSafe(),
+		Version:         x.Version,
+		InternalVersion: TxnInternalVersion(x.InternalVersion),
+		Flag:            x.GetFlagSafe(),
+		SnapshotVersion: x.SnapshotVersion,
 	}
 }
 
 func (m Meta) ToPB() *commonpb.ValueMeta {
 	return (&commonpb.ValueMeta{
-		Version: m.Version,
+		Version:         m.Version,
+		InternalVersion: uint32(m.InternalVersion),
+		SnapshotVersion: m.SnapshotVersion,
 	}).SetFlag(m.Flag)
 }
 
@@ -50,11 +55,11 @@ var EmptyValue = Value{}
 // NewValue create a value with write intent
 func NewValue(val []byte, version uint64) Value {
 	return Value{
-		V: val,
 		Meta: Meta{
 			Version: version,
 			Flag:    consts.ValueMetaBitMaskHasWriteIntent, // default has write intent
 		},
+		V: val,
 	}
 }
 
@@ -65,25 +70,15 @@ func NewValueFromPB(x *commonpb.Value) Value {
 	}
 }
 
+func NewIntValue(i int) Value {
+	return NewValue([]byte(strconv.Itoa(i)), 0) // TODO change coding
+}
+
 func (v Value) ToPB() *commonpb.Value {
 	return &commonpb.Value{
 		Meta: v.Meta.ToPB(),
 		V:    v.V,
 	}
-}
-
-func (v Value) IsEmpty() bool {
-	return len(v.V) == 0 && v.Meta.isEmpty()
-}
-
-func (v Value) WithVersion(version uint64) Value {
-	v.Version = version
-	return v
-}
-
-func (v Value) WithNoWriteIntent() Value {
-	v.Flag &= 0xfe
-	return v
 }
 
 func (v Value) String() string {
@@ -103,6 +98,20 @@ func (v Value) MustInt() int {
 	return int(x)
 }
 
+func (v Value) IsEmpty() bool {
+	return len(v.V) == 0 && v.Meta.isEmpty()
+}
+
+func (v Value) WithVersion(version uint64) Value {
+	v.Version = version
+	return v
+}
+
+func (v Value) WithNoWriteIntent() Value {
+	v.Flag &= 0xfe
+	return v
+}
+
 func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	return ValueCC{
 		Value:          v,
@@ -113,10 +122,6 @@ func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
 	v.Meta.InternalVersion = version
 	return v
-}
-
-func IntValue(i int) Value {
-	return NewValue([]byte(strconv.Itoa(i)), 0)
 }
 
 type ValueCC struct {
@@ -150,7 +155,7 @@ func (v ValueCC) ToPB() *commonpb.ValueCC {
 }
 
 func (v ValueCC) IsEmpty() bool {
-	return v.Value.IsEmpty() && v.MaxReadVersion == 0
+	return v.Value.IsEmpty() && v.MaxReadVersion == 0 && v.SnapshotVersion == 0
 }
 
 func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
@@ -163,4 +168,19 @@ func (v ValueCC) WithNoWriteIntent() ValueCC {
 		Value:          v.Value.WithNoWriteIntent(),
 		MaxReadVersion: v.MaxReadVersion,
 	}
+}
+
+func (v ValueCC) WithSnapshotVersion(snapshotVersion uint64) ValueCC {
+	v.SnapshotVersion = snapshotVersion
+	return v
+}
+
+type ValueCCs []ValueCC
+
+func (vs ValueCCs) ToValues() []Value {
+	ret := make([]Value, 0, len(vs))
+	for _, v := range vs {
+		ret = append(ret, v.Value)
+	}
+	return ret
 }

@@ -63,6 +63,13 @@ func (opt KVCCReadOption) CondReadForWriteFirstReadOfKey(b bool) KVCCReadOption 
 	return opt
 }
 
+func (opt KVCCReadOption) WithSnapshotRead(snapshotVersion uint64) KVCCReadOption {
+	opt.flag |= ReadOptBitMaskSnapshotRead
+	opt.flag |= ReadOptBitMaskNotGetMaxReadVersion
+	opt.ReaderVersion = snapshotVersion
+	return opt
+}
+
 func (opt KVCCReadOption) WithExactVersion(exactVersion uint64) KVCCReadOption {
 	opt.ExactVersion = exactVersion
 	return opt
@@ -100,6 +107,10 @@ func (opt KVCCReadOption) IsReadForWrite() bool {
 
 func (opt KVCCReadOption) IsReadForWriteFirstReadOfKey() bool {
 	return opt.flag&ReadOptBitMaskReadForWriteFirstReadOfKey == ReadOptBitMaskReadForWriteFirstReadOfKey
+}
+
+func (opt KVCCReadOption) IsSnapshotRead() bool {
+	return opt.flag&ReadOptBitMaskSnapshotRead == ReadOptBitMaskSnapshotRead
 }
 
 func (opt KVCCReadOption) ToKVReadOption() KVReadOption {

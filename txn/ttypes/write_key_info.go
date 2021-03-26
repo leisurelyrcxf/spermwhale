@@ -63,11 +63,11 @@ func (ks *WriteKeyInfos) InitializeWrittenKeys(key2LastWrittenVersion KeyVersion
 	ks.completed = completed
 }
 
-func (ks WriteKeyInfos) GetWriteTasks() []*types.ListTask {
+func (ks WriteKeyInfos) GetWriteKeyTasks() []*types.ListTask {
 	return ks.tasks
 }
 
-func (ks WriteKeyInfos) GetCopiedWriteTasks() []*types.ListTask {
+func (ks WriteKeyInfos) GetCopiedWriteKeyTasks() []*types.ListTask {
 	return append(make([]*types.ListTask, 0, len(ks.tasks)), ks.tasks...)
 }
 

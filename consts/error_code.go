@@ -11,6 +11,7 @@ const (
 	ErrCodeKeyNotExists   = 27
 	ErrCodeShardsNotReady = 28
 	ErrCodeEmptyKey       = 29
+	ErrCodeEmptyKeys      = 30
 
 	ErrCodeVersionAlreadyExists = 50
 	ErrCodeVersionNotExists     = 51
@@ -25,9 +26,11 @@ const (
 	ErrCodeReadForWriteWaitFailed = 80
 	ErrCodeReadForWriteQueueFull  = 81
 
-	ErrCodeCantRemoveCommittedValue                       = 90
-	ErrCodeTabletWriteTransactionNotFound                 = 91
-	ErrCodeTransactionRecordNotFoundAndWontBeWritten      = 92
+	ErrCodeCantRemoveCommittedValue                  = 90
+	ErrCodeTabletWriteTransactionNotFound            = 91
+	ErrCodeTransactionRecordNotFoundAndWontBeWritten = 92
+	ErrCodeSnapshotReadRetriedTooManyTimes           = 93
+
 	ErrCodeNilResponse                                    = 99
 	ErrCodeInvalidResponse                                = 100
 	ErrCodeTxnRetriedTooManyTimes                         = 101

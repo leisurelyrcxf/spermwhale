@@ -33,7 +33,7 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 		if readOpt.ReaderVersion == txnId.Version() {
 			readOpt = readOpt.WithIncrReaderVersion() // hack to prevent future write so we will infer that max_reader_version > write_version to prevent future write if key not exists
 		}
-		assert.Must(txnId.Version() < readOpt.ReaderVersion)
+		assert.Must(readOpt.ReaderVersion > txnId.Version())
 	}
 	if !getMaxReadVersion {
 		readOpt = readOpt.WithNotGetMaxReadVersion()
