@@ -3,6 +3,9 @@ package concurrency
 import (
 	"hash/crc32"
 	"sync"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type concurrentMapPartition struct {
@@ -74,14 +77,12 @@ type ConcurrentMap struct {
 }
 
 func (cmp *ConcurrentMap) Initialize(partitionNum int) {
+	assert.Must(utils.IsPowerOf2(partitionNum))
+
 	cmp.partitions = make([]*concurrentMapPartition, partitionNum)
 	for i := 0; i < partitionNum; i++ {
 		cmp.partitions[i] = &concurrentMapPartition{m: make(map[string]interface{})}
 	}
-}
-
-func (cmp *ConcurrentMap) hash(s string) int {
-	return int(crc32.ChecksumIEEE([]byte(s))) % len(cmp.partitions)
 }
 
 func (cmp *ConcurrentMap) RLock() {
@@ -132,8 +133,12 @@ func (cmp *ConcurrentMap) SetIf(key string, val interface{}, pred func(prev inte
 	return cmp.partitions[cmp.hash(key)].setIf(key, val, pred)
 }
 
-func (cmp *ConcurrentMap) Del(key string) {
+func (cmp *ConcurrentMap) Del(key string) { // TODO add delKeys method
 	cmp.partitions[cmp.hash(key)].del(key)
+}
+
+func (cmp *ConcurrentMap) hash(s string) int {
+	return int(crc32.ChecksumIEEE([]byte(s))) & (len(cmp.partitions) - 1)
 }
 
 func (cmp *ConcurrentMap) ForEachLoosed(cb func(string, interface{})) {

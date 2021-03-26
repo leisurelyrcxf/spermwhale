@@ -19,15 +19,28 @@ import (
 
 type TimestampCache struct {
 	m concurrency.ConcurrentMap
+	t concurrency.ConcurrentTxnMap
 }
 
 func NewTimestampCache() *TimestampCache {
 	tc := &TimestampCache{}
 	tc.m.Initialize(64)
+	tc.t.Initialize(64)
 	return tc
 }
 
-func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
+func (cache *TimestampCache) GetMaxReadVersion(key types.TxnKeyUnion) uint64 {
+	if key := key.Key; key != "" {
+		return cache.GetMaxReadVersionOfKey(key)
+	}
+	v, ok := cache.t.Get(key.TxnId)
+	if !ok {
+		return 0
+	}
+	return v.(uint64)
+}
+
+func (cache *TimestampCache) GetMaxReadVersionOfKey(key string) uint64 {
 	v, ok := cache.m.Get(key)
 	if !ok {
 		return 0
@@ -35,8 +48,20 @@ func (cache *TimestampCache) GetMaxReadVersion(key string) uint64 {
 	return v.(uint64)
 }
 
-func (cache *TimestampCache) UpdateMaxReadVersion(key string, version uint64) (success bool, maxVal uint64) {
-	b, v := cache.m.SetIf(key, version, func(prev interface{}, exist bool) bool {
+func (cache *TimestampCache) UpdateMaxReadVersion(key types.TxnKeyUnion, version uint64) (success bool, maxVal uint64) {
+	if key := key.Key; key != "" {
+		b, v := cache.m.SetIf(key, version, func(prev interface{}, exist bool) bool {
+			if !exist {
+				return true
+			}
+			return version > prev.(uint64)
+		})
+		assert.Must(v.(uint64) >= version)
+		return b, v.(uint64)
+	}
+
+	assert.Must(key.TxnId > 0)
+	b, v := cache.t.SetIf(key.TxnId, version, func(prev interface{}, exist bool) bool {
 		if !exist {
 			return true
 		}
@@ -53,7 +78,7 @@ type KVCC struct {
 	db types.KV
 
 	txnManager *transaction.Manager
-	lm         *concurrency.LockManager
+	lm         concurrency.TxnLockManager
 	tsCache    *TimestampCache
 }
 
@@ -73,19 +98,22 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
 	}
 
-	return &KVCC{
+	kvcc := &KVCC{
 		TabletTxnConfig: cfg,
 		db:              db,
 		txnManager: transaction.NewManager(
 			consts.MaxReadForWriteQueueCapacityPerKey,
 			consts.ReadForWriteQueueMaxReadersRatio,
 			utils.MaxDuration(5*time.Second, cfg.StaleWriteThreshold)),
-		lm:      concurrency.NewLockManager(),
 		tsCache: NewTimestampCache(),
 	}
+	kvcc.lm.Initialize()
+	return kvcc
 }
 
 func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (types.ValueCC, error) {
+	assert.Must((!opt.IsTxnRecord() && key != "") || (opt.IsTxnRecord() && key == "" && opt.IsGetExactVersion()))
+
 	if opt.IsNotUpdateTimestampCache() && opt.IsNotGetMaxReadVersion() {
 		val, err := kv.db.Get(ctx, key, opt.ToKVReadOption())
 		//noinspection ALL
@@ -94,11 +122,12 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 
 	const readForWriteWaitTimeout = consts.DefaultReadTimeout / 10
 	if opt.IsReadForWrite() {
+		assert.Must(key != "")
 		if !kv.SupportReadForWriteTxn() {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrInvalidConfig, "can't support read for write transaction with current config: %v", kv.TabletTxnConfig)
 		}
 		assert.Must(!opt.IsGetExactVersion())
-		if opt.ReaderVersion < kv.tsCache.GetMaxReadVersion(key) {
+		if opt.ReaderVersion < kv.tsCache.GetMaxReadVersionOfKey(key) {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReadVersion(key)")
 		}
 		if opt.IsReadForWriteFirstReadOfKey() {
@@ -130,9 +159,10 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		updateTimestampCache = !opt.IsNotUpdateTimestampCache()
 		getMaxReadVersion    = !opt.IsNotGetMaxReadVersion()
 		snapshotRead         = opt.IsSnapshotRead()
+		txnKey               = types.TxnKeyUnion{Key: key, TxnId: types.TxnId(opt.ExactVersion)}
 	)
 
-	kv.lm.RLock(key) // guarantee mutual exclusion with set, note this is different from row lock in 2PL
+	kv.lm.RLock(txnKey) // guarantee mutual exclusion with set, note this is different from row lock in 2PL
 	var (
 		val types.Value
 		err error
@@ -155,26 +185,26 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 
 	var maxReadVersion uint64
 	if updateTimestampCache {
-		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(key, opt.ReaderVersion)
+		_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(txnKey, opt.ReaderVersion)
 		//kv.lm.RUnlock(key) TODO if put here performance will down for read-for-write txn, reason unknown.
 	}
 
 	if getMaxReadVersion {
 		if maxReadVersion == 0 {
-			maxReadVersion = kv.tsCache.GetMaxReadVersion(key)
+			maxReadVersion = kv.tsCache.GetMaxReadVersion(txnKey)
 		}
 	} else {
 		maxReadVersion = 0 // since protobuffer will skip empty values thus could save network bandwidth
 	}
-	kv.lm.RUnlock(key)
+	kv.lm.RUnlock(txnKey)
 
 	var valCC = val.WithMaxReadVersion(maxReadVersion)
 	if err != nil || !valCC.HasWriteIntent() || !opt.IsWaitNoWriteIntent() {
 		if glog.V(60) {
 			if err != nil {
-				glog.Errorf("txn-%d get key '%s' failed: '%v', cost: %s", opt.ReaderVersion, key, err, bench.Elapsed())
+				glog.Errorf("txn-%d get %s failed: '%v', cost: %s", opt.ReaderVersion, txnKey, err, bench.Elapsed())
 			} else {
-				glog.Infof("txn-%d get key '%s' succeeded, has write intent: %v, cost: %s", opt.ReaderVersion, key, valCC.HasWriteIntent(), bench.Elapsed())
+				glog.Infof("txn-%d get %s succeeded, has write intent: %v, cost: %s", opt.ReaderVersion, txnKey, valCC.HasWriteIntent(), bench.Elapsed())
 			}
 		}
 		if snapshotRead {
@@ -183,7 +213,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return valCC, err
 	}
 	assert.Must(!snapshotRead)
-
+	assert.Must(key != "")
 	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(valCC.Version), key)
 	if err != nil {
 		code := errors.GetErrorCode(err)
@@ -224,7 +254,12 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption) (
 
 // Set must be non-blocking in current io framework.
 func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
-	txnId := types.TxnId(val.Version)
+	assert.Must((!opt.IsTxnRecord() && key != "") || (opt.IsTxnRecord() && key == ""))
+
+	var (
+		txnId  = types.TxnId(val.Version)
+		txnKey = types.TxnKeyUnion{Key: key, TxnId: txnId}
+	)
 	if !val.HasWriteIntent() {
 		var (
 			isWrittenKey        = !opt.IsReadForWriteRollbackOrClearReadKey() // clear or rollbacked written key
@@ -240,7 +275,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 		if isWrittenKey {
 			if err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption()); err != nil && glog.V(10) {
-				glog.Errorf("txn-%d set key '%s' failed: %v", txnId, key, err)
+				glog.Errorf("txn-%d set %s failed: %v", txnId, txnKey, err)
 			}
 			checkWrittenKeyDone = err == nil && !opt.IsWriteByDifferentTransaction()
 		}
@@ -255,7 +290,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 					transaction.GetReadForWriteKeyEventTypeClearWriteIntent(err == nil)))
 			}
 			if err == nil && glog.V(60) {
-				glog.Infof("txn-%d write intent for key '%s' cleared, cost: %s", txnId, key, bench.Elapsed())
+				glog.Infof("txn-%d clear write intent of key '%s' cleared, cost: %s", txnId, key, bench.Elapsed())
 			}
 		} else if opt.IsRollbackKey() {
 			if isWrittenKey {
@@ -285,20 +320,20 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	// guarantee mutual exclusion with get,
 	// note this is different from row lock in 2PL because it gets
 	// unlocked immediately after read finish, which is not allowed in 2PL
-	kv.lm.Lock(key) // TODO make write parallel
+	kv.lm.Lock(txnKey) // TODO make write parallel
 
-	if val.Version < kv.tsCache.GetMaxReadVersion(key) {
-		kv.lm.Unlock(key)
+	if val.Version < kv.tsCache.GetMaxReadVersion(txnKey) {
+		kv.lm.Unlock(txnKey)
 		return errors.ErrWriteReadConflict
 	}
 
 	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	err := kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
-	kv.lm.Unlock(key)
+	kv.lm.Unlock(txnKey)
 
 	if err != nil {
 		if glog.V(10) {
-			glog.Errorf("txn-%d set key '%s' failed: '%v", txnId, key, err)
+			glog.Errorf("txn-%d set %s failed: '%v", txnId, txnKey, err)
 		}
 		return err
 	}
@@ -306,11 +341,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key, transaction.ReadForWriteKeyEventTypeKeyWritten))
 	}
 	if glog.V(60) {
-		if !opt.IsTxnRecord() {
-			glog.Infof("txn-%d set key('%s': v%d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
-		} else {
-			glog.Infof("txn-%d write txn record succeeded, cost %s", txnId, bench.Elapsed())
-		}
+		glog.Infof("txn-%d set %s (internal_version: %d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
 	}
 	return nil
 }

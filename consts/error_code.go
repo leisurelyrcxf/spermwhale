@@ -10,13 +10,12 @@ const (
 	ErrCodeTxnRollbacking                              = 7
 	ErrCodeTxnRollbacked                               = 8
 
-	ErrCodeKeyNotExists   = 27
-	ErrCodeShardsNotReady = 28
-	ErrCodeEmptyKey       = 29
-	ErrCodeEmptyKeys      = 30
+	ErrCodeKeyOrVersionNotExists = 27
+	ErrCodeShardsNotReady        = 28
+	ErrCodeEmptyKey              = 29
+	ErrCodeEmptyKeys             = 30
 
 	ErrCodeVersionAlreadyExists = 50
-	ErrCodeVersionNotExists     = 51
 
 	ErrCodeTransactionAlreadyExists           = 62
 	ErrCodeTransactionNotFound                = 63

@@ -260,8 +260,8 @@ func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestC
 }
 
 func (ts *TestCase) Run() {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", ts.LogLevel))
+	testifyassert.NoError(ts.t, flag.Set("logtostderr", fmt.Sprintf("%t", true)))
+	testifyassert.NoError(ts.t, flag.Set("v", fmt.Sprintf("%d", ts.LogLevel)))
 
 	for i := 0; i < ts.rounds; i++ {
 		if !ts.runOneRound(i) {
@@ -431,8 +431,8 @@ func (ts *TestCase) MustRouteToDifferentShards(key1 string, key2 string) bool {
 		!ts.NotNil(gAte2) {
 		return false
 	}
-	return ts.True(gAte1.MustRoute(key1).ID != gAte1.MustRoute(key2).ID) &&
-		ts.True(gAte2.MustRoute(key1).ID != gAte2.MustRoute(key2).ID)
+	return ts.True(gAte1.MustRoute(types.TxnKeyUnion{Key: key1}).ID != gAte1.MustRoute(types.TxnKeyUnion{Key: key2}).ID) &&
+		ts.True(gAte2.MustRoute(types.TxnKeyUnion{Key: key1}).ID != gAte2.MustRoute(types.TxnKeyUnion{Key: key2}).ID)
 }
 
 func createCluster(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {

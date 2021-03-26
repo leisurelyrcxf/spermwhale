@@ -3,11 +3,14 @@ package types
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -44,16 +47,8 @@ func (i TxnId) Max(another TxnId) TxnId {
 	return another
 }
 
-type TxnInternalVersion uint8
-
-const (
-	TxnInternalVersionMin             TxnInternalVersion = consts.MinTxnInternalVersion
-	TxnInternalVersionMax             TxnInternalVersion = consts.MaxTxnInternalVersion
-	TxnInternalVersionPositiveInvalid TxnInternalVersion = consts.PositiveInvalidTxnInternalVersion
-)
-
-func (v TxnInternalVersion) IsValid() bool {
-	return v != 0 && v != TxnInternalVersionPositiveInvalid
+func (i TxnId) String() string {
+	return fmt.Sprintf("txn-%d", i)
 }
 
 // AtomicTxnId is a wrapper with a simpler interface around atomic.(Add|Store|Load|CompareAndSwap)TxnId functions.
@@ -80,6 +75,40 @@ func (i *AtomicTxnId) SetIfBiggerUnsafe(id TxnId) {
 	if id > i.Get() {
 		i.Set(id)
 	}
+}
+
+type TxnInternalVersion uint8
+
+const (
+	TxnInternalVersionMin             TxnInternalVersion = consts.MinTxnInternalVersion
+	TxnInternalVersionMax             TxnInternalVersion = consts.MaxTxnInternalVersion
+	TxnInternalVersionPositiveInvalid TxnInternalVersion = consts.PositiveInvalidTxnInternalVersion
+)
+
+func (v TxnInternalVersion) IsValid() bool {
+	return v != 0 && v != TxnInternalVersionPositiveInvalid
+}
+
+type TxnKeyUnion struct {
+	Key   string
+	TxnId TxnId
+}
+
+func (tk TxnKeyUnion) Hash() uint64 {
+	if tk.Key != "" {
+		//assert.Must(tk.TxnId == 0)
+		return uint64(crc32.ChecksumIEEE([]byte(tk.Key)))
+	}
+	// must be a transaction record
+	assert.Must(tk.TxnId != 0)
+	return tk.TxnId.Version()
+}
+
+func (tk TxnKeyUnion) String() string {
+	if tk.Key != "" {
+		return "key-" + tk.Key
+	}
+	return "txn-record"
 }
 
 type TxnManager interface {

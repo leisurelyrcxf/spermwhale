@@ -77,7 +77,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	}
 	for i := 0; ; {
 		var txnRecordData types.ValueCC
-		txnRecordData, err = s.kv.Get(ctx, TransactionKey(txnID), readOpt)
+		txnRecordData, err = s.kv.Get(ctx, "", readOpt)
 		if err == nil {
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
 			txn, err := DecodeTxn(txnID, txnRecordData.V)
@@ -160,7 +160,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		}
 		// Must haven't committed.
 		if !preventedFutureTxnRecordWrite {
-			return nil, errors.Annotatef(errors.ErrKeyNotExist, "txn record of %d not exists", txnId)
+			return nil, errors.Annotatef(errors.ErrKeyOrVersionNotExist, "txn record of %d not exists", txnId)
 		}
 	}
 	// 1. key not exists

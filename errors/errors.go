@@ -43,13 +43,9 @@ var (
 		Code: consts.ErrCodeShardsNotReady,
 		Msg:  "shards not ready",
 	}
-	ErrKeyNotExist = &Error{
-		Code: consts.ErrCodeKeyNotExists,
-		Msg:  "key not exist",
-	}
-	ErrVersionNotExists = &Error{
-		Code: consts.ErrCodeVersionNotExists,
-		Msg:  "version not exist",
+	ErrKeyOrVersionNotExist = &Error{
+		Code: consts.ErrCodeKeyOrVersionNotExists,
+		Msg:  "key or version not exist",
 	}
 	ErrVersionAlreadyExists = &Error{
 		Code: consts.ErrCodeVersionAlreadyExists,

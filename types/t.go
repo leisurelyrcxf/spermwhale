@@ -11,21 +11,17 @@ import (
 
 type T interface {
 	Errorf(format string, args ...interface{})
+	Logf(format string, args ...interface{})
+	Name() string
 }
 
 type myT struct {
-	t testifyassert.TestingT
-}
-
-func newT(t testifyassert.TestingT) myT {
-	return myT{
-		t: t,
-	}
+	T
 }
 
 func (t myT) Errorf(format string, args ...interface{}) {
 	if isMain() {
-		t.t.Errorf(format, args...)
+		t.T.Errorf(format, args...)
 		return
 	}
 	glog.Fatalf(format, args...)
@@ -36,6 +32,6 @@ func isMain() bool {
 	return strings.Contains(ss, "testing.(*T).Run")
 }
 
-func NewAssertion(t testifyassert.TestingT) *testifyassert.Assertions {
-	return testifyassert.New(newT(t))
+func NewAssertion(t T) *testifyassert.Assertions {
+	return testifyassert.New(myT{T: t})
 }

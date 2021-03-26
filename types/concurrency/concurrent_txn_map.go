@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -73,7 +75,7 @@ func (cmp *concurrentTxnMapPartition) setIf(key types.TxnId, val interface{}, pr
 	prev, ok := cmp.m[key]
 	if pred(prev, ok) {
 		cmp.m[key] = val
-		return true, prev
+		return true, val
 	}
 	return false, prev
 }
@@ -138,6 +140,8 @@ type ConcurrentTxnMap struct {
 }
 
 func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
+	assert.Must(utils.IsPowerOf2(partitionNum))
+
 	cmp.partitions = make([]*concurrentTxnMapPartition, partitionNum)
 	for i := range cmp.partitions {
 		cmp.partitions[i] = &concurrentTxnMapPartition{m: make(map[types.TxnId]interface{})}
@@ -152,14 +156,6 @@ func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, estimated
 	for _, p := range cmp.partitions {
 		p.startGCThread(estimatedMaxQPS*(int(minClearTxnAge/time.Second)+2)/partitionNum, cmp.gcClosed, &cmp.gcDone, minClearTxnAge)
 	}
-}
-
-func (cmp *ConcurrentTxnMap) GCLater(txn types.TxnId) {
-	cmp.partitions[cmp.hash(txn)].toClearTxns <- txn
-}
-
-func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {
-	return uint64(s) % uint64(len(cmp.partitions))
 }
 
 func (cmp *ConcurrentTxnMap) RLock() {
@@ -206,7 +202,7 @@ func (cmp *ConcurrentTxnMap) Set(key types.TxnId, val interface{}) {
 	cmp.partitions[cmp.hash(key)].set(key, val)
 }
 
-func (cmp *ConcurrentTxnMap) SetIf(key types.TxnId, val interface{}, pred func(prev interface{}, exist bool) bool) (bool, interface{}) {
+func (cmp *ConcurrentTxnMap) SetIf(key types.TxnId, val interface{}, pred func(prev interface{}, exist bool) bool) (success bool, newValue interface{}) {
 	return cmp.partitions[cmp.hash(key)].setIf(key, val, pred)
 }
 
@@ -220,6 +216,14 @@ func (cmp *ConcurrentTxnMap) Insert(key types.TxnId, val interface{}) error {
 
 func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {
 	cmp.partitions[cmp.hash(key)].del(key)
+}
+
+func (cmp *ConcurrentTxnMap) GCLater(txn types.TxnId) {
+	cmp.partitions[cmp.hash(txn)].toClearTxns <- txn
+}
+
+func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {
+	return uint64(s) & uint64(len(cmp.partitions)-1)
 }
 
 func (cmp *ConcurrentTxnMap) ForEachLoosed(cb func(types.TxnId, interface{})) {

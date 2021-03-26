@@ -29,3 +29,7 @@ func MaxDuration(a, b time.Duration) time.Duration {
 	}
 	return b
 }
+
+func IsPowerOf2(x int) bool {
+	return x > 1 && x&(x-1) == 0
+}
