@@ -107,7 +107,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 				assert.Equal(expVersion, val.Version) &&
 				assert.Equal(expObj.V, val.V) &&
 				assert.Equal(expObj.InternalVersion, val.InternalVersion) &&
-				assert.Equal(expObj.WriteIntent, val.HasWriteIntent())
+				assert.Equal(expObj.WriteIntent, val.IsDirty())
 		}
 	)
 
@@ -183,7 +183,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 		if err := db.Set(ctx, key, types.NewValue(nil, 2).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !assert.NoError(err) {
 			return
 		}
-		if val, err := db.Get(ctx, key, types.NewKVReadOption(3)); !assertValueOfVersion(val, err, 1) || !assert.False(val.HasWriteIntent()) {
+		if val, err := db.Get(ctx, key, types.NewKVReadOption(3)); !assertValueOfVersion(val, err, 1) || !assert.False(val.IsDirty()) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
@@ -340,7 +340,7 @@ func TestConcurrentInsert(t types.T, db *DB) (b bool) {
 
 	wg.Wait()
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.True(!val.HasWriteIntent()) {
+	if !assert.NoError(err) || !assert.True(!val.IsDirty()) {
 		return
 	}
 	return true
@@ -354,7 +354,7 @@ func TestCausalConsistency(t types.T, db *DB) (b bool) {
 		return
 	}
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.True(val.HasWriteIntent()) {
+	if !assert.NoError(err) || !assert.True(val.IsDirty()) {
 		return false
 	}
 
@@ -369,7 +369,7 @@ func TestCausalConsistency(t types.T, db *DB) (b bool) {
 
 	<-done
 	val, err = db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	return assert.NoError(err) && assert.True(!val.HasWriteIntent())
+	return assert.NoError(err) && assert.True(!val.IsDirty())
 }
 
 const (
@@ -412,7 +412,7 @@ func TestConcurrentClearWriteIntent(t types.T, db *DB) (b bool) {
 
 	wg.Wait()
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.False(val.HasWriteIntent()) {
+	if !assert.NoError(err) || !assert.False(val.IsDirty()) {
 		return
 	}
 	return true
@@ -489,7 +489,7 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 	wg.Wait()
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
 	if err == nil {
-		return assert.Equal(uint64(1), val.Version) && assert.False(val.HasWriteIntent())
+		return assert.Equal(uint64(1), val.Version) && assert.False(val.IsDirty())
 	}
 	return errors.AssertIsErr(assert, err, errors.ErrKeyOrVersionNotExist)
 }

@@ -24,7 +24,7 @@ type Stub struct {
 }
 
 func (s *Stub) Begin(ctx context.Context, req *txnpb.BeginRequest) (*txnpb.BeginResponse, error) {
-	txn, err := s.m.BeginTransaction(ctx, types.TxnType(req.Type), req.SnapshotVersion)
+	txn, err := s.m.BeginTransaction(ctx, types.NewTxnOptionFromPB(req.Opt))
 	if err != nil {
 		return &txnpb.BeginResponse{Err: errors.ToPBError(err)}, nil
 	}
@@ -39,7 +39,7 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 		return &txnpb.TxnGetResponse{
 			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
-	val, err := txn.Get(ctx, req.Key, types.NewTxnReadOptionFromPB(req.Opt))
+	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
 		return &txnpb.TxnGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
 	}
@@ -57,7 +57,7 @@ func (s *Stub) MGet(ctx context.Context, req *txnpb.TxnMGetRequest) (*txnpb.TxnM
 			Err: errors.ToPBError(err),
 		}, nil
 	}
-	values, err := txn.MGet(ctx, req.Keys, types.NewTxnReadOptionFromPB(req.Opt))
+	values, err := txn.MGet(ctx, req.Keys)
 	if err != nil {
 		return &txnpb.TxnMGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
 	}

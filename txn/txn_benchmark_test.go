@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/kvcc"
-	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
+const BenchRounds = 10
+
 func BenchmarkTxnLostUpdate(b *testing.B) {
-	b.N = 100
+	b.N = BenchRounds
 	start := time.Now()
 	for i := 0; i < b.N; i++ {
 		benchmarkTxnLostUpdate(b, false)
@@ -21,7 +21,7 @@ func BenchmarkTxnLostUpdate(b *testing.B) {
 }
 
 func BenchmarkTxnLostUpdateWaitNoWriteIntent(b *testing.B) {
-	b.N = 100
+	b.N = BenchRounds
 	start := time.Now()
 	for i := 0; i < b.N; i++ {
 		benchmarkTxnLostUpdate(b, true)
@@ -31,63 +31,68 @@ func BenchmarkTxnLostUpdateWaitNoWriteIntent(b *testing.B) {
 
 func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 	const (
-		staleWriteThreshold = time.Second
-		initialValue        = 101
-		goRoutineNumber     = 100
-		delta               = 6
+		latency            = time.Millisecond * 10
+		failurePattern     = FailurePatternNone
+		failureProbability = 0
 	)
 
-	start := time.Now()
-	kvc := kvcc.NewKVCCForTesting(newTestMemoryDB(time.Millisecond*10, FailurePatternNone, 0), defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	tm := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
-	sc := smart_txn_client.NewSmartClient(tm, 0)
-	defer sc.Close()
-	assert := types.NewAssertion(b)
+	const (
+		initialValue = 101
+		goRoutineNum = 100
+		delta        = 6
+	)
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	err := sc.SetInt(ctx, "k1", initialValue)
-	if !assert.NoError(err) {
+	ts := NewEmbeddedTestCase(b, 1, nil).SetTxnType(types.TxnTypeReadModifyWrite.CondWaitWhenReadDirty(waitNoWriteIntent)).
+		SetGoRoutineNum(goRoutineNum).
+		SetSimulatedLatency(latency).SetFailureProbability(failurePattern).SetFailurePattern(failureProbability)
+	if !ts.True(ts.GenTestEnv()) {
 		return
 	}
-	txns := make(ExecuteInfos, goRoutineNumber)
-	var wg sync.WaitGroup
-	for i := 0; i < goRoutineNumber; i++ {
+	sc := ts.scs[0]
+	if err := sc.SetInt(ctx, "k1", initialValue); !ts.NoError(err) {
+		return
+	}
+	var (
+		start = time.Now()
+		wg    sync.WaitGroup
+	)
+	for i := 0; i < ts.GoRoutineNum; i++ {
 		wg.Add(1)
-
 		go func(i int) {
 			defer wg.Done()
 
-			var (
-				readOpt = types.NewTxnReadOption()
-			)
-			if waitNoWriteIntent {
-				readOpt = readOpt.WithWaitNoWriteIntent()
-			}
-			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, types.TxnTypeReadForWrite, func(ctx context.Context, txn types.Txn) error {
-				val, err := txn.Get(ctx, "k1", readOpt)
+			ts.True(ts.DoTransaction(ctx, i, sc, func(ctx context.Context, txn types.Txn) error {
+				val, err := txn.Get(ctx, "k1")
 				if err != nil {
 					return err
 				}
 				v1, err := val.Int()
-				if !assert.NoError(err) {
+				if !ts.NoError(err) {
 					return err
 				}
 				return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V)
-			}); assert.NoError(err) {
-				txns[i] = NewExecuteInfo(tx, 0, 0)
-			}
+			}))
 		}(i)
 	}
 
 	wg.Wait()
+
 	val, err := sc.GetInt(ctx, "k1")
-	if !assert.NoError(err) {
+	if !ts.NoError(err) {
 		return
 	}
-	b.Logf("val: %d, cost: %s", val, time.Since(start))
-	if !assert.Equal(goRoutineNumber*delta+initialValue, val) {
+	if !ts.Less(int64(time.Since(start)), int64(time.Second*5)) {
 		return
 	}
-	return txns.CheckReadForWriteOnly(assert, "k1")
+	if !ts.Equal(ts.GoRoutineNum*delta+initialValue, val) {
+		return
+	}
+	if !ts.True(ts.CheckSerializability()) {
+		return
+	}
+	ts.LogExecuteInfos(float64(time.Since(start)) / float64(time.Second))
+	return ts.allExecutedTxns.CheckReadForWriteOnly(ts.Assertions, "k1")
 }

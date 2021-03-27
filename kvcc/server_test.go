@@ -70,7 +70,7 @@ func TestKV_Get(t *testing.T) {
 		}
 		assert.Equal(ts1, vv.Version)
 		assert.Equal([]byte("v1"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 
 	{
@@ -80,7 +80,7 @@ func TestKV_Get(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 
 	{
@@ -90,7 +90,7 @@ func TestKV_Get(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 }
 
@@ -133,7 +133,7 @@ func TestKV_Get2(t *testing.T) {
 		}
 		assert.Equal(ts1, vv.Version)
 		assert.Equal([]byte("v1"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 
 	{
@@ -143,7 +143,7 @@ func TestKV_Get2(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 
 	{
@@ -153,7 +153,7 @@ func TestKV_Get2(t *testing.T) {
 		}
 		assert.Equal(ts2, vv.Version)
 		assert.Equal([]byte("v2"), vv.V)
-		assert.Equal(true, vv.HasWriteIntent())
+		assert.Equal(true, vv.IsDirty())
 	}
 
 	err = cli.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.NewKVCCWriteOption())

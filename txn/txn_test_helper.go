@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"testing"
 	"time"
 
 	"github.com/golang/glog"
@@ -242,23 +241,24 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 
 	lastWriteTxns := make(map[string]int)
 	for i := 0; i < len(txns); i++ {
-		for key := range txns[i].WriteValues {
-			lastWriteTxns[key] = i
-		}
-
 		var ssVersion = txns[i].GetSnapshotVersion()
 		for key, readVal := range txns[i].ReadValues {
-			if txns[i].GetType().IsSnapshotRead() {
-				if !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+			if txns[i].GetType().IsSnapshotRead() && !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+				return false
+			}
+			if readVal.Version == txns[i].ID {
+				if !assert.Contains(txns[i].WriteValues, key) {
+					return false
+				}
+			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
+				if !assert.Equal(readVal.Version, txns[lastWriteTxnIndex].WriteValues[key].Version) {
 					return false
 				}
 			}
-			if lastWriteTxns[key] == 0 {
-				continue
-			}
-			if !assert.Equal(readVal.Version, txns[lastWriteTxns[key]].WriteValues[key].Version) {
-				return false
-			}
+		}
+
+		for key := range txns[i].WriteValues {
+			lastWriteTxns[key] = i
 		}
 	}
 	return true
@@ -282,7 +282,7 @@ func (txns ExecuteInfos) Statistics() ExecuteStatistics {
 }
 
 type TestCase struct {
-	t *testing.T
+	t types.T
 	*testifyassert.Assertions
 
 	embeddedTablet bool
@@ -290,9 +290,8 @@ type TestCase struct {
 	rounds   int
 	testFunc func(context.Context, *TestCase) bool
 
-	DBType  types.DBType
-	TxnType types.TxnType
-	ReadOpt types.TxnReadOption
+	DBType                   types.DBType
+	TxnType, ReadOnlyTxnType types.TxnType
 
 	TxnManagerCfg types.TxnManagerConfig
 	TableTxnCfg   types.TabletTxnConfig
@@ -302,11 +301,11 @@ type TestCase struct {
 	timeoutPerRound    time.Duration
 	LogLevel           glog.Level
 
+	SimulatedLatency   time.Duration
 	FailurePattern     FailurePattern
 	FailureProbability int
 
-	snapshotReadForReadonlyTxn bool
-	additionalParameters       map[string]interface{}
+	additionalParameters map[string]interface{}
 
 	// output
 	scs        []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
@@ -324,7 +323,7 @@ const (
 	defaultTimeoutPerRound = time.Minute
 )
 
-func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+func NewTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
 	return (&TestCase{
 		t:          t,
 		rounds:     rounds,
@@ -336,7 +335,7 @@ func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestC
 		TxnNumPerGoRoutine: 1000,
 		DBType:             types.DBTypeMemory,
 		TxnType:            types.TxnTypeDefault,
-		ReadOpt:            types.NewTxnReadOption(),
+		ReadOnlyTxnType:    types.TxnTypeDefault,
 
 		TxnManagerCfg: defaultTxnManagerConfig,
 		TableTxnCfg:   defaultTabletTxnConfig,
@@ -345,12 +344,12 @@ func NewTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestC
 	}).onGoRoutineNumChanged()
 }
 
-func NewEmbeddedTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
 	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet()
 }
 
-func NewEmbeddedSnapshotReadTestCase(t *testing.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
-	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet().SetSnapshotReadForReadonlyTxn()
+func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet().SetReadOnlyTxnType(types.TxnTypeSnapshotRead)
 }
 
 func (ts *TestCase) Run() {
@@ -400,7 +399,7 @@ func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *s
 }
 func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
-	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.GetReadonlyTxnType(), f)
+	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.ReadOnlyTxnType, f)
 }
 func (ts *TestCase) doTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, txnType types.TxnType,
 	f func(ctx context.Context, txn types.Txn) error) bool {
@@ -423,7 +422,7 @@ func (ts *TestCase) GenTestEnv() bool {
 			ts.Close()
 			return false
 		}
-		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, 0, ts.FailurePattern, ts.FailureProbability), ts.TableTxnCfg)
+		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability), ts.TableTxnCfg)
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
 		ts.stopper = func() {
 			ts.NoError(m.Close())
@@ -479,22 +478,16 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
-func (ts *TestCase) SetEmbeddedTablet() *TestCase { ts.embeddedTablet = true; return ts }
-func (ts *TestCase) GetGate1() *gate.Gate         { return ts.txnServers[0].tm.kv.(*gate.Gate) }
-func (ts *TestCase) GetGate2() *gate.Gate         { return ts.txnServers[1].tm.kv.(*gate.Gate) }
-func (ts *TestCase) GetReadonlyTxnType() types.TxnType {
-	if ts.snapshotReadForReadonlyTxn {
-		return types.TxnTypeSnapshotRead
-	}
-	return ts.TxnType
-}
-func (ts *TestCase) SetSnapshotReadForReadonlyTxn() *TestCase {
-	ts.snapshotReadForReadonlyTxn = true
+func (ts *TestCase) SetEmbeddedTablet() *TestCase           { ts.embeddedTablet = true; return ts }
+func (ts *TestCase) GetGate1() *gate.Gate                   { return ts.txnServers[0].tm.kv.(*gate.Gate) }
+func (ts *TestCase) GetGate2() *gate.Gate                   { return ts.txnServers[1].tm.kv.(*gate.Gate) }
+func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase { ts.TxnType = typ; return ts }
+func (ts *TestCase) SetReadOnlyTxnType(typ types.TxnType) *TestCase {
+	ts.ReadOnlyTxnType = typ
 	return ts
 }
-func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase { ts.TxnType = typ; return ts }
-func (ts *TestCase) SetWaitNoWriteIntent() *TestCase {
-	ts.ReadOpt = ts.ReadOpt.WithWaitNoWriteIntent()
+func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
+	ts.ReadOnlyTxnType |= typ
 	return ts
 }
 func (ts *TestCase) SetDBType(typ types.DBType) *TestCase { ts.DBType = typ; return ts }
@@ -526,8 +519,12 @@ func (ts *TestCase) SetGoRoutineNum(num int) *TestCase {
 	ts.GoRoutineNum = num
 	return ts.onGoRoutineNumChanged()
 }
-func (ts *TestCase) SetTxnNumPerGoRoutine(num int) *TestCase      { ts.TxnNumPerGoRoutine = num; return ts }
-func (ts *TestCase) SetLogLevel(lvl int) *TestCase                { ts.LogLevel = glog.Level(lvl); return ts }
+func (ts *TestCase) SetTxnNumPerGoRoutine(num int) *TestCase { ts.TxnNumPerGoRoutine = num; return ts }
+func (ts *TestCase) SetLogLevel(lvl int) *TestCase           { ts.LogLevel = glog.Level(lvl); return ts }
+func (ts *TestCase) SetSimulatedLatency(latency time.Duration) *TestCase {
+	ts.SimulatedLatency = latency
+	return ts
+}
 func (ts *TestCase) SetFailureProbability(prob int) *TestCase     { ts.FailureProbability = prob; return ts }
 func (ts *TestCase) SetFailurePattern(p FailurePattern) *TestCase { ts.FailurePattern = p; return ts }
 
@@ -547,10 +544,10 @@ func (ts *TestCase) Close() {
 
 func (ts *TestCase) LogParameters(round int) {
 	ts.t.Logf("%s @round %d\n"+
-		"db type: \"%s\", txn type: \"%s\", read only txn type: \"%s\", wait no write intent: %v\n"+
+		"db type: \"%s\", txn type: \"%s\", read only txn type: \"%s\"\n"+
 		"stale threshold: %s, wound threshold: %s\n"+
 		"go routine number: %d, txn number per go routine: %d, log level: %d", ts.t.Name(), round,
-		ts.DBType, ts.TxnType, ts.GetReadonlyTxnType(), ts.ReadOpt.IsWaitNoWriteIntent(),
+		ts.DBType, ts.TxnType, ts.ReadOnlyTxnType,
 		ts.TableTxnCfg.StaleWriteThreshold, ts.TxnManagerCfg.WoundUncommittedTxnThreshold,
 		ts.GoRoutineNum, ts.TxnNumPerGoRoutine, ts.LogLevel)
 }
@@ -580,7 +577,31 @@ func (ts *TestCase) onGoRoutineNumChanged() *TestCase {
 	return ts
 }
 
-func createCluster(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+func (ts *TestCase) EqualValue(exp types.Value, actual types.Value) (b bool) {
+	if !ts.Equal(exp.Version, actual.Version) {
+		return
+	}
+	if !ts.Equal(exp.InternalVersion, actual.InternalVersion) {
+		return
+	}
+	if !ts.Equal(exp.Flag, actual.Flag) {
+		return
+	}
+	expInt, err := exp.Int()
+	if !ts.NoError(err) {
+		return
+	}
+	actualInt, err := actual.Int()
+	if !ts.NoError(err) {
+		return
+	}
+	if !ts.Equal(expInt, actualInt) {
+		return
+	}
+	return true
+}
+
+func createCluster(t types.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
 	assert := testifyassert.New(t)
 
 	gates, stopTablets, stopGates := createTabletsGates(t, dbType, tabletCfg)
@@ -669,7 +690,7 @@ func createCluster(t *testing.T, dbType types.DBType, cfg types.TxnManagerConfig
 	return txnServers, clientTxnManagers, stop
 }
 
-func createTabletsGates(t *testing.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
+func createTabletsGates(t types.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
 	assert := testifyassert.New(t)
 
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {

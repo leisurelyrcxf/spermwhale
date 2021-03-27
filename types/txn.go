@@ -111,11 +111,6 @@ func (tk TxnKeyUnion) String() string {
 	return "txn-record"
 }
 
-type TxnManager interface {
-	BeginTransaction(ctx context.Context, typ TxnType, snapshotVersion uint64) (Txn, error)
-	Close() error
-}
-
 type TxnState uint8
 
 const (
@@ -166,8 +161,6 @@ const (
 	TxnKindReadOnly  TxnKind = 1 << iota
 	TxnKindReadWrite         // include read for write, read after write, write k1, read k2, etc.
 	TxnKindWriteOnly
-	TxnKindReadForWrite
-	TxnKindSnapshotIsolation
 )
 
 func (k TxnKind) String() string {
@@ -178,10 +171,6 @@ func (k TxnKind) String() string {
 		return "txn_read_write"
 	case TxnKindWriteOnly:
 		return "txn_write_only"
-	case TxnKindReadForWrite:
-		return "txn_read_for_write"
-	case TxnKindSnapshotIsolation:
-		return "txn_snapshot_isolation"
 	default:
 		panic("unsupported")
 	}
@@ -189,133 +178,143 @@ func (k TxnKind) String() string {
 
 type TxnType uint8
 
-const (
-	TxnTypeInvalid      TxnType = 0
-	TxnTypeDefault              = TxnType(TxnKindReadWrite)
-	TxnTypeReadForWrite         = TxnType(TxnKindReadWrite | TxnKindReadForWrite)
-	TxnTypeSnapshotRead         = TxnType(TxnKindReadOnly | TxnKindSnapshotIsolation)
+var (
+	basicTxnTypes       []TxnType
+	txnTypeDescriptions = map[TxnType]string{}
+	desc2TxnType        = map[string]TxnType{}
+	BasicTxnTypesDesc   string
 
-	TxnTypeDefaultDesc      = "default"
-	TxnTypeReadForWriteDesc = "read_for_write"
-	TxnTypeSnapshotReadDesc = "snapshot_read"
+	newBasicTxnType = func(flag uint8, desc string) TxnType {
+		typ := TxnType(flag)
+		basicTxnTypes = append(basicTxnTypes, typ)
+		txnTypeDescriptions[typ] = desc
+		desc2TxnType[desc] = typ
+		desc2TxnType[strconv.Itoa(int(flag))] = typ
+		if BasicTxnTypesDesc != "" {
+			BasicTxnTypesDesc += "|"
+		}
+		BasicTxnTypesDesc += fmt.Sprintf("%s(%d)", desc, flag)
+		return typ
+	}
+
+	TxnTypeDefault           = newBasicTxnType(0, "default")
+	TxnTypeReadModifyWrite   = newBasicTxnType(1, "read_modify_write")
+	TxnTypeWaitWhenReadDirty = newBasicTxnType(1<<1, "wait_when_read_dirty")
+	TxnTypeSnapshotRead      = newBasicTxnType(1<<2, "snapshot_read")
 )
 
-var SupportedTransactionTypesDesc = []string{
-	"'" + TxnTypeDefaultDesc + "'",
-	"'" + TxnTypeReadForWriteDesc + "'",
-	"'" + TxnTypeSnapshotReadDesc + "'"}
-
-func ParseTxnType(str string) (TxnType, error) {
-	switch str {
-	case TxnTypeDefaultDesc, fmt.Sprintf("%d", TxnTypeDefault):
-		return TxnTypeDefault, nil
-	case TxnTypeReadForWriteDesc, fmt.Sprintf("%d", TxnTypeReadForWrite):
-		return TxnTypeReadForWrite, nil
-	case TxnTypeSnapshotReadDesc, fmt.Sprintf("%d", TxnTypeSnapshotRead):
-		return TxnTypeSnapshotRead, nil
-	default:
-		return TxnTypeInvalid, errors.Annotatef(errors.ErrInvalidRequest, "unknown txn type %s", str)
+func ParseTxnType(str string) (typ TxnType, _ error) {
+	parts := strings.Split(str, "|")
+	for _, part := range parts {
+		mask, ok := desc2TxnType[part]
+		if !ok {
+			return TxnTypeDefault, errors.ErrInvalidRequest
+		}
+		typ |= mask
 	}
+	return typ, nil
 }
 
-func (t TxnType) ToPB() txnpb.TxnType {
-	return txnpb.TxnType(t)
+func (t TxnType) ToUint32() uint32 {
+	return uint32(t)
 }
 
-func (t TxnType) String() string {
-	switch t {
-	case TxnTypeDefault:
-		return TxnTypeDefaultDesc
-	case TxnTypeReadForWrite:
-		return TxnTypeReadForWriteDesc
-	case TxnTypeSnapshotRead:
-		return TxnTypeSnapshotReadDesc
-	default:
-		return "invalid"
+func (t TxnType) CondWaitWhenReadDirty(b bool) TxnType {
+	if !b {
+		return t
 	}
+	return t | TxnTypeWaitWhenReadDirty
 }
 
-func (t TxnType) IsReadForWrite() bool {
-	return t == TxnTypeReadForWrite
+func (t TxnType) IsReadModifyWrite() bool {
+	return t&TxnTypeReadModifyWrite == TxnTypeReadModifyWrite
+}
+
+func (t TxnType) IsWaitWhenReadDirty() bool {
+	return t&TxnTypeWaitWhenReadDirty == TxnTypeWaitWhenReadDirty
 }
 
 func (t TxnType) IsSnapshotRead() bool {
-	return t == TxnTypeSnapshotRead
+	return t&TxnTypeSnapshotRead == TxnTypeSnapshotRead
 }
 
-type TxnReadOption struct {
-	flag uint8
-}
-
-func NewTxnReadOption() TxnReadOption {
-	return TxnReadOption{}
-}
-
-func NewTxnReadOptionFromPB(x *txnpb.TxnReadOption) TxnReadOption {
-	if x == nil {
-		return NewTxnReadOption()
+func (t TxnType) String() string {
+	if t == TxnTypeDefault {
+		return "default"
 	}
-	return TxnReadOption{
-		flag: x.GetFlagSafe(),
-	}
-}
-
-var TxnReadOptionDesc2BitMask = map[string]uint8{
-	"wait_no_write_intent": consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent,
-}
-
-func GetTxnReadOptionDesc() string {
-	keys := make([]string, 0, len(TxnReadOptionDesc2BitMask))
-	for key, mask := range TxnReadOptionDesc2BitMask {
-		keys = append(keys, fmt.Sprintf("%s(%d)", key, mask))
-	}
-	return strings.Join(keys, "|")
-}
-
-func ParseTxnReadOption(str string) (opt TxnReadOption, _ error) {
-	parts := strings.Split(str, "|")
-	for _, part := range parts {
-		if mask, err := strconv.ParseInt(part, 10, 64); err == nil {
-			opt.flag |= uint8(mask)
-			continue
+	var ret []string
+	for flag, desc := range txnTypeDescriptions {
+		if flag != 0 && t&flag == flag {
+			ret = append(ret, desc)
 		}
-		mask, ok := TxnReadOptionDesc2BitMask[part]
-		if !ok {
-			return opt, errors.ErrInvalidRequest
-		}
-		opt.flag |= mask
 	}
-	return opt, nil
+	return strings.Join(ret, "|")
 }
 
-func (opt TxnReadOption) ToPB() *txnpb.TxnReadOption {
-	return (&txnpb.TxnReadOption{}).SetFlagSafe(opt.flag)
+type TxnSnapshotReadOption struct {
+	SnapshotVersion      uint64
+	DontAllowVersionBack bool
 }
 
-func (opt TxnReadOption) WithWaitNoWriteIntent() TxnReadOption {
-	opt.flag |= consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent
+func NewTxnSnapshotReadOptionFromPB(opt *txnpb.TxnSnapshotReadOption) TxnSnapshotReadOption {
+	return TxnSnapshotReadOption{
+		SnapshotVersion:      opt.SnapshotVersion,
+		DontAllowVersionBack: opt.DontAllowVersionBack,
+	}
+}
+
+func (opt TxnSnapshotReadOption) ToPB() *txnpb.TxnSnapshotReadOption {
+	return &txnpb.TxnSnapshotReadOption{
+		SnapshotVersion:      opt.SnapshotVersion,
+		DontAllowVersionBack: opt.DontAllowVersionBack,
+	}
+}
+
+type TxnOption struct {
+	TxnType
+
+	SnapshotReadOption TxnSnapshotReadOption
+}
+
+func NewDefaultTxnOption() TxnOption {
+	return TxnOption{TxnType: TxnTypeDefault}
+}
+
+func NewTxnOption(typ TxnType) TxnOption {
+	return TxnOption{TxnType: typ}
+}
+
+func NewTxnOptionFromPB(option *txnpb.TxnOption) TxnOption {
+	return TxnOption{
+		TxnType:            TxnType(option.GetTxnType()),
+		SnapshotReadOption: NewTxnSnapshotReadOptionFromPB(option.SnapshotReadOption),
+	}
+}
+
+func (opt TxnOption) ToPB() *txnpb.TxnOption {
+	return &txnpb.TxnOption{
+		Type:               opt.TxnType.ToUint32(),
+		SnapshotReadOption: opt.SnapshotReadOption.ToPB(),
+	}
+}
+
+func (opt TxnOption) WithSnapshotVersion(snapshotVersion uint64) TxnOption {
+	opt.SnapshotReadOption.SnapshotVersion = snapshotVersion
 	return opt
 }
 
-func (opt TxnReadOption) IsWaitNoWriteIntent() bool {
-	return opt.flag&consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent == consts.TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent
+type TxnManager interface {
+	BeginTransaction(ctx context.Context, opt TxnOption) (Txn, error)
+	Close() error
 }
-
-var (
-	InvalidReadValues   = map[string]Value{"haha": {Meta: Meta{Version: 1111}}}
-	IsInvalidReadValues = func(values map[string]Value) bool { return values["haha"].Version == 1111 }
-
-	InvalidWriteValues   = map[string]Value{"biubiu": {Meta: Meta{Version: 1111}}}
-	IsInvalidWriteValues = func(values map[string]Value) bool { return values["biubiu"].Version == 1111 }
-)
 
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
 	GetType() TxnType
 	GetSnapshotVersion() uint64 // only used when txn type is snapshot
-	MGet(ctx context.Context, keys []string, opt TxnReadOption) (values []Value, err error)
-	Get(ctx context.Context, key string, opt TxnReadOption) (Value, error)
+	MGet(ctx context.Context, keys []string) (values []Value, err error)
+	Get(ctx context.Context, key string) (Value, error)
 	Set(ctx context.Context, key string, val []byte) error
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
@@ -326,7 +325,7 @@ type Txn interface {
 
 type RecordValuesTxn struct {
 	Txn
-	readValues, writeValues map[string]Value
+	readValues, writeValues ReadResult
 }
 
 func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
@@ -337,9 +336,10 @@ func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
 	}
 }
 
-func (txn *RecordValuesTxn) Get(ctx context.Context, key string, opt TxnReadOption) (Value, error) {
-	val, err := txn.Txn.Get(ctx, key, opt)
+func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (Value, error) {
+	val, err := txn.Txn.Get(ctx, key)
 	if err == nil {
+		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(key)))
 		if txn.GetType().IsSnapshotRead() {
 			assert.Must(val.SnapshotVersion == txn.GetSnapshotVersion() && val.Version <= val.SnapshotVersion)
 		}
@@ -348,9 +348,12 @@ func (txn *RecordValuesTxn) Get(ctx context.Context, key string, opt TxnReadOpti
 	return val, err
 }
 
-func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string, opt TxnReadOption) ([]Value, error) {
-	values, err := txn.Txn.MGet(ctx, keys, opt)
+func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]Value, error) {
+	values, err := txn.Txn.MGet(ctx, keys)
 	if err == nil {
+		for idx, val := range values {
+			assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(keys[idx])))
+		}
 		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotVersion(); txnType.IsSnapshotRead() {
 			for _, val := range values {
 				assert.Must(val.SnapshotVersion == ssVersion && val.Version <= val.SnapshotVersion)
@@ -366,7 +369,8 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string, opt TxnRead
 func (txn *RecordValuesTxn) Set(ctx context.Context, key string, val []byte) error {
 	err := txn.Txn.Set(ctx, key, val)
 	if err == nil {
-		txn.writeValues[key] = NewValue(val, txn.Txn.GetId().Version())
+		txn.writeValues[key] = NewValue(val, txn.Txn.GetId().Version()).
+			WithNoWriteIntent().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
 	}
 	return err
 }
@@ -378,3 +382,11 @@ func (txn *RecordValuesTxn) GetReadValues() map[string]Value {
 func (txn *RecordValuesTxn) GetWriteValues() map[string]Value {
 	return txn.writeValues
 }
+
+var (
+	InvalidReadValues   = map[string]Value{"haha": {Meta: Meta{Version: 1111}}}
+	IsInvalidReadValues = func(values map[string]Value) bool { return values["haha"].Version == 1111 }
+
+	InvalidWriteValues   = map[string]Value{"biubiu": {Meta: Meta{Version: 1111}}}
+	IsInvalidWriteValues = func(values map[string]Value) bool { return values["biubiu"].Version == 1111 }
+)

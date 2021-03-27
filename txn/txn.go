@@ -48,7 +48,7 @@ func (i TransactionInfo) ToPB() *txnpb.Txn {
 	return &txnpb.Txn{
 		Id:              i.ID.Version(),
 		State:           i.TxnState.ToPB(),
-		Type:            i.TxnType.ToPB(),
+		Type:            i.TxnType.ToUint32(),
 		SnapshotVersion: i.SnapshotVersion,
 	}
 }
@@ -75,8 +75,8 @@ type Txn struct {
 	TransactionInfo
 	ttypes.WriteKeyInfos
 
-	preventWriteFlags    map[string]bool
-	readForWriteReadKeys basic.Set
+	preventFutureWriteKeys  basic.Set
+	readModifyWriteReadKeys basic.Set
 
 	minAllowedSnapshotVersion uint64 // only used by snapshot read txn, for other types of transaction, the value will be zero
 
@@ -155,7 +155,7 @@ func (txn *Txn) Encode() []byte {
 	return bytes
 }
 
-func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
+func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	if key == "" {
 		return types.EmptyValue, errors.ErrEmptyKey
 	}
@@ -166,10 +166,10 @@ func (txn *Txn) Get(ctx context.Context, key string, opt types.TxnReadOption) (_
 	if txn.IsSnapshotRead() {
 		return txn.getSnapshot(ctx, key)
 	}
-	return txn.getLatest(ctx, key, opt)
+	return txn.getLatest(ctx, key)
 }
 
-func (txn *Txn) getLatest(ctx context.Context, key string, opt types.TxnReadOption) (_ types.Value, err error) {
+func (txn *Txn) getLatest(ctx context.Context, key string) (_ types.Value, err error) {
 	if txn.IsSnapshotRead() {
 		return types.EmptyValue, errors.Annotatef(errors.ErrNotSupported, "call Txn::getLatest() with snapshot_read txn type")
 	}
@@ -184,8 +184,7 @@ func (txn *Txn) getLatest(ctx context.Context, key string, opt types.TxnReadOpti
 	}()
 
 	for i := 0; ; i++ {
-		val, err := txn.get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).InheritTxnReadOption(opt).
-			CondReadForWrite(txn.IsReadForWrite()).CondReadForWriteFirstReadOfKey(!txn.readForWriteReadKeys.Contains(key)))
+		val, err := txn.getLatestOneRound(ctx, key)
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
 			return val.Value, err
 		}
@@ -196,7 +195,7 @@ func (txn *Txn) getLatest(ctx context.Context, key string, opt types.TxnReadOpti
 	}
 }
 
-func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOption) (_ types.ValueCC, err error) {
+func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.ValueCC, err error) {
 	if txn.TxnState != types.TxnStateUncommitted {
 		return types.EmptyValueCC, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
 	}
@@ -216,25 +215,19 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
 		}
 	}
-	if txn.IsReadForWrite() {
-		if txn.readForWriteReadKeys == nil {
-			txn.readForWriteReadKeys = basic.Set{key: {}}
-		} else {
-			txn.readForWriteReadKeys.Insert(key)
-		}
+	var readOpt types.KVCCReadOption
+	if readOpt = types.NewKVCCReadOption(txn.ID.Version()).
+		CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)); txn.IsReadModifyWrite() {
+		txn.readModifyWriteReadKeys.Insert(key)
 	}
 	if lastWriteTask == nil {
-		vv, err = txn.kv.Get(ctx, key, readOpt)
+		vv, err = txn.kv.Get(ctx, key, readOpt.CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
 	} else {
-		vv, err = txn.kv.Get(ctx, key, readOpt.WithExactVersion(txn.ID.Version()).WithClearWaitNoWriteIntent())
+		vv, err = txn.kv.Get(ctx, key, readOpt.WithExactVersion(txn.ID.Version()))
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
-		if txn.preventWriteFlags == nil {
-			txn.preventWriteFlags = map[string]bool{key: true}
-		} else {
-			txn.preventWriteFlags[key] = true
-		}
+		txn.preventFutureWriteKeys.Insert(key)
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
@@ -243,7 +236,7 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 		return types.EmptyValueCC, err
 	}
 	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
-	if !vv.Meta.HasWriteIntent() /* committed value */ ||
+	if !vv.IsDirty() /* committed value */ ||
 		vv.Version == txn.ID.Version() /* read after write */ {
 		return vv, nil
 	}
@@ -265,7 +258,7 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 	if writeTxn.IsCommitted() {
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
-		return vv, nil
+		return vv.WithNoWriteIntent(), nil
 	}
 	if writeTxn.IsAborted() {
 		if writeTxn.IsWrittenKeyRollbacked(key) {
@@ -277,7 +270,7 @@ func (txn *Txn) get(ctx context.Context, key string, readOpt types.KVCCReadOptio
 	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
 
-func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption) ([]types.Value, error) {
+func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.Value, error) {
 	if len(keys) == 0 {
 		return nil, errors.ErrEmptyKeys
 	}
@@ -290,7 +283,7 @@ func (txn *Txn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption
 	if !txn.IsSnapshotRead() {
 		values := make([]types.Value, 0, len(keys))
 		for _, key := range keys {
-			val, err := txn.getLatest(ctx, key, opt)
+			val, err := txn.getLatest(ctx, key)
 			if err != nil {
 				return nil, err
 			}
@@ -342,7 +335,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version() && vv.InternalVersion > 0)
-				if !vv.HasWriteIntent() {
+				if !vv.IsDirty() {
 					txn.TxnState = types.TxnStateCommitted
 					txn.MarkCommittedCleared(key, vv.Value)
 					txn.onCommitted(callerTxn.ID, "[CheckCommitState] key '%s' write intent cleared", key) // help commit since original txn coordinator may have gone
@@ -392,14 +385,14 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
 	}
 
-	if txn.preventWriteFlags[key] {
+	if txn.preventFutureWriteKeys.Contains(key) {
 		txn.err = errors.Annotatef(errors.ErrWriteReadConflict, "a transaction with higher timestamp has read the key '%s'", key)
 		_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Set: %v", txn.err)
 		return txn.err
 	}
 
 	if err := txn.WriteKey(txn.s.writeJobScheduler, key, types.NewValue(val, txn.ID.Version()),
-		types.NewKVCCWriteOption().CondReadForWrite(txn.IsReadForWrite())); err != nil {
+		types.NewKVCCWriteOption().CondReadModifyWrite(txn.IsReadModifyWrite())); err != nil {
 		_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Set: %v", txn.err)
 		txn.err = err
 		return err
@@ -424,9 +417,9 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	if txn.GetWrittenKeyCount() == 0 {
-		if txn.IsReadForWrite() && len(txn.readForWriteReadKeys) > 0 { // todo commit instead?
-			_ = txn.rollback(ctx, txn.ID, false, "readForWrite transaction write no keys")
-			return errors.ErrReadForWriteTransactionCommitWithNoWrittenKeys
+		if txn.IsReadModifyWrite() && len(txn.readModifyWriteReadKeys) > 0 { // todo commit instead?
+			_ = txn.rollback(ctx, txn.ID, false, "readModifyWrite transaction write no keys")
+			return errors.ErrReadModifyWriteTransactionCommitWithNoWrittenKeys
 		}
 		txn.TxnState = types.TxnStateCommitted
 		txn.gc()
@@ -583,7 +576,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 			isWrittenKey = isWrittenKey
 			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
 			opt          = types.NewKVCCWriteOption().WithRollbackVersion().
-					CondReadForWrite(txn.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
+					CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteRollbackOrClearReadKey(!isWrittenKey).
 					CondWriteByDifferentTransaction(callerTxn != txn.ID)
 		)
 		if child := types.NewTreeTaskNoResult(
@@ -649,7 +642,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 				assert.Must(root.AllChildrenSuccess())
 				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
 					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
-					if !(err == nil && (exists && !val.HasWriteIntent())) {
+					if !(err == nil && (exists && !val.IsDirty())) {
 						glog.Fatalf("txn-%d cleared write key '%s' not exists", txn.ID, key)
 					}
 				})
@@ -670,7 +663,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			isWrittenKey = isWrittenKey
 			val          = types.NewValue(nil, txn.ID.Version()).WithNoWriteIntent()
 			opt          = types.NewKVCCWriteOption().WithClearWriteIntent().
-					CondReadForWrite(txn.IsReadForWrite()).CondReadForWriteRollbackOrClearReadKey(!isWrittenKey).
+					CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteRollbackOrClearReadKey(!isWrittenKey).
 					CondWriteByDifferentTransaction(callerTxn != txn.ID)
 		)
 		_ = types.NewTreeTaskNoResult(
@@ -693,8 +686,8 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 
 func (txn *Txn) getToClearKeys(rollback bool) map[string]bool /* key->isWrittenKey */ {
 	var m = make(map[string]bool)
-	if txn.IsReadForWrite() {
-		for readKey := range txn.readForWriteReadKeys {
+	if txn.IsReadModifyWrite() {
+		for readKey := range txn.readModifyWriteReadKeys {
 			m[readKey] = false
 		}
 	}

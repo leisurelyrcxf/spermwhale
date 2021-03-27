@@ -172,7 +172,7 @@ func (pq *readForWriteQueue) notifyKeyEvent(readForWriteTxnId types.TxnId, event
 	}
 
 	if eventType == ReadForWriteKeyEventTypeKeyWritten {
-		if second := pq.second(); second == nil || !second.IsWaitNoWriteIntent() {
+		if second := pq.second(); second == nil || !second.IsWaitWhenReadDirty() {
 			return
 		}
 	}

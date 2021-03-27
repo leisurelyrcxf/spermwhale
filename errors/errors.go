@@ -139,9 +139,9 @@ var (
 		Code: consts.ErrCodeInvalidConfig,
 		Msg:  "invalid config",
 	}
-	ErrReadForWriteTransactionCommitWithNoWrittenKeys = &Error{
-		Code: consts.ErrCodeReadForWriteTransactionCommitWithNoWrittenKeys,
-		Msg:  "read for write transaction commit with no written keys",
+	ErrReadModifyWriteTransactionCommitWithNoWrittenKeys = &Error{
+		Code: consts.ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys,
+		Msg:  "read modify write transaction commit with no written keys",
 	}
 	ErrReadForWriteWaitFailed = &Error{
 		Code: consts.ErrCodeReadForWriteWaitFailed,

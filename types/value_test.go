@@ -10,14 +10,14 @@ func TestValue(t *testing.T) {
 	assert := testifyassert.New(t)
 
 	v := NewValue([]byte("123"), 3)
-	assert.True(v.HasWriteIntent())
+	assert.True(v.IsDirty())
 
 	{
 		v := v.WithNoWriteIntent()
-		assert.False(v.HasWriteIntent())
+		assert.False(v.IsDirty())
 	}
 
-	assert.True(v.HasWriteIntent())
+	assert.True(v.IsDirty())
 	v = v.WithNoWriteIntent()
-	assert.False(v.HasWriteIntent())
+	assert.False(v.IsDirty())
 }

@@ -22,8 +22,16 @@ func (s Set) MustFirst() string {
 	panic("set empty")
 }
 
-func (s Set) Insert(key string) {
+func (s Set) InsertUnsafe(key string) {
 	s[key] = struct{}{}
+}
+
+func (s *Set) Insert(key string) {
+	if *s == nil {
+		*s = Set{key: {}}
+	} else {
+		(*s)[key] = struct{}{}
+	}
 }
 
 func (s *Set) Reset() {

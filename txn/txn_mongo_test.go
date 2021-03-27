@@ -11,22 +11,22 @@ import (
 //}
 //
 //func TestTxnLostUpdateMongoReadForWrite(t *testing.T) {
-//	testTxnLostUpdateMongo(t, types.TxnTypeReadForWrite, types.NewTxnReadOption(), []time.Duration{time.Second * 10})
+//	testTxnLostUpdateMongo(t, types.TxnTypeReadModifyWrite, types.NewTxnReadOption(), []time.Duration{time.Second * 10})
 //}
 //
-//func TestTxnLostUpdateMongoWaitNoWriteIntent(t *testing.T) {
-//	testTxnLostUpdateMongo(t, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second * 10})
+//func TestTxnLostUpdateMongoWaitWhenReadDirty(t *testing.T) {
+//	testTxnLostUpdateMongo(t, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitWhenReadDirty(), []time.Duration{time.Second * 10})
 //}
 //
-//func TestTxnLostUpdateMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
-//	testTxnLostUpdateMongo(t, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second * 10})
+//func TestTxnLostUpdateMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+//	testTxnLostUpdateMongo(t, types.TxnTypeReadModifyWrite, types.NewTxnReadOption().WithWaitWhenReadDirty(), []time.Duration{time.Second * 10})
 //}
 //
 //func TestTxnLostUpdateMongoRandomErr(t *testing.T) {
 //	useTxnLostUpdateEmbeddedTabletEx(t, types.DBTypeMongo, 100, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10},
 //		FailurePatternAll, 10)
 //
-//	useTxnLostUpdateEmbeddedTablet(NewTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().
+//	useTxnLostUpdateEmbeddedTablet(NewTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite).SetWaitWhenReadDirty().
 //		SetGoRoutineNum(100), newTestDB(0, FailurePatternAll, 10))
 //}
 //
@@ -58,10 +58,10 @@ func TestDistributedTxnExtraWriteComplexMongo(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).Run()
 }
 
-func TestDistributedTxnExtraWriteSimpleMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
-	NewTestCase(t, rounds, testDistributedTxnExtraWriteSimple).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
+func TestDistributedTxnExtraWriteSimpleMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteSimple).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
-func TestDistributedTxnExtraWriteComplexMongoReadForWriteWaitNoWriteIntent(t *testing.T) {
-	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
+func TestDistributedTxnExtraWriteComplexMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }

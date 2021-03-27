@@ -97,6 +97,7 @@ func main() {
 
 				var t = cmds[i]
 				if strings.HasPrefix(t, "begin") {
+					// TODO parse txn type
 					remain := strings.TrimPrefix(t, "begin")
 					typ := types.TxnTypeDefault
 					if remain != "" {
@@ -144,13 +145,7 @@ func main() {
 						showTxnInfo(true)
 					}
 					key := parts[0]
-					optStr := parts[1]
-					opt, err := types.ParseTxnReadOption(optStr)
-					if err != nil {
-						fmt.Printf("Invalid read opt: %v, must be %s\n", err, types.GetTxnReadOptionDesc())
-						continue
-					}
-					val, err := tx.Get(ctx, key, opt)
+					val, err := tx.Get(ctx, key)
 					if err != nil {
 						fmt.Printf("GET failed: %v\n", err)
 						continue

@@ -36,7 +36,7 @@ func (m Meta) isEmpty() bool {
 	return m.Version == 0
 }
 
-func (m Meta) HasWriteIntent() bool {
+func (m Meta) IsDirty() bool {
 	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
 }
 
@@ -127,6 +127,20 @@ func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
 func (v Value) WithSnapshotVersion(snapshotVersion uint64) Value {
 	v.SnapshotVersion = snapshotVersion
 	return v
+}
+
+type ReadResult map[string]Value
+
+func (r ReadResult) MustFirst() string {
+	for key := range r {
+		return key
+	}
+	panic("empty ReadResult")
+}
+
+func (r ReadResult) Contains(key string) bool {
+	_, ok := r[key]
+	return ok
 }
 
 type ValueCC struct {

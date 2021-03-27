@@ -107,7 +107,7 @@ func (m *TransactionManager) SetRecordValuesTxn(b bool) *TransactionManager {
 	return m
 }
 
-func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnType, snapshotVersion uint64) (types.Txn, error) {
+func (m *TransactionManager) BeginTransaction(_ context.Context, opt types.TxnOption) (types.Txn, error) {
 	ts, err := utils.FetchTimestampWithRetry(m)
 	if err != nil {
 		return nil, err
@@ -116,12 +116,17 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, typ types.TxnTy
 	if _, ok := m.txns.Get(txnID); ok {
 		return nil, errors.ErrTxnExists
 	}
-	txn := m.newTxn(txnID, typ)
+	txn := m.newTxn(txnID, opt.TxnType)
 	err = m.txns.Insert(txnID, txn)
 	assert.MustNoError(err)
 
-	if typ.IsSnapshotRead() && snapshotVersion > 0 {
-		txn.SetSnapshotVersion(snapshotVersion)
+	if txn.IsSnapshotRead() {
+		if opt.SnapshotReadOption.DontAllowVersionBack {
+			return nil, errors.Annotatef(errors.ErrNotSupported, "opt.SnapshotReadOption.DontAllowVersionBack")
+		}
+		if opt.SnapshotReadOption.SnapshotVersion != 0 {
+			txn.SetSnapshotVersion(opt.SnapshotReadOption.SnapshotVersion)
+		}
 	}
 
 	if !m.recordValues {

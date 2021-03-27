@@ -22,7 +22,7 @@ func TestDistributedTxnReadConsistency(t *testing.T) {
 }
 
 func TestDistributedTxnReadConsistencySnapshotRead(t *testing.T) {
-	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetSnapshotReadForReadonlyTxn().Run()
+	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
 }
 
 func TestDistributedTxnReadConsistencyDeadlock(t *testing.T) {
@@ -60,7 +60,7 @@ func testDistributedTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 
 			for i := 0; i < ts.TxnNumPerGoRoutine; i++ {
 				ts.DoTransaction(ctx, goRoutineIndex, ts.scs[0], func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, key, ts.ReadOpt)
+					val, err := txn.Get(ctx, key)
 					if err != nil {
 						return err
 					}
@@ -128,7 +128,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 						err     error
 					)
 					if ts.True(ts.DoReadOnlyTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) (err error) {
-						if values, err = txn.MGet(ctx, []string{key1, key2, key1, key2, key1, key2}, ts.ReadOpt); err == nil {
+						if values, err = txn.MGet(ctx, []string{key1, key2, key1, key2, key1, key2}); err == nil {
 							readTxn = txn
 						}
 						return
@@ -140,7 +140,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 						}
 						var ints = make([]int, len(values))
 						for idx, val := range values {
-							ts.True(!val.HasWriteIntent())
+							ts.True(!val.IsDirty())
 							ts.Equal(types.TxnInternalVersion(1), val.InternalVersion)
 							ts.Equal(txn.GetSnapshotVersion(), val.SnapshotVersion)
 							x, err := val.Int()
@@ -171,7 +171,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 				} else {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc2, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -186,7 +186,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}
@@ -262,7 +262,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 			for round := 0; round < ts.TxnNumPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+						key1Val, err := txn.Get(ctx, key1)
 						if err != nil {
 							return err
 						}
@@ -271,7 +271,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 							return err
 						}
 
-						key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+						key2Val, err := txn.Get(ctx, key2)
 						if err != nil {
 							return err
 						}
@@ -287,7 +287,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 				} else if goRoutineIndex&1 == 1 {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc2, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -302,7 +302,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}
@@ -320,7 +320,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 				} else {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						{
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}
@@ -335,7 +335,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 						}
 
 						{
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -411,7 +411,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 			for round := 0; round < ts.TxnNumPerGoRoutine; round++ {
 				if goRoutineIndex == 0 || goRoutineIndex == 1 {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+						key1Val, err := txn.Get(ctx, key1)
 						if err != nil {
 							return err
 						}
@@ -420,7 +420,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 							return err
 						}
 
-						key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+						key2Val, err := txn.Get(ctx, key2)
 						if err != nil {
 							return err
 						}
@@ -436,7 +436,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 				} else {
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						if goRoutineIndex < (ts.GoRoutineNum-2)/2+2 {
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -444,7 +444,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 							if !ts.NoError(err) {
 								return err
 							}
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}
@@ -460,7 +460,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 								}
 							}
 						} else {
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}
@@ -468,7 +468,7 @@ func testDistributedTxnWriteSkew(ctx context.Context, ts *TestCase) (b bool) {
 							if !ts.NoError(err) {
 								return err
 							}
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -549,7 +549,7 @@ func testDistributedTxnExtraWriteSimple(ctx context.Context, ts *TestCase) (b bo
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						{
 							const k1 = key1
-							key1Val, err := txn.Get(ctx, k1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, k1)
 							if err != nil {
 								return err
 							}
@@ -564,7 +564,7 @@ func testDistributedTxnExtraWriteSimple(ctx context.Context, ts *TestCase) (b bo
 
 						{
 							const k2 = key2
-							key2Val, err := txn.Get(ctx, k2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, k2)
 							if err != nil {
 								return err
 							}
@@ -582,7 +582,7 @@ func testDistributedTxnExtraWriteSimple(ctx context.Context, ts *TestCase) (b bo
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						{
 							const k1 = key1
-							key1Val, err := txn.Get(ctx, k1, ts.ReadOpt)
+							key1Val, err := txn.Get(ctx, k1)
 							if err != nil {
 								return err
 							}
@@ -597,7 +597,7 @@ func testDistributedTxnExtraWriteSimple(ctx context.Context, ts *TestCase) (b bo
 
 						{
 							const k2 = key2
-							key2Val, err := txn.Get(ctx, k2, ts.ReadOpt)
+							key2Val, err := txn.Get(ctx, k2)
 							if err != nil {
 								return err
 							}
@@ -701,7 +701,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						// key1 += key1ExtraDelta
-						key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+						key1Val, err := txn.Get(ctx, key1)
 						if err != nil {
 							return err
 						}
@@ -725,7 +725,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						writeValues = map[string]types.Value{}
 					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+						key2Val, err := txn.Get(ctx, key2)
 						if err != nil {
 							return err
 						}
@@ -749,7 +749,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						writeValues = map[string]types.Value{}
 					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key3Val, err := txn.Get(ctx, key3, ts.ReadOpt)
+						key3Val, err := txn.Get(ctx, key3)
 						if err != nil {
 							return err
 						}
@@ -770,17 +770,17 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 					// read key1 key2 key3
 					var readValues = map[string]types.Value{}
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1, ts.ReadOpt)
+						key1Val, err := txn.Get(ctx, key1)
 						if err != nil {
 							return err
 						}
 						readValues[key1] = key1Val
-						key2Val, err := txn.Get(ctx, key2, ts.ReadOpt)
+						key2Val, err := txn.Get(ctx, key2)
 						if err != nil {
 							return err
 						}
 						readValues[key2] = key2Val
-						key3Val, err := txn.Get(ctx, key3, ts.ReadOpt)
+						key3Val, err := txn.Get(ctx, key3)
 						if err != nil {
 							return err
 						}
@@ -795,7 +795,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						{
-							key1Val, err := txn.Get(ctx, key1, ts.ReadOpt.WithWaitNoWriteIntent())
+							key1Val, err := txn.Get(ctx, key1)
 							if err != nil {
 								return err
 							}
@@ -813,7 +813,7 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						}
 
 						{
-							key2Val, err := txn.Get(ctx, key2, ts.ReadOpt.WithWaitNoWriteIntent())
+							key2Val, err := txn.Get(ctx, key2)
 							if err != nil {
 								return err
 							}

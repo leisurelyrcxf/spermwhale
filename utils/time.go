@@ -64,3 +64,14 @@ func RandomPeriod(unit time.Duration, min, max int) time.Duration {
 	rand.Seed(time.Now().UnixNano())
 	return unit * time.Duration(min+rand.Intn(max-min+1))
 }
+
+var characters = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+
+func RandomKey(length int) string {
+	rand.Seed(time.Now().UnixNano())
+	bytes := make([]byte, length)
+	for i := range bytes {
+		bytes[i] = characters[rand.Intn(len(characters))]
+	}
+	return string(bytes)
+}

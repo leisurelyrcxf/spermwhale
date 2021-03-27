@@ -20,14 +20,15 @@ const defaultMaxRetry = 1000
 
 type SmartClient struct {
 	types.TxnManager
-	maxRetry int
+	maxRetry             int
+	retryOnCommitFailure bool
 }
 
 func NewSmartClient(tm types.TxnManager, maxRetry int) *SmartClient {
 	if maxRetry <= 0 {
 		maxRetry = defaultMaxRetry
 	}
-	return &SmartClient{TxnManager: tm, maxRetry: maxRetry}
+	return &SmartClient{TxnManager: tm, maxRetry: maxRetry, retryOnCommitFailure: true}
 }
 
 func (c *SmartClient) DoTransaction(ctx context.Context, f func(ctx context.Context, txn types.Txn) error) error {
@@ -51,20 +52,19 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 	return txn, err
 }
 
-func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (types.Txn, int, error) {
-	return c.DoTransactionRaw(ctx, typ, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (_ types.Txn, retryTimes int, _ error) {
+	return c.DoTransactionRaw(ctx, types.NewTxnOption(typ), func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
 	}, nil, nil)
 }
 
-func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
-	beforeCommit, beforeRollback func() error) (types.Txn, int, error) {
-	var snapshotVersion = uint64(0)
+func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
+	beforeCommit, beforeRollback func() error) (_ types.Txn, retryTimes int, _ error) {
 	for i := 0; i < c.maxRetry; i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, i + 1, err
 		}
-		tx, err := c.TxnManager.BeginTransaction(ctx, typ, snapshotVersion)
+		tx, err := c.TxnManager.BeginTransaction(ctx, opt)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
 				continue
@@ -83,7 +83,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 			if err == nil {
 				return tx, i + 1, nil
 			}
-			if !retry { //TODO FIXME
+			if !c.retryOnCommitFailure {
 				return tx, i + 1, err
 			}
 			if !tx.GetState().IsAborted() && !errors.IsRetryableTransactionErr(err) {
@@ -105,8 +105,8 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, typ types.TxnType, f
 			return tx, i + 1, err
 		}
 		if errors.IsSnapshotReadTabletErr(err) {
-			snapshotVersion = tx.GetSnapshotVersion()
-			assert.Must(snapshotVersion > 0)
+			opt.SnapshotReadOption.SnapshotVersion = tx.GetSnapshotVersion()
+			assert.Must(opt.SnapshotReadOption.SnapshotVersion > 0)
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 	}
@@ -121,7 +121,7 @@ func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {
 
 func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ error) {
 	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
-		val, err = txn.Get(ctx, key, types.NewTxnReadOption())
+		val, err = txn.Get(ctx, key)
 		return
 	}); err != nil {
 		return types.EmptyValue, err
@@ -131,7 +131,7 @@ func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ e
 
 func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.TxnType) (values []types.Value, _ error) {
 	if _, _, err := c.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) (err error) {
-		values, err = txn.MGet(ctx, keys, types.NewTxnReadOption())
+		values, err = txn.MGet(ctx, keys)
 		return
 	}); err != nil {
 		return nil, err

@@ -25,16 +25,16 @@ func TestTxnLostUpdate(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
 
-func TestTxnLostUpdateReadForWrite(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).Run()
+func TestTxnLostUpdateReadModifyWrite(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite).Run()
 }
 
-func TestTxnLostUpdateWaitNoWriteIntent(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetWaitNoWriteIntent().SetStaleWriteThreshold(time.Millisecond * 10).Run()
+func TestTxnLostUpdateWaitWhenReadDirty(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeWaitWhenReadDirty).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
 
-func TestTxnLostUpdateReadForWriteWaitNoWriteIntent(t *testing.T) {
-	NewEmbeddedTestCase(t, 10, testTxnLostUpdate).SetTxnType(types.TxnTypeReadForWrite).SetWaitNoWriteIntent().Run()
+func TestTxnLostUpdateReadModifyWriteWaitWhenReadDirty(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
 func TestTxnLostUpdateInjectErr(t *testing.T) {
@@ -48,7 +48,7 @@ func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
 
 func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
-		SetSnapshotReadForReadonlyTxn().Run()
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
 }
 
 func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
@@ -70,7 +70,7 @@ func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 
 			for i := 0; i < ts.TxnNumPerGoRoutine; i++ {
 				ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, key, ts.ReadOpt)
+					val, err := txn.Get(ctx, key)
 					if err != nil {
 						return err
 					}
@@ -93,14 +93,7 @@ func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 	if !ts.Equal(ts.GoRoutineNum*ts.TxnNumPerGoRoutine*delta+initialValue, val) {
 		return
 	}
-	ts.CheckSerializability()
-	for i := 1; i < len(ts.allExecutedTxns); i++ {
-		prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
-		if !ts.Equal(prev.ID, cur.ReadValues["k1"].Version) || !ts.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
-			return
-		}
-	}
-	return true
+	return ts.CheckSerializability() && ts.allExecutedTxns.CheckReadForWriteOnly(ts.Assertions, key)
 }
 
 func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
@@ -136,7 +129,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 
 			if goRoutineIdx&1 == 1 {
 				ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, key, ts.ReadOpt)
+					val, err := txn.Get(ctx, key)
 					if err != nil {
 						return err
 					}
@@ -154,7 +147,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 				}))
 			} else {
 				ts.True(ts.DoReadOnlyTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-					_, err := txn.Get(ctx, key, ts.ReadOpt)
+					_, err := txn.Get(ctx, key)
 					return err
 				}))
 			}
@@ -189,7 +182,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 		if !ts.Equal(types.TxnInternalVersion(writeTimesPerTxn), val.InternalVersion) {
 			return
 		}
-		if !ts.False(val.HasWriteIntent()) {
+		if !ts.False(val.IsDirty()) {
 			return
 		}
 		if idx >= 1 {
@@ -242,81 +235,52 @@ func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 	}))
 }
 
-func TestTxnReadForWrite2Keys(t *testing.T) {
-	testTxnReadForWrite2Keys(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Millisecond * 10})
+func TestTxnReadModifyWrite2Keys(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysOneRound).Run()
 }
 
-func TestTxnReadForWrite2KeysWaitNoWriteIntent(t *testing.T) {
-	testTxnReadForWrite2Keys(t, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Millisecond * 10})
+func TestTxnReadModifyWrite2KeysWaitWhenReadDirty(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysOneRound).SetTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
 
-func TestTxnReadForWrite2KeysReadForWrite(t *testing.T) {
-	testTxnReadForWrite2Keys(t, types.TxnTypeReadForWrite, types.NewTxnReadOption(), []time.Duration{time.Second})
+func TestTxnReadModifyWrite2KeysReadModifyWrite(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysOneRound).SetTxnType(types.TxnTypeReadModifyWrite).Run()
 }
 
-func TestTxnReadForWrite2KeysReadForWriteWaitNoWriteIntent(t *testing.T) {
-	testTxnReadForWrite2Keys(t, types.TxnTypeReadForWrite, types.NewTxnReadOption().WithWaitNoWriteIntent(), []time.Duration{time.Second})
+func TestTxnReadModifyWrite2KeysReadModifyWriteWaitWhenReadDirty(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysOneRound).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
-func testTxnReadForWrite2Keys(t *testing.T, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThresholds []time.Duration) {
-	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
-	_ = flag.Set("v", fmt.Sprintf("%d", 8))
-
-	for _, threshold := range staleWriteThresholds {
-		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnReadForWrite2KeysOneRound(t, i, txnType, readOpt, threshold)) {
-				t.Errorf("TestTxnReadForWrite2Keys failed @round %d, staleWriteThreshold: %s", i, threshold)
-				return
-			}
-		}
-	}
-}
-
-func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.TxnType, readOpt types.TxnReadOption, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnReadForWrite2Keys @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
-
-	db := memory.NewMemoryDB()
-	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
-	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(staleWriteThreshold)).SetRecordValuesTxn(true)
-	sc := smart_txn_client.NewSmartClient(m, 0)
-	defer sc.Close()
-	assert := types.NewAssertion(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-
+func testTxnReadModifyWrite2KeysOneRound(ctx context.Context, ts *TestCase) (b bool) {
 	const (
 		key1InitialValue = 10
 		key2InitialValue = 100
-		goRoutineNumber  = 10000
 		delta            = 6
 	)
+	sc := ts.scs[0]
 	err := sc.SetInt(ctx, "k1", key1InitialValue)
-	if !assert.NoError(err) {
+	if !ts.NoError(err) {
 		return
 	}
 	err = sc.SetInt(ctx, "k2", key2InitialValue)
-	if !assert.NoError(err) {
+	if !ts.NoError(err) {
 		return
 	}
 
-	txns := make([]ExecuteInfo, goRoutineNumber)
-
 	var wg sync.WaitGroup
-	for i := 0; i < goRoutineNumber; i++ {
+	for i := 0; i < ts.GoRoutineNum; i++ {
 		wg.Add(1)
-
-		go func(i int) {
+		go func(goRoutineIdx int) {
 			defer wg.Done()
 
-			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
+			ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
 				{
-					val, err := txn.Get(ctx, "k1", readOpt)
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err
 					}
 					v1, err := val.Int()
-					if !assert.NoError(err) {
+					if !ts.NoError(err) {
 						return err
 					}
 					if err := txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V); err != nil {
@@ -324,12 +288,12 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					}
 				}
 				{
-					val, err := txn.Get(ctx, "k2", readOpt)
+					val, err := txn.Get(ctx, "k2")
 					if err != nil {
 						return err
 					}
 					v2, err := val.Int()
-					if !assert.NoError(err) {
+					if !ts.NoError(err) {
 						return err
 					}
 					if err := txn.Set(ctx, "k2", types.NewIntValue(v2+delta).V); err != nil {
@@ -337,63 +301,64 @@ func testTxnReadForWrite2KeysOneRound(t *testing.T, round int, txnType types.Txn
 					}
 				}
 				return nil
-			}); assert.NoError(err) {
-				txns[i] = NewExecuteInfo(tx, 0, 0)
-			}
+			}))
 		}(i)
 	}
 
 	wg.Wait()
 	{
 		v1, err := sc.GetInt(ctx, "k1")
-		if !assert.NoError(err) {
+		if !ts.NoError(err) {
 			return
 		}
-		t.Logf("v1: %d", v1)
-		if !assert.Equal(goRoutineNumber*delta+key1InitialValue, v1) {
+		ts.t.Logf("v1: %d", v1)
+		if !ts.Equal(ts.GoRoutineNum*delta+key1InitialValue, v1) {
 			return
 		}
 	}
 	{
 		v2, err := sc.GetInt(ctx, "k2")
-		if !assert.NoError(err) {
+		if !ts.NoError(err) {
 			return
 		}
-		t.Logf("v2: %d", v2)
-		if !assert.Equal(goRoutineNumber*delta+key2InitialValue, v2) {
+		ts.t.Logf("v2: %d", v2)
+		if !ts.Equal(ts.GoRoutineNum*delta+key2InitialValue, v2) {
 			return
 		}
 	}
 
-	sort.Sort(ExecuteInfos(txns))
+	if !ts.CheckSerializability() {
+		return
+	}
+	txns := ts.allExecutedTxns
 	for i := 1; i < len(txns); i++ {
 		prev, cur := txns[i-1], txns[i]
-		if !assert.Equal(prev.ID, cur.ReadValues["k1"].Version) || !assert.Equal(prev.WriteValues["k1"].MustInt(), cur.ReadValues["k1"].MustInt()) {
+		if readVal := cur.ReadValues["k1"]; !ts.Equal(prev.ID, readVal.Version) || !ts.EqualValue(prev.WriteValues["k1"], readVal.WithNoWriteIntent()) {
 			return
 		}
-		if !assert.Equal(prev.ID, cur.ReadValues["k2"].Version) || !assert.Equal(prev.WriteValues["k2"].MustInt(), cur.ReadValues["k2"].MustInt()) {
+		if readVal := cur.ReadValues["k2"]; !ts.Equal(prev.ID, readVal.Version) || !ts.EqualValue(prev.WriteValues["k2"], readVal.WithNoWriteIntent()) {
 			return
 		}
 	}
 	return true
 }
 
-func TestTxnReadForWrite2KeysDeadlock(t *testing.T) {
+func TestTxnReadModifyWrite2KeysDeadlock(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 4))
 
 	for _, threshold := range []int{1000} {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnReadForWrite2KeysDeadlockOneRound(t, i, types.TxnTypeDefault, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestTxnReadForWrite2KeysDeadlock failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
+			if !testifyassert.True(t, testTxnReadModifyWrite2KeysDeadlockOneRound(t, i, types.TxnTypeDefault, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestTxnReadModifyWrite2KeysDeadlock failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
 				return
 			}
 		}
 	}
 }
 
-func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType types.TxnType, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnReadForWrite2KeysDeadlockOneRound @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
+func testTxnReadModifyWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType types.TxnType, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testTxnReadModifyWrite2KeysDeadlockOneRound @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
@@ -429,14 +394,10 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 		go func(i int) {
 			defer wg.Done()
 
-			var (
-				readOpt = types.NewTxnReadOption()
-			)
-
 			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				if i&1 == 1 {
 					{
-						val, err := txn.Get(ctx, "k1", readOpt)
+						val, err := txn.Get(ctx, "k1")
 						if err != nil {
 							return err
 						}
@@ -449,7 +410,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 					}
 					{
-						val, err := txn.Get(ctx, "k2", readOpt)
+						val, err := txn.Get(ctx, "k2")
 						if err != nil {
 							return err
 						}
@@ -463,7 +424,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 					}
 				} else {
 					{
-						val, err := txn.Get(ctx, "k2", readOpt)
+						val, err := txn.Get(ctx, "k2")
 						if err != nil {
 							return err
 						}
@@ -476,7 +437,7 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 						}
 					}
 					{
-						val, err := txn.Get(ctx, "k1", readOpt)
+						val, err := txn.Get(ctx, "k1")
 						if err != nil {
 							return err
 						}
@@ -534,22 +495,22 @@ func testTxnReadForWrite2KeysDeadlockOneRound(t *testing.T, round int, txnType t
 	return true
 }
 
-func TestTxnReadForWriteNKeysOneRound(t *testing.T) {
+func TestTxnReadModifyWriteNKeysOneRound(t *testing.T) {
 	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
 	_ = flag.Set("v", fmt.Sprintf("%d", 4))
 
 	for _, threshold := range []int{1000} {
 		for i := 0; i < rounds; i++ {
-			if !testifyassert.True(t, testTxnReadForWriteNKeysOneRound(t, i, types.TxnTypeDefault, time.Millisecond*time.Duration(threshold))) {
-				t.Errorf("TestTxnReadForWriteNKeysOneRound failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
+			if !testifyassert.True(t, testTxnReadModifyWriteNKeysOneRound(t, i, types.TxnTypeDefault, time.Millisecond*time.Duration(threshold))) {
+				t.Errorf("TestTxnReadModifyWriteNKeysOneRound failed @round %d, staleWriteThreshold: %s", i, time.Millisecond*time.Duration(threshold))
 				return
 			}
 		}
 	}
 }
 
-func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.TxnType, staleWriteThreshold time.Duration) (b bool) {
-	t.Logf("testTxnReadForWriteNKeysOneRound @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
+func testTxnReadModifyWriteNKeysOneRound(t *testing.T, round int, txnType types.TxnType, staleWriteThreshold time.Duration) (b bool) {
+	t.Logf("testTxnReadModifyWriteNKeysOneRound @round %d, staleWriteThreshold: %s", round, staleWriteThreshold)
 
 	db := memory.NewMemoryDB()
 	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(staleWriteThreshold))
@@ -584,14 +545,10 @@ func testTxnReadForWriteNKeysOneRound(t *testing.T, round int, txnType types.Txn
 		go func(i int) {
 			defer wg.Done()
 
-			var (
-				readOpt = types.NewTxnReadOption()
-			)
-
 			if tx, _, err := sc.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
 				for i := 0; i < N; i++ {
 					var key = fmt.Sprintf("k%d", i)
-					val, err := txn.Get(ctx, key, readOpt)
+					val, err := txn.Get(ctx, key)
 					if err != nil {
 						return err
 					}
@@ -713,7 +670,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 			)
 			if tx, err := sc.DoTransactionEx(ctx, func(ctx context.Context, txn types.Txn) error {
 				{
-					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err
 					}
@@ -731,7 +688,7 @@ func testTxnLostUpdateModAdd(t *testing.T, round int, staleWriteThreshold time.D
 				}
 
 				{
-					val, err := txn.Get(ctx, "k22", types.NewTxnReadOption())
+					val, err := txn.Get(ctx, "k22")
 					if err != nil {
 						return err
 					}
@@ -830,7 +787,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 			defer wg.Done()
 
 			assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-				val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+				val, err := txn.Get(ctx, "k1")
 				if err != nil {
 					return err
 				}
@@ -850,7 +807,7 @@ func testTxnReadWriteAfterWrite(t *testing.T, round int, staleWriteThreshold tim
 					return err
 				}
 
-				val2, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+				val2, err := txn.Get(ctx, "k1")
 				if err != nil {
 					return err
 				}
@@ -930,8 +887,8 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 			defer wg.Done()
 
 			if i%100 == 0 {
-				_, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
-					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+				_, _, err := sc.DoTransactionRaw(ctx, types.NewDefaultTxnOption(), func(ctx context.Context, txn types.Txn) (error, bool) {
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err, true
 					}
@@ -947,7 +904,7 @@ func testTxnLostUpdateWithSomeAborted(t *testing.T, round int, staleWriteThresho
 			} else {
 				goodTxns.Add(1)
 				assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err
 					}
@@ -1025,8 +982,8 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 			defer wg.Done()
 
 			if i%100 == 0 {
-				_, _, err := sc.DoTransactionRaw(ctx, types.TxnTypeDefault, func(ctx context.Context, txn types.Txn) (error, bool) {
-					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+				_, _, err := sc.DoTransactionRaw(ctx, types.NewDefaultTxnOption(), func(ctx context.Context, txn types.Txn) (error, bool) {
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err, true
 					}
@@ -1046,7 +1003,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 			} else {
 				goodTxns.Add(1)
 				assert.NoError(sc.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-					val, err := txn.Get(ctx, "k1", types.NewTxnReadOption())
+					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err
 					}
@@ -1076,7 +1033,7 @@ func testTxnLostUpdateWithSomeAborted2(t *testing.T, round int, staleWriteThresh
 func TestTxnEncode(t *testing.T) {
 	assert := types.NewAssertion(t)
 
-	txn := NewTxn(123, types.TxnTypeReadForWrite, kvcc.NewKVCCForTesting(memory.NewMemoryDB(), defaultTabletTxnConfig), defaultTxnManagerConfig, &TransactionStore{}, nil, nil)
+	txn := NewTxn(123, types.TxnTypeReadModifyWrite, kvcc.NewKVCCForTesting(memory.NewMemoryDB(), defaultTabletTxnConfig), defaultTxnManagerConfig, &TransactionStore{}, nil, nil)
 	txn.TxnState = types.TxnStateRollbacking
 	txn.InitializeWrittenKeys(ttypes.KeyVersions{"k1": 111, "k2": 222}, true)
 	bytes := txn.Encode()

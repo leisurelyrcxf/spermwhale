@@ -15,25 +15,25 @@ enum TxnState {
     StateRollbacked  = 5;
 }
 
-enum TxnType {
-    TypeDefault = 0;
-    TypeReadForWrite = 1;
+message TxnSnapshotReadOption {
+    uint64 snapshot_version = 1;
+    bool dont_allow_version_back = 2;
+}
+
+message TxnOption {
+    uint32 type = 1;
+    TxnSnapshotReadOption snapshot_read_option = 2;
 }
 
 message Txn {
     uint64 id = 1;
-    TxnState state = 2;
-    TxnType type = 3;
+    uint32 type = 2;
+    TxnState state = 3;
     uint64 snapshot_version = 4;
 }
 
-message TxnReadOption {
-    uint32 flag = 1;
-}
-
 message BeginRequest {
-    TxnType type = 1;
-    uint64 snapshot_version = 2;
+    TxnOption opt = 1;
 }
 
 message BeginResponse {
@@ -44,7 +44,6 @@ message BeginResponse {
 message TxnGetRequest {
     string key = 1;
     uint64 txn_id = 2;
-    TxnReadOption opt = 3;
 }
 
 message TxnGetResponse {
@@ -56,7 +55,6 @@ message TxnGetResponse {
 message TxnMGetRequest {
     repeated string keys = 1;
     uint64 txn_id = 2;
-    TxnReadOption opt = 3;
 }
 
 message TxnMGetResponse {

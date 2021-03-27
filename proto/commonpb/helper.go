@@ -10,7 +10,7 @@ func (x *Error) Error() string {
 	return fmt.Sprintf("%s, code: %d", x.Msg, x.Code)
 }
 
-func (x *ValueMeta) HasWriteIntent() bool {
+func (x *ValueMeta) IsDirty() bool {
 	return x.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
 }
 

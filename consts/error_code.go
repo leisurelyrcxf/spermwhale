@@ -34,24 +34,24 @@ const (
 	ErrCodeTabletWriteTransactionNotFound            = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten = 92
 
-	ErrCodeNilResponse                                    = 99
-	ErrCodeInvalidResponse                                = 100
-	ErrCodeTxnRetriedTooManyTimes                         = 101
-	ErrCodeNotSupported                                   = 111
-	ErrCodeNotAllowed                                     = 222
-	ErrCodeInvalidRequest                                 = 333
-	ErrCodeSchedulerClosed                                = 555
-	ErrCodeDontUseThisBeforeTaskFinished                  = 666
-	ErrCodeGoRoutineExited                                = 667
-	ErrCodeInvalidTopoData                                = 777
-	ErrCodeCantGetOracle                                  = 888
-	ErrCodeInvalidConfig                                  = 999
-	ErrCodeReadForWriteTransactionCommitWithNoWrittenKeys = 1000
-	ErrCodeReadForWriteReaderTimeouted                    = 1001
-	ErrCodeUnknown                                        = 1111
-	ErrCodeInject                                         = 11111
-	ErrCodeDummy                                          = 12222
-	ErrCodeAssertFailed                                   = 22222
+	ErrCodeNilResponse                                       = 99
+	ErrCodeInvalidResponse                                   = 100
+	ErrCodeTxnRetriedTooManyTimes                            = 101
+	ErrCodeNotSupported                                      = 111
+	ErrCodeNotAllowed                                        = 222
+	ErrCodeInvalidRequest                                    = 333
+	ErrCodeSchedulerClosed                                   = 555
+	ErrCodeDontUseThisBeforeTaskFinished                     = 666
+	ErrCodeGoRoutineExited                                   = 667
+	ErrCodeInvalidTopoData                                   = 777
+	ErrCodeCantGetOracle                                     = 888
+	ErrCodeInvalidConfig                                     = 999
+	ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys = 1000
+	ErrCodeReadForWriteReaderTimeouted                       = 1001
+	ErrCodeUnknown                                           = 1111
+	ErrCodeInject                                            = 11111
+	ErrCodeDummy                                             = 12222
+	ErrCodeAssertFailed                                      = 22222
 
 	ErrCodePrevExists = 33333
 )

@@ -156,7 +156,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		return db.vvs.UpsertKey(ctx, key, val.Version, oldVal.WithNoWriteIntent())
 	}
 	if opt.IsRemoveVersion() {
-		assert.Must(!val.HasWriteIntent())
+		assert.Must(!val.IsDirty())
 		// TODO can remove the check in the future if stable enough
 		if !isTxnRecord && utils.IsDebug() {
 			return db.vvs.RemoveKeyIf(ctx, key, val.Version, func(prev Value) error {

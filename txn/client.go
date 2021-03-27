@@ -29,8 +29,8 @@ func NewClient(serverAddr string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Begin(ctx context.Context, typ types.TxnType, snapshotVersion uint64) (TransactionInfo, error) {
-	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{Type: typ.ToPB(), SnapshotVersion: snapshotVersion})
+func (c *Client) Begin(ctx context.Context, opt types.TxnOption) (TransactionInfo, error) {
+	resp, err := c.c.Begin(ctx, &txnpb.BeginRequest{Opt: opt.ToPB()})
 	if err != nil {
 		return InvalidTransactionInfo(0), err
 	}
@@ -46,11 +46,10 @@ func (c *Client) Begin(ctx context.Context, typ types.TxnType, snapshotVersion u
 	return NewTransactionInfoFromPB(resp.Txn), nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId, opt types.TxnReadOption) (types.Value, TransactionInfo, error) {
+func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, TransactionInfo, error) {
 	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
 		TxnId: uint64(txnID),
-		Opt:   opt.ToPB(),
 	})
 	if err != nil {
 		return types.EmptyValue, InvalidTransactionInfo(txnID), err
@@ -75,11 +74,10 @@ func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId, opt typ
 	return types.NewValueFromPB(resp.V), txnInfo, nil
 }
 
-func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId, opt types.TxnReadOption) ([]types.Value, TransactionInfo, error) {
+func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId) ([]types.Value, TransactionInfo, error) {
 	resp, err := c.c.MGet(ctx, &txnpb.TxnMGetRequest{
 		Keys:  keys,
 		TxnId: uint64(txnID),
-		Opt:   opt.ToPB(),
 	})
 	if err != nil {
 		return nil, InvalidTransactionInfo(txnID), err
@@ -181,12 +179,12 @@ func (m *ClientTxnManager) SetRecordValues(b bool) *ClientTxnManager {
 	return m
 }
 
-func (m *ClientTxnManager) BeginTransaction(ctx context.Context, typ types.TxnType, snapshotVersion uint64) (types.Txn, error) {
-	txnInfo, err := m.c.Begin(ctx, typ, snapshotVersion)
+func (m *ClientTxnManager) BeginTransaction(ctx context.Context, opt types.TxnOption) (types.Txn, error) {
+	txnInfo, err := m.c.Begin(ctx, opt)
 	if err != nil {
 		return nil, err
 	}
-	assert.Must(txnInfo.TxnType == typ)
+	assert.Must(txnInfo.TxnType == opt.TxnType)
 	txn := newClientTxn(txnInfo, m.c)
 	if !m.recordValues {
 		return txn, nil
@@ -211,15 +209,15 @@ func newClientTxn(txnInfo TransactionInfo, c *Client) *ClientTxn {
 	}
 }
 
-func (txn *ClientTxn) Get(ctx context.Context, key string, opt types.TxnReadOption) (types.Value, error) {
-	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID, opt)
+func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
+	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return val, err
 }
 
-func (txn *ClientTxn) MGet(ctx context.Context, keys []string, opt types.TxnReadOption) ([]types.Value, error) {
-	values, txnInfo, err := txn.c.MGet(ctx, keys, txn.ID, opt)
+func (txn *ClientTxn) MGet(ctx context.Context, keys []string) ([]types.Value, error) {
+	values, txnInfo, err := txn.c.MGet(ctx, keys, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return values, err

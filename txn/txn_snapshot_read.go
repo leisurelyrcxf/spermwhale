@@ -101,7 +101,7 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 		readKeys.Reset()
 		for key, value := range readResult {
 			if value.Version > txn.SnapshotVersion {
-				readKeys.Insert(key) // value.version violates txn.SnapshotVersion
+				readKeys.InsertUnsafe(key) // value.version violates txn.SnapshotVersion
 			}
 		}
 		if len(readKeys) == 0 {
@@ -122,14 +122,15 @@ func (txn *Txn) SetSnapshotVersion(v uint64) {
 }
 
 func (txn *Txn) GetSnapshotReadOption() types.KVCCReadOption {
-	return types.NewKVCCReadOption(0).WithSnapshotRead(txn.SnapshotVersion, txn.minAllowedSnapshotVersion)
+	return types.NewKVCCReadOption(0).WithSnapshotRead(txn.SnapshotVersion, txn.minAllowedSnapshotVersion).
+		CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
 }
 
 func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion uint64, expHasWriteIntent bool) {
 	if expHasWriteIntent {
-		assert.Must(val.HasWriteIntent() && val.V == nil)
+		assert.Must(val.IsDirty() && val.V == nil)
 	} else {
-		assert.Must(!val.HasWriteIntent() && val.V != nil)
+		assert.Must(!val.IsDirty() && val.V != nil)
 	}
 	assert.Must(val.SnapshotVersion > 0 && val.Version <= val.SnapshotVersion &&
 		txn.minAllowedSnapshotVersion <= val.SnapshotVersion && val.SnapshotVersion <= readSnapshotVersion)

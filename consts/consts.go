@@ -25,17 +25,13 @@ const (
 )
 
 const (
-	KVCCReadOptBitMaskTxnRecord                  = 1
-	KVCCReadOptBitMaskNotUpdateTimestampCache    = 1 << 1
-	KVCCReadOptBitMaskNotGetMaxReadVersion       = 1 << 2
-	KVCCReadOptBitMaskReadForWrite               = 1 << 3
-	KVCCReadOptBitMaskReadForWriteFirstReadOfKey = 1 << 4
-	KVCCReadOptBitMaskSnapshotRead               = 1 << 5 // NOTE run out of all bits...
-
-	txnKVCCCommonReadOptBitOffset                     = 6
-	txnKVCCCommonReadOptBitMask                       = uint8((0xffff << txnKVCCCommonReadOptBitOffset) & 0xff)
-	TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent      = 1 << txnKVCCCommonReadOptBitOffset
-	TxnKVCCCommonReadOptBitMaskClearWaitNoWriteIntent = ^TxnKVCCCommonReadOptBitMaskWaitNoWriteIntent & 0xff
+	KVCCReadOptBitMaskTxnRecord                     = 1
+	KVCCReadOptBitMaskNotUpdateTimestampCache       = 1 << 1
+	KVCCReadOptBitMaskNotGetMaxReadVersion          = 1 << 2
+	KVCCReadOptBitMaskReadModifyWrite               = 1 << 3
+	KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey = 1 << 4
+	KVCCReadOptBitMaskSnapshotRead                  = 1 << 5
+	KVCCReadOptBitMaskWaitWhenReadDirty             = 1 << 6
 
 	KVReadOptBitMaskTxnRecord    = 1
 	KVReadOptBitMaskExactVersion = 1 << 7
@@ -46,15 +42,15 @@ const (
 	CommonWriteOptBitMaskClearWriteIntent = 1 << 1
 	CommonWriteOptBitMaskRemoveVersion    = 1 << 2
 
-	KVCCWriteOptBitMaskWriteByDifferentTxn                = 1 << 3
-	KVCCWriteOptBitMaskRemoveVersionRollback              = 1 << 4
-	KVCCWriteOptBitMaskReadForWrite                       = 1 << 5
-	KVCCWriteOptBitMaskReadForWriteRollbackOrClearReadKey = 1 << 6
+	KVCCWriteOptBitMaskWriteByDifferentTxn                   = 1 << 3
+	KVCCWriteOptBitMaskRemoveVersionRollback                 = 1 << 4
+	KVCCWriteOptBitMaskReadModifyWrite                       = 1 << 5
+	KVCCWriteOptBitMaskReadModifyWriteRollbackOrClearReadKey = 1 << 6
 )
 
 const (
 	ValueMetaBitMaskHasWriteIntent   = 1
-	ValueMetaBitMaskClearWriteIntent = 0xfe
+	ValueMetaBitMaskClearWriteIntent = (^1) & 0xff
 )
 
 func IsWriteTxnRecord(flag uint8) bool {
@@ -97,10 +93,6 @@ const (
 const (
 	DefaultReadTimeout = time.Second * 10
 )
-
-func InheritReadCommonFlag(flag1, from uint8) uint8 {
-	return flag1 | (from & txnKVCCCommonReadOptBitMask)
-}
 
 const (
 	MaxReadForWriteQueueCapacityPerKey        = 500

@@ -149,7 +149,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		return nil, keyErr
 	}
 	if keyExists {
-		if !vv.HasWriteIntent() {
+		if !vv.IsDirty() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
 			if txnId == callerTxn.ID {
@@ -166,7 +166,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// 1. key not exists
 	//    1.1. preventedFutureTxnRecordWrite, safe to rollback
 	//    1.2. len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) == 1, key with write intent disappeared, safe to rollback
-	// 2. preventedFutureTxnRecordWrite && key exists & vv.HasWriteIntent(), since we've prevented write txn record,
+	// 2. preventedFutureTxnRecordWrite && key exists & vv.IsDirty(), since we've prevented write txn record,
 	//	  guaranteed commit won't succeed in the future, hence safe to rollback.
 	if txn = s.partialTxnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion); !keyExists {
 		txn.MarkWrittenKeyRollbacked(key)
