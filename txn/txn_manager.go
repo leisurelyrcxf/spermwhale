@@ -121,11 +121,8 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, opt types.TxnOp
 	assert.MustNoError(err)
 
 	if txn.IsSnapshotRead() {
-		if opt.SnapshotReadOption.DontAllowVersionBack {
-			return nil, errors.Annotatef(errors.ErrNotSupported, "opt.SnapshotReadOption.DontAllowVersionBack")
-		}
-		if opt.SnapshotReadOption.SnapshotVersion != 0 {
-			txn.SetSnapshotVersion(opt.SnapshotReadOption.SnapshotVersion)
+		if err := txn.SetSnapshotReadOption(opt.SnapshotReadOption); err != nil {
+			return nil, err
 		}
 	}
 

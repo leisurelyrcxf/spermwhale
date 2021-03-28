@@ -3,6 +3,8 @@ package txn
 import (
 	"context"
 
+	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -12,16 +14,16 @@ import (
 )
 
 func (txn *Txn) getSnapshot(ctx context.Context, key string) (types.Value, error) {
-	val, err := txn.kv.Get(ctx, key, txn.GetSnapshotReadOption())
+	val, err := txn.kv.Get(ctx, key, txn.GetSnapshotKVCCReadOption())
 	if err != nil {
 		if errors.IsSnapshotReadTabletErr(err) {
 			txn.assertSnapshotReadResult(val, txn.SnapshotVersion, true)
-			txn.SnapshotVersion = val.Version - 1
+			txn.SetSnapshotVersion(val.Version - 1)
 		}
 		return types.EmptyValue, err
 	}
 	txn.assertSnapshotReadResult(val, txn.SnapshotVersion, false)
-	txn.SnapshotVersion = val.SnapshotVersion
+	txn.SetSnapshotVersion(val.SnapshotVersion)
 	txn.minAllowedSnapshotVersion = utils.MaxUint64(txn.minAllowedSnapshotVersion, val.Version)
 	txn.assertSnapshot()
 	return val.Value, nil
@@ -42,14 +44,14 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 		if len(readKeys) == 1 {
 			readKey := readKeys.MustFirst()
 			tasks = append(tasks, basic.NewTask(basic.NewTaskId(txn.ID.Version(), readKey), "get", consts.DefaultReadTimeout, func(ctx context.Context) (i interface{}, err error) {
-				return txn.kv.Get(ctx, readKey, txn.GetSnapshotReadOption())
+				return txn.kv.Get(ctx, readKey, txn.GetSnapshotKVCCReadOption())
 			}))
 			_ = tasks[0].Run()
 		} else {
 			for readKey := range readKeys {
 				var (
 					readKey = readKey
-					readOpt = txn.GetSnapshotReadOption()
+					readOpt = txn.GetSnapshotKVCCReadOption()
 				)
 				task := basic.NewTask(basic.NewTaskId(txn.ID.Version(), readKey), "get", consts.DefaultReadTimeout, func(ctx context.Context) (i interface{}, err error) {
 					return txn.kv.Get(ctx, readKey, readOpt)
@@ -79,14 +81,14 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 			if val, err := task.Result().(types.ValueCC), task.Err(); err != nil {
 				if errors.IsSnapshotReadTabletErr(err) {
 					txn.assertSnapshotReadResult(val, oldSnapshotVersion, true)
-					txn.SnapshotVersion = utils.MinUint64(txn.SnapshotVersion, val.Version-1)
+					txn.SetSnapshotVersion(val.Version - 1)
 					lastTabletErr = err
 				}
 				lastErr = err
 			} else {
 				txn.assertSnapshotReadResult(val, oldSnapshotVersion, false)
 				readResult[task.ID.Key] = val
-				txn.SnapshotVersion = utils.MinUint64(txn.SnapshotVersion, val.SnapshotVersion)
+				txn.SetSnapshotVersion(val.SnapshotVersion)
 			}
 		}
 		if lastTabletErr != nil { // return tablets error preferentially
@@ -115,19 +117,39 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 	return nil, ctx.Err()
 }
 
-func (txn *Txn) SetSnapshotVersion(v uint64) {
-	assert.Must(v != 0)
-	txn.SnapshotVersion = v
-	//txn.minAllowedSnapshotVersion = v // explicit version, can't down version
+func (txn *Txn) SetSnapshotReadOption(opt types.TxnSnapshotReadOption) error {
+	if opt.IsExplicitSnapshotVersion() {
+		if opt.SnapshotVersion == 0 {
+			return errors.Annotatef(errors.ErrInvalidExplicitSnapshotVersion, "opt.SnapshotVersion == 0")
+		}
+		if opt.SnapshotVersion > txn.ID.Version() {
+			return errors.Annotatef(errors.ErrInvalidExplicitSnapshotVersion, "opt.SnapshotVersion > txn.ID.Version()")
+		}
+	}
+	txn.TxnSnapshotReadOption = opt
+	if !txn.TxnSnapshotReadOption.IsEmpty() && bool(glog.V(60)) {
+		glog.Infof("[Txn::SetSnapshotReadOption] txn-%d snapshot read option initialized to %s", txn.ID, txn.TxnSnapshotReadOption)
+	}
+
+	return nil
 }
 
-func (txn *Txn) GetSnapshotReadOption() types.KVCCReadOption {
-	return types.NewKVCCReadOption(0).WithSnapshotRead(txn.SnapshotVersion, txn.minAllowedSnapshotVersion).
+func (txn *Txn) GetSnapshotKVCCReadOption() types.KVCCReadOption {
+	var (
+		snapshotVersion, minAllowedSnapshotVersion uint64
+	)
+	if snapshotVersion = txn.SnapshotVersion; snapshotVersion == 0 {
+		snapshotVersion = txn.ID.Version()
+	}
+	if minAllowedSnapshotVersion = txn.minAllowedSnapshotVersion; !txn.AllowsVersionBack() {
+		minAllowedSnapshotVersion = snapshotVersion
+	}
+	return types.NewKVCCReadOption(0).WithSnapshotRead(snapshotVersion, minAllowedSnapshotVersion).
 		CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
 }
 
-func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion uint64, expHasWriteIntent bool) {
-	if expHasWriteIntent {
+func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion uint64, isDirty bool) {
+	if isDirty {
 		assert.Must(val.IsDirty() && val.V == nil)
 	} else {
 		assert.Must(!val.IsDirty() && val.V != nil)

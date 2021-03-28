@@ -49,6 +49,11 @@ const (
 )
 
 const (
+	TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion = 1
+	TxnSnapshotReadOptionBitMaskDontAllowVersionBack    = 1 << 1
+)
+
+const (
 	ValueMetaBitMaskHasWriteIntent   = 1
 	ValueMetaBitMaskClearWriteIntent = (^1) & 0xff
 )

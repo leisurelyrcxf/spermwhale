@@ -106,7 +106,7 @@ func (tk TxnKeyUnion) Hash() uint64 {
 
 func (tk TxnKeyUnion) String() string {
 	if tk.Key != "" {
-		return "key-" + tk.Key
+		return "key('" + tk.Key + "')"
 	}
 	return "txn-record"
 }
@@ -252,28 +252,69 @@ func (t TxnType) String() string {
 }
 
 type TxnSnapshotReadOption struct {
-	SnapshotVersion      uint64
-	DontAllowVersionBack bool
+	SnapshotVersion uint64
+	flag            uint8
 }
 
 func NewTxnSnapshotReadOptionFromPB(opt *txnpb.TxnSnapshotReadOption) TxnSnapshotReadOption {
 	return TxnSnapshotReadOption{
-		SnapshotVersion:      opt.SnapshotVersion,
-		DontAllowVersionBack: opt.DontAllowVersionBack,
+		SnapshotVersion: opt.SnapshotVersion,
+		flag:            opt.GetFlagAsUint8(),
 	}
 }
 
 func (opt TxnSnapshotReadOption) ToPB() *txnpb.TxnSnapshotReadOption {
 	return &txnpb.TxnSnapshotReadOption{
-		SnapshotVersion:      opt.SnapshotVersion,
-		DontAllowVersionBack: opt.DontAllowVersionBack,
+		SnapshotVersion: opt.SnapshotVersion,
+		Flag:            uint32(opt.flag),
 	}
+}
+
+func (opt TxnSnapshotReadOption) Equals(another TxnSnapshotReadOption) bool {
+	return opt.SnapshotVersion == another.SnapshotVersion && opt.flag == another.flag
+}
+
+func (opt TxnSnapshotReadOption) IsExplicitSnapshotVersion() bool {
+	return opt.flag&consts.TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion == consts.TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion
+}
+
+func (opt TxnSnapshotReadOption) AllowsVersionBack() bool {
+	return opt.flag&consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack == 0
+}
+
+func (opt TxnSnapshotReadOption) IsEmpty() bool {
+	return opt.SnapshotVersion == 0 && opt.flag == 0
+}
+
+func (opt *TxnSnapshotReadOption) SetSnapshotVersion(snapshotVersion uint64) {
+	assert.Must(!opt.IsExplicitSnapshotVersion() || opt.SnapshotVersion != 0)
+	if opt.SnapshotVersion == 0 || (opt.AllowsVersionBack() && snapshotVersion < opt.SnapshotVersion) {
+		opt.SnapshotVersion = snapshotVersion
+	}
+}
+
+func (opt *TxnSnapshotReadOption) ResetSnapshotVersion(snapshotVersion uint64) {
+	assert.Must(opt.SnapshotVersion != 0)
+	if opt.IsExplicitSnapshotVersion() {
+		assert.Must(!opt.AllowsVersionBack())
+		return
+	}
+	if opt.AllowsVersionBack() && snapshotVersion < opt.SnapshotVersion {
+		opt.SnapshotVersion = snapshotVersion
+	} else {
+		opt.SnapshotVersion = 0
+	}
+	return
+}
+
+func (opt TxnSnapshotReadOption) String() string {
+	return fmt.Sprintf("snapshotVersion: %d, explicit_snapshot_version: %v, allows_version_back: %v", opt.SnapshotVersion, opt.IsExplicitSnapshotVersion(), opt.AllowsVersionBack())
 }
 
 type TxnOption struct {
 	TxnType
 
-	SnapshotReadOption TxnSnapshotReadOption
+	SnapshotReadOption TxnSnapshotReadOption // only valid if TxnType is SnapshotRead
 }
 
 func NewDefaultTxnOption() TxnOption {
@@ -300,6 +341,13 @@ func (opt TxnOption) ToPB() *txnpb.TxnOption {
 
 func (opt TxnOption) WithSnapshotVersion(snapshotVersion uint64) TxnOption {
 	opt.SnapshotReadOption.SnapshotVersion = snapshotVersion
+	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion
+	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack
+	return opt
+}
+
+func (opt TxnOption) WithDontAllowVersionBack() TxnOption {
+	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack
 	return opt
 }
 
@@ -312,10 +360,10 @@ type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
 	GetType() TxnType
-	GetSnapshotVersion() uint64 // only used when txn type is snapshot
+	GetSnapshotReadOption() TxnSnapshotReadOption // only used when txn type is snapshot
 	MGet(ctx context.Context, keys []string) (values []Value, err error)
 	Get(ctx context.Context, key string) (Value, error)
-	Set(ctx context.Context, key string, val []byte) error
+	Set(ctx context.Context, key string, val []byte) error // async func, doesn't guarantee see set result after call
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 
@@ -341,7 +389,7 @@ func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (Value, error) 
 	if err == nil {
 		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(key)))
 		if txn.GetType().IsSnapshotRead() {
-			assert.Must(val.SnapshotVersion == txn.GetSnapshotVersion() && val.Version <= val.SnapshotVersion)
+			assert.Must(val.SnapshotVersion == txn.GetSnapshotReadOption().SnapshotVersion && val.Version <= val.SnapshotVersion)
 		}
 		txn.readValues[key] = val
 	}
@@ -354,7 +402,7 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]Value, e
 		for idx, val := range values {
 			assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(keys[idx])))
 		}
-		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotVersion(); txnType.IsSnapshotRead() {
+		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotReadOption().SnapshotVersion; txnType.IsSnapshotRead() {
 			for _, val := range values {
 				assert.Must(val.SnapshotVersion == ssVersion && val.Version <= val.SnapshotVersion)
 			}

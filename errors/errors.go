@@ -175,4 +175,8 @@ var (
 		Code: consts.ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion,
 		Msg:  "reader version violates min allowed snapshot version",
 	}
+	ErrInvalidExplicitSnapshotVersion = &Error{
+		Code: consts.ErrCodeInvalidExplicitSnapshotVersion,
+		Msg:  "invalid explicit snapshot version",
+	}
 )

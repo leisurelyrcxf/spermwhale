@@ -24,7 +24,7 @@ type TransactionInfo struct {
 	ID types.TxnId
 	types.TxnState
 	types.TxnType
-	SnapshotVersion uint64
+	types.TxnSnapshotReadOption
 }
 
 func InvalidTransactionInfo(id types.TxnId) TransactionInfo {
@@ -37,19 +37,19 @@ func InvalidTransactionInfo(id types.TxnId) TransactionInfo {
 
 func NewTransactionInfoFromPB(x *txnpb.Txn) TransactionInfo {
 	return TransactionInfo{
-		ID:              types.TxnId(x.Id),
-		TxnState:        types.TxnState(x.State),
-		TxnType:         types.TxnType(x.Type),
-		SnapshotVersion: x.SnapshotVersion,
+		ID:                    types.TxnId(x.Id),
+		TxnState:              types.TxnState(x.State),
+		TxnType:               types.TxnType(x.Type),
+		TxnSnapshotReadOption: types.NewTxnSnapshotReadOptionFromPB(x.SnapshotReadOption),
 	}
 }
 
 func (i TransactionInfo) ToPB() *txnpb.Txn {
 	return &txnpb.Txn{
-		Id:              i.ID.Version(),
-		State:           i.TxnState.ToPB(),
-		Type:            i.TxnType.ToUint32(),
-		SnapshotVersion: i.SnapshotVersion,
+		Id:                 i.ID.Version(),
+		State:              i.TxnState.ToPB(),
+		Type:               i.TxnType.ToUint32(),
+		SnapshotReadOption: i.TxnSnapshotReadOption.ToPB(),
 	}
 }
 
@@ -65,8 +65,8 @@ func (i *TransactionInfo) GetType() types.TxnType {
 	return i.TxnType
 }
 
-func (i *TransactionInfo) GetSnapshotVersion() uint64 {
-	return i.SnapshotVersion
+func (i *TransactionInfo) GetSnapshotReadOption() types.TxnSnapshotReadOption {
+	return i.TxnSnapshotReadOption
 }
 
 type Txn struct {
@@ -101,10 +101,9 @@ func NewTxn(
 	destroy func(*Txn)) *Txn {
 	return &Txn{
 		TransactionInfo: TransactionInfo{
-			ID:              id,
-			TxnState:        types.TxnStateUncommitted,
-			TxnType:         typ,
-			SnapshotVersion: id.Version(),
+			ID:       id,
+			TxnState: types.TxnStateUncommitted,
+			TxnType:  typ,
 		},
 		WriteKeyInfos: ttypes.WriteKeyInfos{
 			KV:          kv,

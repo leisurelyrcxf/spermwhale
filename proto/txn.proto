@@ -17,7 +17,7 @@ enum TxnState {
 
 message TxnSnapshotReadOption {
     uint64 snapshot_version = 1;
-    bool dont_allow_version_back = 2;
+    uint32 flag = 2;
 }
 
 message TxnOption {
@@ -29,7 +29,7 @@ message Txn {
     uint64 id = 1;
     uint32 type = 2;
     TxnState state = 3;
-    uint64 snapshot_version = 4;
+    TxnSnapshotReadOption snapshot_read_option = 4;
 }
 
 message BeginRequest {

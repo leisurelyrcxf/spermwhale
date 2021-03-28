@@ -58,6 +58,12 @@ func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnTy
 	}, nil, nil)
 }
 
+func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error) (_ types.Txn, retryTimes int, _ error) {
+	return c.DoTransactionRaw(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+		return f(ctx, txn), true
+	}, nil, nil)
+}
+
 func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
 	beforeCommit, beforeRollback func() error) (_ types.Txn, retryTimes int, _ error) {
 	for i := 0; i < c.maxRetry; i++ {
@@ -105,8 +111,9 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 			return tx, i + 1, err
 		}
 		if errors.IsSnapshotReadTabletErr(err) {
-			opt.SnapshotReadOption.SnapshotVersion = tx.GetSnapshotVersion()
-			assert.Must(opt.SnapshotReadOption.SnapshotVersion > 0)
+			opt.SnapshotReadOption.ResetSnapshotVersion(tx.GetSnapshotReadOption().SnapshotVersion)
+			assert.Must((!opt.SnapshotReadOption.AllowsVersionBack() && (opt.SnapshotReadOption.IsExplicitSnapshotVersion() || opt.SnapshotReadOption.SnapshotVersion == 0)) ||
+				(opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.SnapshotVersion > 0))
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 	}

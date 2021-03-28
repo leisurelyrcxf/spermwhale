@@ -353,7 +353,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key, transaction.ReadModifyWriteKeyEventTypeKeyWritten))
 	}
 	if glog.V(60) {
-		glog.Infof("txn-%d set %s (internal_version: %d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
+		glog.Infof("txn-%d set %s (internal_version: %d) succeeded, cost %s", txnId, txnKey, val.InternalVersion, bench.Elapsed())
 	}
 	return nil
 }

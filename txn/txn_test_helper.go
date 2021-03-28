@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 1
+	rounds             = 10
 )
 
 var (
@@ -195,7 +195,7 @@ func (info ExecuteInfo) WithAdditionalInfo(object interface{}) ExecuteInfo {
 
 func (info ExecuteInfo) SortIndex() uint64 {
 	if info.GetType().IsSnapshotRead() {
-		return info.GetSnapshotVersion()
+		return info.GetSnapshotReadOption().SnapshotVersion
 	}
 	return info.ID
 }
@@ -229,11 +229,18 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 
 	lastWriteTxns := make(map[string]int)
 	for i := 0; i < len(txns); i++ {
-		var ssVersion = txns[i].GetSnapshotVersion()
-		for key, readVal := range txns[i].ReadValues {
-			if txns[i].GetType().IsSnapshotRead() && !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+		if txns[i].GetType().IsSnapshotRead() {
+			var ssVersion = txns[i].GetSnapshotReadOption().SnapshotVersion
+			if !assert.NotEmpty(ssVersion) {
 				return false
 			}
+			for _, readVal := range txns[i].ReadValues {
+				if !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+					return false
+				}
+			}
+		}
+		for key, readVal := range txns[i].ReadValues {
 			if readVal.Version == txns[i].ID {
 				if !assert.Contains(txns[i].WriteValues, key) {
 					return false
@@ -383,25 +390,16 @@ func (ts *TestCase) runOneRound(i int) bool {
 
 func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
-	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.TxnType, f)
+	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, types.NewTxnOption(ts.TxnType), f)
 }
 func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
-	return ts.doTransaction(ctx, goRoutineIndex, sc, ts.ReadOnlyTxnType, f)
+	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, types.NewTxnOption(ts.ReadOnlyTxnType), f)
 }
-func (ts *TestCase) doTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, txnType types.TxnType,
+func (ts *TestCase) DoTransactionOfOption(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
 	f func(ctx context.Context, txn types.Txn) error) bool {
 	start := time.Now()
-	if tx, retryTimes, err := sc.DoTransactionOfTypeEx(ctx, txnType, f); ts.NoError(err) {
-		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, time.Since(start))
-		return true
-	}
-	return false
-}
-func (ts *TestCase) DoTransactionRaw(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
-	f func(ctx context.Context, txn types.Txn) (error, bool), beforeCommit, beforeRollback func() error) bool {
-	start := time.Now()
-	if tx, retryTimes, err := sc.DoTransactionRaw(ctx, opt, f, beforeCommit, beforeRollback); ts.NoError(err) {
+	if tx, retryTimes, err := sc.DoTransactionOfOption(ctx, opt, f); ts.NoError(err) {
 		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, time.Since(start))
 		return true
 	}
@@ -580,7 +578,7 @@ func (ts *TestCase) LogParameters(round int) {
 
 func (ts *TestCase) LogExecuteInfos(totalCostInSeconds float64) {
 	stats := ts.allExecutedTxns.Statistics()
-	ts.t.Logf("Excuted %d txns in %.1fs, throughput: %.1ftxn/s, average latency: %s, average retry: %.2f times",
+	ts.t.Logf("Excuted %d txns in %.1fs, throughput: %.1ftxn/s, average latency: %s, average retry: %.3f times",
 		len(ts.allExecutedTxns), totalCostInSeconds, float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
 	stats.ForEachTxnKind(func(txnKind types.TxnKind, ss ExecuteStatistic) {
 		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.2f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)

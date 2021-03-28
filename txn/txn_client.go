@@ -185,6 +185,7 @@ func (m *ClientTxnManager) BeginTransaction(ctx context.Context, opt types.TxnOp
 		return nil, err
 	}
 	assert.Must(txnInfo.TxnType == opt.TxnType)
+	assert.Must(txnInfo.TxnSnapshotReadOption.Equals(opt.SnapshotReadOption))
 	txn := newClientTxn(txnInfo, m.c)
 	if !m.recordValues {
 		return txn, nil
