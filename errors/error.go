@@ -10,12 +10,12 @@ import (
 
 var (
 	mustRollbackGetErrs = map[int]struct{}{
-		consts.ErrCodeWriteReadConflict:      {},
-		consts.ErrCodeStaleWrite:             {},
-		consts.ErrCodeReadAfterWriteFailed:   {},
-		consts.ErrCodeWriteIntentQueueFull:   {},
-		consts.ErrCodeReadForWriteWaitFailed: {},
-		consts.ErrCodeReadForWriteQueueFull:  {},
+		consts.ErrCodeWriteReadConflict:         {},
+		consts.ErrCodeStaleWrite:                {},
+		consts.ErrCodeReadAfterWriteFailed:      {},
+		consts.ErrCodeWriteIntentQueueFull:      {},
+		consts.ErrCodeReadModifyWriteWaitFailed: {},
+		consts.ErrCodeReadModifyWriteQueueFull:  {},
 	}
 
 	retryableTxnErrs = mergeSet(mustRollbackGetErrs, map[int]struct{}{
@@ -130,7 +130,7 @@ func IsMustRollbackWriteKeyErr(e error) bool {
 
 func IsQueueFullErr(e error) bool {
 	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadForWriteQueueFull || code == consts.ErrCodeWriteIntentQueueFull
+	return code == consts.ErrCodeReadModifyWriteQueueFull || code == consts.ErrCodeWriteIntentQueueFull
 }
 
 func IsMustRollbackCommitErr(e error) bool {

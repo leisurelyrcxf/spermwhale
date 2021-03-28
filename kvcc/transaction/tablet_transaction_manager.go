@@ -20,23 +20,23 @@ const (
 )
 
 type Manager struct {
-	writeTxns                          concurrency.ConcurrentTxnMap
-	readForWriteQueues                 concurrency.ConcurrentMap
-	maxReadForWriteQueueCapacityPerKey int
-	readForWriteQueueMaxReadersRatio   float64
-	readForWriteReaderMaxQueuedAge     time.Duration
-	timer                              scheduler.ConcurrentBasicTimer
+	writeTxns                             concurrency.ConcurrentTxnMap
+	readModifyWriteQueues                 concurrency.ConcurrentMap
+	maxReadModifyWriteQueueCapacityPerKey int
+	readModifyWriteQueueMaxReadersRatio   float64
+	readModifyWriteReaderMaxQueuedAge     time.Duration
+	timer                                 scheduler.ConcurrentBasicTimer
 }
 
-func NewManager(maxReadForWriteQueueCapacityPerKey int, readForWriteQueueMaxReadersRatio float64, readForWriteReaderMaxQueuedAge time.Duration) *Manager {
+func NewManager(maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
 	tm := &Manager{
-		maxReadForWriteQueueCapacityPerKey: maxReadForWriteQueueCapacityPerKey,
-		readForWriteQueueMaxReadersRatio:   readForWriteQueueMaxReadersRatio,
-		readForWriteReaderMaxQueuedAge:     readForWriteReaderMaxQueuedAge,
+		maxReadModifyWriteQueueCapacityPerKey: maxReadModifyWriteQueueCapacityPerKey,
+		readModifyWriteQueueMaxReadersRatio:   readModifyWriteQueueMaxReadersRatio,
+		readModifyWriteReaderMaxQueuedAge:     readModifyWriteReaderMaxQueuedAge,
 	}
 
 	tm.writeTxns.Initialize(64)
-	tm.readForWriteQueues.Initialize(64)
+	tm.readModifyWriteQueues.Initialize(64)
 	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(TimerPartitionChSize, 100))
 
 	tm.timer.Start()
@@ -51,18 +51,18 @@ func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
 	return txn.GetState()
 }
 
-func (tm *Manager) PushReadForWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readForWriteCond, error) {
-	return tm.readForWriteQueues.GetLazy(key, func() interface{} {
-		return newReadForWriteQueue(key, tm.maxReadForWriteQueueCapacityPerKey, tm.readForWriteReaderMaxQueuedAge, tm.readForWriteQueueMaxReadersRatio)
-	}).(*readForWriteQueue).pushReader(readOpt)
+func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
+	return tm.readModifyWriteQueues.GetLazy(key, func() interface{} {
+		return newReadModifyWriteQueue(key, tm.maxReadModifyWriteQueueCapacityPerKey, tm.readModifyWriteReaderMaxQueuedAge, tm.readModifyWriteQueueMaxReadersRatio)
+	}).(*readModifyWriteQueue).pushReader(readOpt)
 }
 
-func (tm *Manager) SignalReadForWriteKeyEvent(readForWriteTxnId types.TxnId, event ReadForWriteKeyEvent) {
-	pq, ok := tm.readForWriteQueues.Get(event.Key)
+func (tm *Manager) SignalReadModifyWriteKeyEvent(readModifyWriteTxnId types.TxnId, event ReadModifyWriteKeyEvent) {
+	pq, ok := tm.readModifyWriteQueues.Get(event.Key)
 	if !ok {
 		return
 	}
-	pq.(*readForWriteQueue).notifyKeyEvent(readForWriteTxnId, event.Type)
+	pq.(*readModifyWriteQueue).notifyKeyEvent(readModifyWriteTxnId, event.Type)
 }
 
 func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
@@ -126,6 +126,6 @@ func (tm *Manager) removeTxn(txn *transaction) {
 
 func (tm *Manager) Close() {
 	tm.writeTxns.Close()
-	tm.readForWriteQueues.Clear()
+	tm.readModifyWriteQueues.Clear()
 	tm.timer.Close()
 }

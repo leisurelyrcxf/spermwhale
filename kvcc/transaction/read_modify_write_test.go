@@ -88,12 +88,12 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 		taskDuration = arriveIntervalUnit * 4
 		timeout      = queueLength
 
-		readForWriteQueueMaxReadersRatio = float64(timeout) / float64(queueLength) / 2
+		readModifyWriteQueueMaxReadersRatio = float64(timeout) / float64(queueLength) / 2
 	)
 
 	ctx := context.Background()
 	o := physical.NewOracle()
-	tm := NewManager(queueCapacity, readForWriteQueueMaxReadersRatio, time.Minute)
+	tm := NewManager(queueCapacity, readModifyWriteQueueMaxReadersRatio, time.Minute)
 	defer tm.Close()
 
 	var (
@@ -108,8 +108,8 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 			for retryTimes := 1; ; retryTimes++ {
 				txnId := types.TxnId(o.MustFetchTimestamp())
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
-				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict || errors.GetErrorCode(err) == consts.ErrCodeReadForWriteQueueFull {
+				cond, err := tm.PushReadModifyWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
+				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict || errors.GetErrorCode(err) == consts.ErrCodeReadModifyWriteQueueFull {
 					//t.Logf("txn %d rollbacked due to %v, retrying...", txnId, err)
 					rand.Seed(time.Now().UnixNano())
 					time.Sleep(arriveIntervalUnit * time.Duration(1+rand.Intn(9)))
@@ -120,19 +120,19 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					//t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeVersionRemoved))
+					tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeVersionRemoved))
 					rand.Seed(time.Now().UnixNano())
 					time.Sleep(arriveIntervalUnit * time.Duration(1+rand.Intn(10)))
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
+				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
 						KVCCReadOption: types.KVCCReadOption{
 							ReaderVersion: txnId.Version(),
 						},
-						readForWriteCond: *cond,
+						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
 				}
@@ -158,7 +158,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(queueCapacity, consts.ReadForWriteQueueMaxReadersRatio, time.Minute)
+	tm := NewManager(queueCapacity, consts.ReadModifyWriteQueueMaxReadersRatio, time.Minute)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -182,7 +182,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 			defer wg.Done()
 
 			for retryTimes, txnId := 1, types.TxnId(txnIds[i]); ; retryTimes, txnId = retryTimes+1, txnId+10 {
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
+				cond, err := tm.PushReadModifyWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict {
 					t.Logf("txn %d rollbacked due to %v", txnId, err)
 					continue
@@ -194,11 +194,11 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 					return
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
+				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						KVCCReadOption:   types.NewKVCCReadOption(txnId.Version()),
-						readForWriteCond: *cond,
+						KVCCReadOption:      types.NewKVCCReadOption(txnId.Version()),
+						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
 				}
@@ -226,7 +226,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(queueCapacity, consts.ReadForWriteQueueMaxReadersRatio, timeout)
+	tm := NewManager(queueCapacity, consts.ReadModifyWriteQueueMaxReadersRatio, timeout)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -250,7 +250,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 			defer wg.Done()
 
 			for retryTimes, txnId := 1, types.TxnId(txnIds[i]); ; retryTimes, txnId = retryTimes+1, txnId+10 {
-				cond, err := tm.PushReadForWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
+				cond, err := tm.PushReadModifyWriteReaderOnKey(key1, types.NewKVCCReadOption(txnId.Version()))
 				if errors.GetErrorCode(err) == consts.ErrCodeWriteReadConflict {
 					t.Logf("txn %d rollbacked due to %v, retrying...", txnId, err)
 					continue
@@ -261,8 +261,8 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				if cond.NotifyTime > 0 {
 					executedTxns.infos[i] = ExecuteInfo{
 						reader: reader{
-							KVCCReadOption:   types.NewKVCCReadOption(txnId.Version()),
-							readForWriteCond: *cond,
+							KVCCReadOption:      types.NewKVCCReadOption(txnId.Version()),
+							readModifyWriteCond: *cond,
 						},
 						retryTimes: retryTimes,
 					}
@@ -270,17 +270,17 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				}
 				if err := cond.Wait(ctx, timeout); err != nil {
 					t.Logf("txn %d wait timeouted, retrying...", txnId)
-					tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeVersionRemoved))
+					tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeVersionRemoved))
 					continue
 				}
 				time.Sleep(taskDuration)
-				tm.SignalReadForWriteKeyEvent(txnId, NewReadForWriteKeyEvent(key1, ReadForWriteKeyEventTypeWriteIntentCleared))
+				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
 						KVCCReadOption: types.KVCCReadOption{
 							ReaderVersion: txnId.Version(),
 						},
-						readForWriteCond: *cond,
+						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
 				}

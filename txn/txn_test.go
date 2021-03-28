@@ -17,19 +17,15 @@ import (
 func TestTxnLostUpdate(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
-
 func TestTxnLostUpdateReadModifyWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite).Run()
 }
-
 func TestTxnLostUpdateWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeWaitWhenReadDirty).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
-
 func TestTxnLostUpdateReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
-
 func TestTxnLostUpdateInjectErr(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).
 		SetGoRoutineNum(100).SetFailurePattern(FailurePatternAll).SetFailureProbability(10).Run()
@@ -38,7 +34,6 @@ func TestTxnLostUpdateInjectErr(t *testing.T) {
 func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
-
 func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
 		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
@@ -47,15 +42,12 @@ func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
 func TestTxnReadModifyWrite2Keys(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2Keys).Run()
 }
-
 func TestTxnReadModifyWrite2KeysWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2Keys).SetTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
-
 func TestTxnReadModifyWrite2KeysReadModifyWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2Keys).SetTxnType(types.TxnTypeReadModifyWrite).Run()
 }
-
 func TestTxnReadModifyWrite2KeysReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2Keys).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
@@ -118,7 +110,7 @@ func TestTxnLostUpdateWithSomeAbortedRollbackFailed(t *testing.T) {
 }
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedReadModifyWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1000)
+		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1)
 	}).SetTxnType(types.TxnTypeReadModifyWrite).
 		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
 }
@@ -130,7 +122,7 @@ func TestTxnLostUpdateWithSomeAbortedRollbackFailedWaitWhenReadDirty(t *testing.
 }
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1000)
+		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1)
 	}).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).
 		SetLogLevel(10).Run()
 }

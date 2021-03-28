@@ -87,63 +87,63 @@ func (w *KeyEventWaiter) signal(event KeyEvent) {
 	close(w.waitress)
 }
 
-type ReadForWriteKeyEventType int
+type ReadModifyWriteKeyEventType int
 
 const (
-	ReadForWriteKeyEventTypeInvalid ReadForWriteKeyEventType = iota
-	ReadForWriteKeyEventTypeWriteIntentCleared
-	ReadForWriteKeyEventTypeClearWriteIntentFailed
-	ReadForWriteKeyEventTypeVersionRemoved
-	ReadForWriteKeyEventTypeRemoveVersionFailed
-	ReadForWriteKeyEventTypeKeyWritten
+	ReadModifyWriteKeyEventTypeInvalid ReadModifyWriteKeyEventType = iota
+	ReadModifyWriteKeyEventTypeWriteIntentCleared
+	ReadModifyWriteKeyEventTypeClearWriteIntentFailed
+	ReadModifyWriteKeyEventTypeVersionRemoved
+	ReadModifyWriteKeyEventTypeRemoveVersionFailed
+	ReadModifyWriteKeyEventTypeKeyWritten
 )
 
-func GetReadForWriteKeyEventTypeClearWriteIntent(success bool) ReadForWriteKeyEventType {
+func GetReadModifyWriteKeyEventTypeClearWriteIntent(success bool) ReadModifyWriteKeyEventType {
 	if success {
-		return ReadForWriteKeyEventTypeWriteIntentCleared
+		return ReadModifyWriteKeyEventTypeWriteIntentCleared
 	}
-	return ReadForWriteKeyEventTypeClearWriteIntentFailed
+	return ReadModifyWriteKeyEventTypeClearWriteIntentFailed
 }
 
-func GetReadForWriteKeyEventTypeRemoveVersion(success bool) ReadForWriteKeyEventType {
+func GetReadModifyWriteKeyEventTypeRemoveVersion(success bool) ReadModifyWriteKeyEventType {
 	if success {
-		return ReadForWriteKeyEventTypeVersionRemoved
+		return ReadModifyWriteKeyEventTypeVersionRemoved
 	}
-	return ReadForWriteKeyEventTypeRemoveVersionFailed
+	return ReadModifyWriteKeyEventTypeRemoveVersionFailed
 }
 
-func (t ReadForWriteKeyEventType) String() string {
+func (t ReadModifyWriteKeyEventType) String() string {
 	switch t {
-	case ReadForWriteKeyEventTypeInvalid:
-		return "read_for_write_key_event_type_invalid"
-	case ReadForWriteKeyEventTypeWriteIntentCleared:
-		return "read_for_write_key_event_type_write_intent_cleared"
-	case ReadForWriteKeyEventTypeClearWriteIntentFailed:
-		return "read_for_write_key_event_type_clear_write_intent_failed"
-	case ReadForWriteKeyEventTypeVersionRemoved:
-		return "read_for_write_key_event_type_version_removed"
-	case ReadForWriteKeyEventTypeRemoveVersionFailed:
-		return "read_for_write_key_event_type_remove_version_failed"
-	case ReadForWriteKeyEventTypeKeyWritten:
-		return "read_for_write_key_event_type_key_written"
+	case ReadModifyWriteKeyEventTypeInvalid:
+		return "read_modify_write_key_event_type_invalid"
+	case ReadModifyWriteKeyEventTypeWriteIntentCleared:
+		return "read_modify_write_key_event_type_write_intent_cleared"
+	case ReadModifyWriteKeyEventTypeClearWriteIntentFailed:
+		return "read_modify_write_key_event_type_clear_write_intent_failed"
+	case ReadModifyWriteKeyEventTypeVersionRemoved:
+		return "read_modify_write_key_event_type_version_removed"
+	case ReadModifyWriteKeyEventTypeRemoveVersionFailed:
+		return "read_modify_write_key_event_type_remove_version_failed"
+	case ReadModifyWriteKeyEventTypeKeyWritten:
+		return "read_modify_write_key_event_type_key_written"
 	default:
 		panic("unknown type")
 	}
 }
 
-type ReadForWriteKeyEvent struct {
+type ReadModifyWriteKeyEvent struct {
 	Key  string
-	Type ReadForWriteKeyEventType
+	Type ReadModifyWriteKeyEventType
 }
 
-func NewReadForWriteKeyEvent(key string, typ ReadForWriteKeyEventType) ReadForWriteKeyEvent {
+func NewReadModifyWriteKeyEvent(key string, typ ReadModifyWriteKeyEventType) ReadModifyWriteKeyEvent {
 	assert.Must(key != "")
-	return ReadForWriteKeyEvent{
+	return ReadModifyWriteKeyEvent{
 		Key:  key,
 		Type: typ,
 	}
 }
 
-func (e ReadForWriteKeyEvent) String() string {
-	return fmt.Sprintf("ReadForWriteKeyEvent{key: %s, type: %s}", e.Key, e.Type.String())
+func (e ReadModifyWriteKeyEvent) String() string {
+	return fmt.Sprintf("ReadModifyWriteKeyEvent{key: %s, type: %s}", e.Key, e.Type.String())
 }

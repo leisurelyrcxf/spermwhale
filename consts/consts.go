@@ -95,7 +95,7 @@ const (
 )
 
 const (
-	MaxReadForWriteQueueCapacityPerKey        = 500
-	ReadForWriteQueueMaxReadersRatio          = 0.3333
+	MaxReadModifyWriteQueueCapacityPerKey     = 500
+	ReadModifyWriteQueueMaxReadersRatio       = 0.3333
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )

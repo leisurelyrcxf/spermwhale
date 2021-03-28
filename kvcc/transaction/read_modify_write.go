@@ -16,13 +16,13 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-type readForWriteCond struct {
+type readModifyWriteCond struct {
 	waitress   chan struct{}
 	timeouted  concurrency.AtomicBool
 	NotifyTime int64
 }
 
-func (cond *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
+func (cond *readModifyWriteCond) Wait(ctx context.Context, timeout time.Duration) error {
 	if cond.NotifyTime > 0 {
 		return nil
 	}
@@ -39,7 +39,7 @@ func (cond *readForWriteCond) Wait(ctx context.Context, timeout time.Duration) e
 	}
 }
 
-func (cond *readForWriteCond) notify() {
+func (cond *readModifyWriteCond) notify() {
 	cond.NotifyTime = time.Now().UnixNano()
 	close(cond.waitress)
 }
@@ -47,7 +47,7 @@ func (cond *readForWriteCond) notify() {
 type reader struct {
 	types.KVCCReadOption
 
-	readForWriteCond
+	readModifyWriteCond
 
 	addTime uint64
 }
@@ -55,7 +55,7 @@ type reader struct {
 func newReader(opt types.KVCCReadOption) *reader {
 	return &reader{
 		KVCCReadOption: opt,
-		readForWriteCond: readForWriteCond{
+		readModifyWriteCond: readModifyWriteCond{
 			waitress: make(chan struct{}),
 		},
 		addTime: uint64(time.Now().UnixNano()),
@@ -100,7 +100,7 @@ func (rs readers) second() *reader {
 	}
 }
 
-type readForWriteQueue struct {
+type readModifyWriteQueue struct {
 	sync.RWMutex
 
 	key             string
@@ -116,8 +116,8 @@ type readForWriteQueue struct {
 	notified                               int64
 }
 
-func newReadForWriteQueue(key string, capacity int, maxQueuedAge time.Duration, maxReadersRatio float64) *readForWriteQueue {
-	return &readForWriteQueue{
+func newReadModifyWriteQueue(key string, capacity int, maxQueuedAge time.Duration, maxReadersRatio float64) *readModifyWriteQueue {
+	return &readModifyWriteQueue{
 		key:             key,
 		maxQueuedAge:    maxQueuedAge,
 		capacity:        capacity,
@@ -125,12 +125,12 @@ func newReadForWriteQueue(key string, capacity int, maxQueuedAge time.Duration, 
 	}
 }
 
-func (pq *readForWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readForWriteCond, error) {
+func (pq *readModifyWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
 	readerVersion := readOpt.ReaderVersion
 	if maxHeadVersion := pq.maxHeadVersion.Get(); readerVersion <= maxHeadVersion {
 		assert.Must(readerVersion < maxHeadVersion)
 		return nil, errors.Annotatef(errors.ErrWriteReadConflict,
-			"readForWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxHeadVersion(%d)", readerVersion, maxHeadVersion)
+			"readModifyWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxHeadVersion(%d)", readerVersion, maxHeadVersion)
 	}
 
 	pq.Lock()
@@ -148,11 +148,11 @@ func (pq *readForWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readForW
 
 	if readerVersion <= maxHeadVersion {
 		assert.Must(readerVersion < maxHeadVersion)
-		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "readForWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxHeadVersion(%d)", readerVersion, maxHeadVersion)
+		return nil, errors.Annotatef(errors.ErrWriteReadConflict, "readModifyWriteQueue::pushReaderOnKey: readerVersion(%d) <= pq.maxHeadVersion(%d)", readerVersion, maxHeadVersion)
 	}
 
 	if pq.Len()+1 > pq.capacity {
-		return nil, errors.ErrReadForWriteQueueFull
+		return nil, errors.ErrReadModifyWriteQueueFull
 	}
 
 	reader := newReader(readOpt)
@@ -160,18 +160,18 @@ func (pq *readForWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readForW
 		pq.notify()
 		pq.updateMaxHeadVersion(maxHeadVersion)
 	}
-	return &reader.readForWriteCond, nil
+	return &reader.readModifyWriteCond, nil
 }
 
-func (pq *readForWriteQueue) notifyKeyEvent(readForWriteTxnId types.TxnId, eventType ReadForWriteKeyEventType) {
+func (pq *readModifyWriteQueue) notifyKeyEvent(readModifyWriteTxnId types.TxnId, eventType ReadModifyWriteKeyEventType) {
 	pq.Lock()
 	defer pq.Unlock()
 
-	if pq.Len() == 0 || pq.head().ReaderVersion != readForWriteTxnId.Version() {
+	if pq.Len() == 0 || pq.head().ReaderVersion != readModifyWriteTxnId.Version() {
 		return
 	}
 
-	if eventType == ReadForWriteKeyEventTypeKeyWritten {
+	if eventType == ReadModifyWriteKeyEventTypeKeyWritten {
 		if second := pq.second(); second == nil || !second.IsWaitWhenReadDirty() {
 			return
 		}
@@ -184,7 +184,7 @@ func (pq *readForWriteQueue) notifyKeyEvent(readForWriteTxnId types.TxnId, event
 	pq.notify()
 	if success, headChanged := pq.check("check-heap-head-cond-timeout", 15, func(head *reader) error {
 		if head.timeouted.Get() {
-			return errors.ErrReadForWriteReaderTimeouted
+			return errors.ErrReadModifyWriteReaderTimeouted
 		}
 		return nil
 	}); success {
@@ -195,7 +195,7 @@ func (pq *readForWriteQueue) notifyKeyEvent(readForWriteTxnId types.TxnId, event
 	}
 }
 
-func (pq *readForWriteQueue) push(r *reader) {
+func (pq *readModifyWriteQueue) push(r *reader) {
 	defer pq.verifyInvariant() // TODO remove this
 
 	heap.Push(&pq.readers, r)
@@ -222,7 +222,7 @@ func (pq *readForWriteQueue) push(r *reader) {
 	heap.Fix(&pq.kMaxReaders, 0)
 }
 
-func (pq *readForWriteQueue) pop() {
+func (pq *readModifyWriteQueue) pop() {
 	defer pq.verifyInvariant() // TODO remove this
 
 	var r *reader
@@ -238,7 +238,7 @@ func (pq *readForWriteQueue) pop() {
 	}
 }
 
-func (pq *readForWriteQueue) check(desc string, v glog.Level, checker func(head *reader) error) (success bool, headChanged bool) {
+func (pq *readModifyWriteQueue) check(desc string, v glog.Level, checker func(head *reader) error) (success bool, headChanged bool) {
 	defer pq.verifyInvariant() // TODO remove this
 
 	err := checker(pq.head())
@@ -260,7 +260,7 @@ func (pq *readForWriteQueue) check(desc string, v glog.Level, checker func(head 
 	return true, true
 }
 
-func (pq *readForWriteQueue) updateMaxHeadVersion(maxHeadVersion uint64) (newMaxHeadVersion uint64) {
+func (pq *readModifyWriteQueue) updateMaxHeadVersion(maxHeadVersion uint64) (newMaxHeadVersion uint64) {
 	if head := pq.head(); head.ReaderVersion > maxHeadVersion {
 		maxHeadVersion = head.ReaderVersion
 		pq.maxHeadVersion.Set(maxHeadVersion)
@@ -268,13 +268,13 @@ func (pq *readForWriteQueue) updateMaxHeadVersion(maxHeadVersion uint64) (newMax
 	return maxHeadVersion
 }
 
-func (pq *readForWriteQueue) notify() {
+func (pq *readModifyWriteQueue) notify() {
 	pq.head().notify()
 	pq.notified++
 	glog.V(60).Infof("notified %d, total count: %d, queued: %d", pq.head().ReaderVersion, pq.notified, pq.Len())
 }
 
-func (pq *readForWriteQueue) verifyInvariant() {
+func (pq *readModifyWriteQueue) verifyInvariant() {
 	return // TODO change this
 	//assert.Must(len(pq.kMaxReaders) <= pq.maxReadersCount)
 	//if len(pq.kMaxReaders) == 0 {

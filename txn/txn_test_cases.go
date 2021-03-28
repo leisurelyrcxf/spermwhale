@@ -55,7 +55,7 @@ func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
 	if !ts.Equal(ts.GoRoutineNum*ts.TxnNumPerGoRoutine*delta+initialValue, val) {
 		return
 	}
-	return ts.CheckSerializability() && ts.CheckReadForWriteOnly(key)
+	return ts.CheckSerializability() && ts.CheckReadModifyWriteOnly(key)
 }
 
 func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
@@ -81,6 +81,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 	})) {
 		return
 	}
+	time.Sleep(time.Millisecond * 100)
 
 	var wg sync.WaitGroup
 	for i := 0; i < ts.GoRoutineNum; i++ {
@@ -234,7 +235,7 @@ func testTxnReadModifyWrite2Keys(ctx context.Context, ts *TestCase) (b bool) {
 	}
 
 	return ts.CheckSerializability() &&
-		ts.CheckReadForWriteOnly(key1, key2)
+		ts.CheckReadModifyWriteOnly(key1, key2)
 }
 
 func testTxnReadModifyWrite2KeysDeadlock(ctx context.Context, ts *TestCase) (b bool) {
@@ -344,7 +345,7 @@ func testTxnReadModifyWrite2KeysDeadlock(ctx context.Context, ts *TestCase) (b b
 	}
 
 	return ts.CheckSerializability() &&
-		ts.CheckReadForWriteOnly(key1, key2)
+		ts.CheckReadModifyWriteOnly(key1, key2)
 }
 
 func testTxnReadModifyWriteNKeys(ctx context.Context, ts *TestCase) (b bool) {
@@ -407,7 +408,7 @@ func testTxnReadModifyWriteNKeys(ctx context.Context, ts *TestCase) (b bool) {
 		}
 	}
 
-	return ts.CheckSerializability() && ts.CheckReadForWriteOnly(allKeys...)
+	return ts.CheckSerializability() && ts.CheckReadModifyWriteOnly(allKeys...)
 }
 
 func testTxnLostUpdateModAdd(ctx context.Context, ts *TestCase) (b bool) {
@@ -501,7 +502,7 @@ func testTxnLostUpdateModAdd(ctx context.Context, ts *TestCase) (b bool) {
 	if !ts.CheckSerializability() {
 		return false
 	}
-	if !ts.CheckReadForWriteOnly("k1", "k22") {
+	if !ts.CheckReadModifyWriteOnly("k1", "k22") {
 		return false
 	}
 
@@ -737,5 +738,6 @@ func testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx context.Context, ts *Tes
 			}
 		}
 	}
+	ts.t.Logf("good txns: %d", goodTxns.Get())
 	return ts.CheckSerializability() && ts.Equal(int(goodTxns.Get()), ts.allExecutedTxns.Len())
 }

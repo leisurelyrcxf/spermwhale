@@ -94,5 +94,5 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 		return
 	}
 	ts.LogExecuteInfos(float64(time.Since(start)) / float64(time.Second))
-	return ts.CheckReadForWriteOnly("k1")
+	return ts.CheckReadModifyWriteOnly("k1")
 }

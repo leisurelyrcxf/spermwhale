@@ -10,7 +10,7 @@ import (
 //	testTxnLostUpdateMongo(t, types.TxnTypeDefault, types.NewTxnReadOption(), []time.Duration{time.Second * 10})
 //}
 //
-//func TestTxnLostUpdateMongoReadForWrite(t *testing.T) {
+//func TestTxnLostUpdateMongoReadModifyWrite(t *testing.T) {
 //	testTxnLostUpdateMongo(t, types.TxnTypeReadModifyWrite, types.NewTxnReadOption(), []time.Duration{time.Second * 10})
 //}
 //
@@ -18,7 +18,7 @@ import (
 //	testTxnLostUpdateMongo(t, types.TxnTypeDefault, types.NewTxnReadOption().WithWaitWhenReadDirty(), []time.Duration{time.Second * 10})
 //}
 //
-//func TestTxnLostUpdateMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+//func TestTxnLostUpdateMongoReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 //	testTxnLostUpdateMongo(t, types.TxnTypeReadModifyWrite, types.NewTxnReadOption().WithWaitWhenReadDirty(), []time.Duration{time.Second * 10})
 //}
 //
@@ -58,10 +58,10 @@ func TestDistributedTxnExtraWriteComplexMongo(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).Run()
 }
 
-func TestDistributedTxnExtraWriteSimpleMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+func TestDistributedTxnExtraWriteSimpleMongoReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnExtraWriteSimple).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
-func TestDistributedTxnExtraWriteComplexMongoReadForWriteWaitWhenReadDirty(t *testing.T) {
+func TestDistributedTxnExtraWriteComplexMongoReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnExtraWriteComplex).SetDBType(types.DBTypeMongo).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }

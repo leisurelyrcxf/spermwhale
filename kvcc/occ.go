@@ -102,8 +102,8 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		TabletTxnConfig: cfg,
 		db:              db,
 		txnManager: transaction.NewManager(
-			consts.MaxReadForWriteQueueCapacityPerKey,
-			consts.ReadForWriteQueueMaxReadersRatio,
+			consts.MaxReadModifyWriteQueueCapacityPerKey,
+			consts.ReadModifyWriteQueueMaxReadersRatio,
 			utils.MaxDuration(2*time.Second, cfg.StaleWriteThreshold)),
 		tsCache: NewTimestampCache(),
 	}
@@ -122,7 +122,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 
 	if opt.IsReadModifyWrite() {
 		assert.Must(key != "")
-		if !kv.SupportReadForWriteTxn() {
+		if !kv.SupportReadModifyWriteTxn() {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrInvalidConfig, "can't support read for write transaction with current config: %v", kv.TabletTxnConfig)
 		}
 		//assert.Must(!opt.IsGetExactVersion())
@@ -130,13 +130,13 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReadVersion(key)")
 		}
 		if opt.IsReadModifyWriteFirstReadOfKey() {
-			w, err := kv.txnManager.PushReadForWriteReaderOnKey(key, opt)
+			w, err := kv.txnManager.PushReadModifyWriteReaderOnKey(key, opt)
 			if err != nil {
 				return types.EmptyValueCC, err
 			}
 			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, consts.DefaultReadTimeout/10)); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
-				return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
+				return types.EmptyValueCC, errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}
 			if glog.V(60) {
 				glog.Infof("txn-%d get enter, cost %s, time since notified: %s", opt.ReaderVersion, bench.Elapsed(), time.Duration(time.Now().UnixNano()-(w.NotifyTime)))
@@ -298,8 +298,8 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 				kv.txnManager.DoneWrittenKeyWriteIntentCleared(txnId, key)
 			}
 			if opt.IsReadModifyWrite() {
-				kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key,
-					transaction.GetReadForWriteKeyEventTypeClearWriteIntent(err == nil)))
+				kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key,
+					transaction.GetReadModifyWriteKeyEventTypeClearWriteIntent(err == nil)))
 			}
 			if err == nil && glog.V(60) {
 				glog.Infof("txn-%d clear write intent of key '%s' cleared, cost: %s", txnId, key, bench.Elapsed())
@@ -310,8 +310,8 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 					transaction.GetKeyEventTypeRemoveVersion(err == nil)), checkWrittenKeyDone)
 			}
 			if opt.IsReadModifyWrite() {
-				kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key,
-					transaction.GetReadForWriteKeyEventTypeRemoveVersion(err == nil)))
+				kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key,
+					transaction.GetReadModifyWriteKeyEventTypeRemoveVersion(err == nil)))
 			}
 			if err == nil && glog.V(60) {
 				glog.Infof("txn-%d key '%s' rollbacked, cost: %s", txnId, key, bench.Elapsed())
@@ -350,7 +350,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		return err
 	}
 	if opt.IsReadModifyWrite() {
-		kv.txnManager.SignalReadForWriteKeyEvent(txnId, transaction.NewReadForWriteKeyEvent(key, transaction.ReadForWriteKeyEventTypeKeyWritten))
+		kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key, transaction.ReadModifyWriteKeyEventTypeKeyWritten))
 	}
 	if glog.V(60) {
 		glog.Infof("txn-%d set %s (internal_version: %d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())

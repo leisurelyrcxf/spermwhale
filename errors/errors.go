@@ -143,16 +143,16 @@ var (
 		Code: consts.ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys,
 		Msg:  "read modify write transaction commit with no written keys",
 	}
-	ErrReadForWriteWaitFailed = &Error{
-		Code: consts.ErrCodeReadForWriteWaitFailed,
+	ErrReadModifyWriteWaitFailed = &Error{
+		Code: consts.ErrCodeReadModifyWriteWaitFailed,
 		Msg:  "read for write wait failed",
 	}
-	ErrReadForWriteQueueFull = &Error{
-		Code: consts.ErrCodeReadForWriteQueueFull,
+	ErrReadModifyWriteQueueFull = &Error{
+		Code: consts.ErrCodeReadModifyWriteQueueFull,
 		Msg:  "read for write queue full, retry later",
 	}
-	ErrReadForWriteReaderTimeouted = &Error{
-		Code: consts.ErrCodeReadForWriteReaderTimeouted,
+	ErrReadModifyWriteReaderTimeouted = &Error{
+		Code: consts.ErrCodeReadModifyWriteReaderTimeouted,
 		Msg:  "read for write reader timeouted",
 	}
 	ErrWriteIntentQueueFull = &Error{

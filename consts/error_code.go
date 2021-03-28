@@ -27,8 +27,8 @@ const (
 
 	ErrCodeWriteIntentQueueFull = 70
 
-	ErrCodeReadForWriteWaitFailed = 80
-	ErrCodeReadForWriteQueueFull  = 81
+	ErrCodeReadModifyWriteWaitFailed = 80
+	ErrCodeReadModifyWriteQueueFull  = 81
 
 	ErrCodeCantRemoveCommittedValue                  = 90
 	ErrCodeTabletWriteTransactionNotFound            = 91
@@ -47,7 +47,7 @@ const (
 	ErrCodeCantGetOracle                                     = 888
 	ErrCodeInvalidConfig                                     = 999
 	ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys = 1000
-	ErrCodeReadForWriteReaderTimeouted                       = 1001
+	ErrCodeReadModifyWriteReaderTimeouted                    = 1001
 	ErrCodeUnknown                                           = 1111
 	ErrCodeInject                                            = 11111
 	ErrCodeDummy                                             = 12222

@@ -482,9 +482,9 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
-// CheckReadForWriteOnly only used for checking only have update (read for write) transactions in the test case
-func (ts *TestCase) CheckReadForWriteOnly(keys ...string) bool {
-	if !ts.NotEmpty(keys, "must check something for CheckReadForWriteOnly") {
+// CheckReadModifyWriteOnly only used for checking only have update (read for write) transactions in the test case
+func (ts *TestCase) CheckReadModifyWriteOnly(keys ...string) bool {
+	if !ts.NotEmpty(keys, "must check something for CheckReadModifyWriteOnly") {
 		return false
 	}
 	sort.Sort(ts.allExecutedTxns)
