@@ -149,7 +149,7 @@ func testTxnSnapshotRead(ctx context.Context, ts *TestCase, interactive, mixedMG
 				}
 			}
 
-			if i < 4 {
+			if goRoutineIdx < 4 {
 				ts.t.Logf("cost %s per round @goRoutine %d", time.Since(start)/time.Duration(rounds), goRoutineIdx)
 			}
 		}(i)
@@ -248,7 +248,7 @@ func testTxnSnapshotReadMoreKeys(ctx context.Context, ts *TestCase, interactive,
 				}
 			}
 
-			if i < 4 {
+			if goRoutineIdx < 4 {
 				ts.t.Logf("%s cost %s per round @goRoutine %d", ts.t.Name(), time.Since(start)/time.Duration(rounds), goRoutineIdx)
 			}
 		}(i)
@@ -363,7 +363,7 @@ func testTxnSnapshotReadInteractiveWriteIndex(ctx context.Context, ts *TestCase)
 				}
 			}
 
-			if i < 4 {
+			if goRoutineIdx < 4 {
 				ts.t.Logf("%s cost %s per round @goRoutine %d", ts.t.Name(), time.Since(start)/time.Duration(rounds), goRoutineIdx)
 			}
 		}(i)

@@ -216,18 +216,19 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		}
 	}
 	var readOpt types.KVCCReadOption
-	if readOpt = types.NewKVCCReadOption(txn.ID.Version()).
-		CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)); txn.IsReadModifyWrite() {
-		txn.readModifyWriteReadKeys.Insert(key)
-	}
 	if lastWriteTask == nil {
-		vv, err = txn.kv.Get(ctx, key, readOpt.CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).
+			CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)).
+			CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
 	} else {
 		vv, err = txn.kv.Get(ctx, key, readOpt.WithExactVersion(txn.ID.Version()))
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
 		txn.preventFutureWriteKeys.Insert(key)
+	}
+	if txn.IsReadModifyWrite() {
+		txn.readModifyWriteReadKeys.Insert(key)
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
@@ -541,14 +542,14 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		if errors.IsQueueFullErr(txn.err) {
 			deltaV += 10
 		}
-		var v glog.Verbose
 		if callerTxn != txn.ID {
-			v = glog.V(glog.Level(7 + deltaV))
+			if glog.V(glog.Level(7 + deltaV)) {
+				glog.Infof(fmt.Sprintf("rollbacking txn %d..., callerTxn: %d, reason: '%s'", txn.ID, callerTxn, reason), args...)
+			}
 		} else {
-			v = glog.V(glog.Level(20 + deltaV))
-		}
-		if v {
-			glog.Infof(fmt.Sprintf("rollbacking txn %d..., callerTxn: %d, reason: '%s'", txn.ID, callerTxn, reason), args...)
+			if glog.V(glog.Level(20 + deltaV)) {
+				glog.Infof(fmt.Sprintf("rollbacking txn %d..., reason: '%s'", txn.ID, reason), args...)
+			}
 		}
 	}
 

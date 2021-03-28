@@ -104,7 +104,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		txnManager: transaction.NewManager(
 			consts.MaxReadForWriteQueueCapacityPerKey,
 			consts.ReadForWriteQueueMaxReadersRatio,
-			utils.MaxDuration(5*time.Second, cfg.StaleWriteThreshold)),
+			utils.MaxDuration(2*time.Second, cfg.StaleWriteThreshold)),
 		tsCache: NewTimestampCache(),
 	}
 	kvcc.lm.Initialize()
@@ -120,13 +120,12 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return val.WithMaxReadVersion(0), err
 	}
 
-	const readForWriteWaitTimeout = consts.DefaultReadTimeout / 10
 	if opt.IsReadModifyWrite() {
 		assert.Must(key != "")
 		if !kv.SupportReadForWriteTxn() {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrInvalidConfig, "can't support read for write transaction with current config: %v", kv.TabletTxnConfig)
 		}
-		assert.Must(!opt.IsGetExactVersion())
+		//assert.Must(!opt.IsGetExactVersion())
 		if opt.ReaderVersion < kv.tsCache.GetMaxReadVersionOfKey(key) {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReadVersion(key)")
 		}
@@ -135,7 +134,8 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if err != nil {
 				return types.EmptyValueCC, err
 			}
-			if waitErr := w.Wait(ctx, readForWriteWaitTimeout); waitErr != nil {
+			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, consts.DefaultReadTimeout/10)); waitErr != nil {
+				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
 				return types.EmptyValueCC, errors.Annotatef(errors.ErrReadForWriteWaitFailed, waitErr.Error())
 			}
 			if glog.V(60) {
@@ -237,7 +237,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 		event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/10)
 		valCC = kv.addMaxReadVersionForceFetchLatest(txnKey, val, getMaxReadVersion)
 		if waitErr != nil {
-			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent: '%s'@version%d, err: %v", key, val.Version, waitErr)
+			glog.V(8).Infof("KVCC:get failed to wait event of key with write intent of '%s'@version%d, err: %v", key, val.Version, waitErr)
 			return valCC, nil, false // Let upper layer handle this.
 		}
 	} else {

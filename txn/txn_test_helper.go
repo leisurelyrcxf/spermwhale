@@ -224,18 +224,6 @@ func (txns ExecuteInfos) Swap(i, j int) {
 	txns[i], txns[j] = txns[j], txns[i]
 }
 
-// CheckReadForWriteOnly only used for checking only have update (read for write) transactions in the test case
-func (txns ExecuteInfos) CheckReadForWriteOnly(assert *testifyassert.Assertions, key string) bool {
-	sort.Sort(txns)
-	for i := 1; i < len(txns); i++ {
-		prev, cur := txns[i-1], txns[i]
-		if !assert.Equal(prev.ID, cur.ReadValues[key].Version) || !assert.Equal(prev.WriteValues[key].MustInt(), cur.ReadValues[key].MustInt()) {
-			return false
-		}
-	}
-	return true
-}
-
 func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) bool {
 	sort.Sort(txns)
 
@@ -300,6 +288,7 @@ type TestCase struct {
 	TxnNumPerGoRoutine int
 	timeoutPerRound    time.Duration
 	LogLevel           glog.Level
+	maxRetryPerTxn     int
 
 	SimulatedLatency   time.Duration
 	FailurePattern     FailurePattern
@@ -308,15 +297,15 @@ type TestCase struct {
 	additionalParameters map[string]interface{}
 
 	// output
-	scs        []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
-	txnServers []*Server
-	clientTMs  []*ClientTxnManager
-	stopper    func()
+	scs         []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
+	txnServers  []*Server
+	txnManagers []types.TxnManager
+	stopper     func()
 
 	// statistics
-	executedTxnsPerGoRoutine [][]ExecuteInfo
-	extraRounds              []bool
-	allExecutedTxns          ExecuteInfos
+	executedTxnsPerGoRoutine     [][]ExecuteInfo
+	skipRoundsCheck, extraRounds []bool
+	allExecutedTxns              ExecuteInfos
 }
 
 const (
@@ -341,7 +330,7 @@ func NewTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase
 		TableTxnCfg:   defaultTabletTxnConfig,
 
 		timeoutPerRound: defaultTimeoutPerRound,
-	}).onGoRoutineNumChanged()
+	}).initialGoRoutineRelatedFields()
 }
 
 func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
@@ -370,8 +359,7 @@ func (ts *TestCase) runOneRound(i int) bool {
 	ts.LogParameters(i)
 
 	ts.allExecutedTxns = nil
-	ts.executedTxnsPerGoRoutine = make([][]ExecuteInfo, ts.GoRoutineNum)
-	ts.extraRounds = make([]bool, ts.GoRoutineNum)
+	ts.initialGoRoutineRelatedFields()
 
 	ctx, cancel := context.WithTimeout(context.Background(), ts.timeoutPerRound)
 	defer cancel()
@@ -410,6 +398,15 @@ func (ts *TestCase) doTransaction(ctx context.Context, goRoutineIndex int, sc *s
 	}
 	return false
 }
+func (ts *TestCase) DoTransactionRaw(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
+	f func(ctx context.Context, txn types.Txn) (error, bool), beforeCommit, beforeRollback func() error) bool {
+	start := time.Now()
+	if tx, retryTimes, err := sc.DoTransactionRaw(ctx, opt, f, beforeCommit, beforeRollback); ts.NoError(err) {
+		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, time.Since(start))
+		return true
+	}
+	return false
+}
 
 func (ts *TestCase) GenTestEnv() bool {
 	if len(ts.scs) > 0 {
@@ -424,19 +421,24 @@ func (ts *TestCase) GenTestEnv() bool {
 		}
 		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability), ts.TableTxnCfg)
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
+		ts.txnManagers = append(ts.txnManagers, m)
 		ts.stopper = func() {
 			ts.NoError(m.Close())
 		}
-		sc := smart_txn_client.NewSmartClient(m, 0)
+		sc := smart_txn_client.NewSmartClient(m, ts.maxRetryPerTxn)
 		ts.SetSmartClients(sc)
 		return true
 	}
 
-	if ts.txnServers, ts.clientTMs, ts.stopper = createCluster(ts.t, ts.DBType, ts.TxnManagerCfg,
+	var clientTxnManagers []*ClientTxnManager
+	if ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.t, ts.DBType, ts.TxnManagerCfg,
 		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
 		return false
 	}
-	ctm1, ctm2 := ts.clientTMs[0], ts.clientTMs[1]
+	for _, clientTm := range clientTxnManagers {
+		ts.txnManagers = append(ts.txnManagers, clientTm)
+	}
+	ctm1, ctm2 := ts.txnManagers[0], ts.txnManagers[1]
 	sc2 := smart_txn_client.NewSmartClient(ctm2, 10000)
 	sc1 := smart_txn_client.NewSmartClient(ctm1, 10000)
 	ts.scs = []*smart_txn_client.SmartClient{sc1, sc2}
@@ -462,7 +464,9 @@ func (ts *TestCase) CheckSerializability() bool {
 	}
 	ts.allExecutedTxns = make(ExecuteInfos, 0, len(ts.executedTxnsPerGoRoutine)*ts.TxnNumPerGoRoutine)
 	for idx, txnsOneGoRoutine := range ts.executedTxnsPerGoRoutine {
-		if !ts.extraRounds[idx] {
+		if ts.skipRoundsCheck[idx] {
+			// pass
+		} else if !ts.extraRounds[idx] {
 			if !ts.Len(txnsOneGoRoutine, ts.TxnNumPerGoRoutine) {
 				return false
 			}
@@ -478,6 +482,23 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
+// CheckReadForWriteOnly only used for checking only have update (read for write) transactions in the test case
+func (ts *TestCase) CheckReadForWriteOnly(keys ...string) bool {
+	if !ts.NotEmpty(keys, "must check something for CheckReadForWriteOnly") {
+		return false
+	}
+	sort.Sort(ts.allExecutedTxns)
+	for i := 1; i < len(ts.allExecutedTxns); i++ {
+		prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
+		for _, key := range keys {
+			if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualValue(prevWrite, curRead) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (ts *TestCase) SetEmbeddedTablet() *TestCase           { ts.embeddedTablet = true; return ts }
 func (ts *TestCase) GetGate1() *gate.Gate                   { return ts.txnServers[0].tm.kv.(*gate.Gate) }
 func (ts *TestCase) GetGate2() *gate.Gate                   { return ts.txnServers[1].tm.kv.(*gate.Gate) }
@@ -486,6 +507,7 @@ func (ts *TestCase) SetReadOnlyTxnType(typ types.TxnType) *TestCase {
 	ts.ReadOnlyTxnType = typ
 	return ts
 }
+func (ts *TestCase) SetMaxRetryPerTxn(v int) *TestCase { ts.maxRetryPerTxn = v; return ts }
 func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
 	ts.ReadOnlyTxnType |= typ
 	return ts
@@ -497,6 +519,10 @@ func (ts *TestCase) SetTimeoutPerRound(timeout time.Duration) *TestCase {
 }
 func (ts *TestCase) SetExtraRound(goRoutineIndex int) *TestCase {
 	ts.extraRounds[goRoutineIndex] = true
+	return ts
+}
+func (ts *TestCase) SetSkipRoundCheck(goRoutineIndex int) *TestCase {
+	ts.skipRoundsCheck[goRoutineIndex] = true
 	return ts
 }
 func (ts *TestCase) SetStaleWriteThreshold(thr time.Duration) *TestCase {
@@ -517,7 +543,7 @@ func (ts *TestCase) SetAdditionalParameters(key string, obj interface{}) *TestCa
 }
 func (ts *TestCase) SetGoRoutineNum(num int) *TestCase {
 	ts.GoRoutineNum = num
-	return ts.onGoRoutineNumChanged()
+	return ts.initialGoRoutineRelatedFields()
 }
 func (ts *TestCase) SetTxnNumPerGoRoutine(num int) *TestCase { ts.TxnNumPerGoRoutine = num; return ts }
 func (ts *TestCase) SetLogLevel(lvl int) *TestCase           { ts.LogLevel = glog.Level(lvl); return ts }
@@ -538,7 +564,7 @@ func (ts *TestCase) Close() {
 	}
 	ts.scs = nil
 	ts.txnServers = nil
-	ts.clientTMs = nil
+	ts.txnManagers = nil
 	ts.stopper = nil
 }
 
@@ -571,8 +597,9 @@ func (ts *TestCase) MustRouteToDifferentShards(key1 string, key2 string) bool {
 		ts.True(gAte2.MustRoute(types.TxnKeyUnion{Key: key1}).ID != gAte2.MustRoute(types.TxnKeyUnion{Key: key2}).ID)
 }
 
-func (ts *TestCase) onGoRoutineNumChanged() *TestCase {
+func (ts *TestCase) initialGoRoutineRelatedFields() *TestCase {
 	ts.executedTxnsPerGoRoutine = make([][]ExecuteInfo, ts.GoRoutineNum)
+	ts.skipRoundsCheck = make([]bool, ts.GoRoutineNum)
 	ts.extraRounds = make([]bool, ts.GoRoutineNum)
 	return ts
 }

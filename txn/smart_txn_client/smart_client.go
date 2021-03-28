@@ -93,12 +93,12 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
 			continue
 		}
-		if beforeRollback != nil {
-			if err := beforeRollback(); err != nil {
-				return tx, i + 1, err
-			}
-		}
 		if !tx.GetState().IsAborted() {
+			if beforeRollback != nil {
+				if err := beforeRollback(); err != nil {
+					return tx, i + 1, err
+				}
+			}
 			_ = tx.Rollback(ctx)
 		}
 		if !retry || !errors.IsRetryableTransactionErr(err) {

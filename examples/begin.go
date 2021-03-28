@@ -34,9 +34,9 @@ func UseTxn(ctx context.Context) error {
 	if err := sm.SetInt(ctx, key2, key2InitialValue); err != nil {
 		return err
 	}
-	return sm.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+	return sm.DoTransactionOfType(ctx, types.TxnTypeReadModifyWrite|types.TxnTypeWaitWhenReadDirty, func(ctx context.Context, txn types.Txn) error {
 		{
-			key1Val, err := txn.Get(ctx, key1, types.NewTxnReadOption())
+			key1Val, err := txn.Get(ctx, key1)
 			if err != nil {
 				return err
 			}
@@ -51,7 +51,7 @@ func UseTxn(ctx context.Context) error {
 		}
 
 		{
-			key2Val, err := txn.Get(ctx, key2, types.NewTxnReadOption())
+			key2Val, err := txn.Get(ctx, key2)
 			if err != nil {
 				return err
 			}

@@ -21,6 +21,7 @@ import (
 func completer(d prompt.Document) []prompt.Suggest {
 	s := []prompt.Suggest{
 		{Text: "begin", Description: "begin a transaction"},
+		{Text: "set_default_txn_type", Description: "set default txn type"},
 		{Text: "get", Description: "get key"},
 		{Text: "set", Description: "set key value"},
 		{Text: "commit", Description: "commit the transaction"},
@@ -73,6 +74,8 @@ func main() {
 		prevTxnState types.TxnState
 		quit         = false
 
+		defaultTxnType = types.TxnTypeDefault
+
 		executor = func(promptText string) {
 			cmds := utils.TrimmedSplit(promptText, ";")
 			for i := 0; ; i++ {
@@ -99,7 +102,7 @@ func main() {
 				if strings.HasPrefix(t, "begin") {
 					// TODO parse txn type
 					remain := strings.TrimPrefix(t, "begin")
-					typ := types.TxnTypeDefault
+					typ := defaultTxnType
 					if remain != "" {
 						if !strings.HasPrefix(remain, " ") {
 							fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
@@ -108,15 +111,33 @@ func main() {
 						remain = strings.TrimPrefix(remain, " ")
 						parts := strings.Split(remain, " ")
 						if typ, err = types.ParseTxnType(parts[0]); err != nil {
-							fmt.Printf("invalid txn type, supported transaction types: %s\n", strings.Join(types.SupportedTransactionTypesDesc, ", "))
+							fmt.Printf("invalid txn type, supported transaction types: %s\n", types.BasicTxnTypesDesc)
 							continue
 						}
 					}
-					if tx, err = tm.BeginTransaction(ctx, typ); err != nil {
+					if tx, err = tm.BeginTransaction(ctx, types.NewTxnOption(typ)); err != nil {
 						fmt.Printf("BEGIN failed: %v\n", err)
 						continue
 					}
 					showTxnInfo(true)
+				} else if strings.HasPrefix(t, "set_default_txn_type") {
+					// TODO parse txn type
+					remain := strings.TrimPrefix(t, "set_default_txn_type")
+					if remain != "" {
+						if !strings.HasPrefix(remain, " ") {
+							fmt.Printf("unknown cmd: '%s'\n", strings.Split(t, " ")[0])
+							continue
+						}
+						remain = strings.TrimPrefix(remain, " ")
+						parts := strings.Split(remain, " ")
+						var typ types.TxnType
+						if typ, err = types.ParseTxnType(parts[0]); err != nil {
+							fmt.Printf("invalid txn type, supported transaction types: %s\n", types.BasicTxnTypesDesc)
+							continue
+						}
+						defaultTxnType = typ
+					}
+
 				} else if strings.HasPrefix(t, "get") {
 					remain := strings.TrimPrefix(t, "get")
 					if remain == "" {
@@ -138,7 +159,7 @@ func main() {
 							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
-						if tx, err = tm.BeginTransaction(ctx, types.TxnTypeDefault); err != nil {
+						if tx, err = tm.BeginTransaction(ctx, types.NewTxnOption(defaultTxnType)); err != nil {
 							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}
@@ -172,7 +193,7 @@ func main() {
 							fmt.Println("Transaction is nil, needs begin first")
 							continue
 						}
-						if tx, err = tm.BeginTransaction(ctx, types.TxnTypeDefault); err != nil {
+						if tx, err = tm.BeginTransaction(ctx, types.NewTxnOption(defaultTxnType)); err != nil {
 							fmt.Printf("BEGIN failed: %v\n", err)
 							continue
 						}
