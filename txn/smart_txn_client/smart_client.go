@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
@@ -111,11 +109,10 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 			return tx, i + 1, err
 		}
 		if errors.IsSnapshotReadTabletErr(err) {
-			opt.SnapshotReadOption.ResetSnapshotVersion(tx.GetSnapshotReadOption().SnapshotVersion)
-			assert.Must((!opt.SnapshotReadOption.AllowsVersionBack() && (opt.SnapshotReadOption.IsExplicitSnapshotVersion() || opt.SnapshotReadOption.SnapshotVersion == 0)) ||
-				(opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.SnapshotVersion > 0))
+			opt.SnapshotReadOption.SetSnapshotVersion(tx.GetSnapshotReadOption().SnapshotVersion, true)
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
+		glog.V(201).Infof("[SmartClient::DoTransactionRaw] user function returns err: %v, retrying for %dth round...", err.Error(), i+2)
 	}
 	return nil, c.maxRetry, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }

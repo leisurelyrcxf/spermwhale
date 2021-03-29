@@ -121,8 +121,8 @@ func (m *TransactionManager) BeginTransaction(_ context.Context, opt types.TxnOp
 	assert.MustNoError(err)
 
 	if txn.IsSnapshotRead() {
-		if err := txn.SetSnapshotReadOption(opt.SnapshotReadOption); err != nil {
-			return nil, err
+		if err := txn.BeginSnapshotReadTxn(opt.SnapshotReadOption); err != nil {
+			return nil, errors.Annotatef(err, "TransactionManager::BeginTransaction")
 		}
 	}
 

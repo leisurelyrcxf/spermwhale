@@ -252,26 +252,29 @@ func (t TxnType) String() string {
 }
 
 type TxnSnapshotReadOption struct {
-	SnapshotVersion uint64
-	flag            uint8
+	SnapshotVersion           uint64
+	MinAllowedSnapshotVersion uint64
+	flag                      uint8
 }
 
 func NewTxnSnapshotReadOptionFromPB(opt *txnpb.TxnSnapshotReadOption) TxnSnapshotReadOption {
 	return TxnSnapshotReadOption{
-		SnapshotVersion: opt.SnapshotVersion,
-		flag:            opt.GetFlagAsUint8(),
+		SnapshotVersion:           opt.SnapshotVersion,
+		MinAllowedSnapshotVersion: opt.MinAllowedSnapshotVersion,
+		flag:                      opt.GetFlagAsUint8(),
 	}
 }
 
 func (opt TxnSnapshotReadOption) ToPB() *txnpb.TxnSnapshotReadOption {
 	return &txnpb.TxnSnapshotReadOption{
-		SnapshotVersion: opt.SnapshotVersion,
-		Flag:            uint32(opt.flag),
+		SnapshotVersion:           opt.SnapshotVersion,
+		MinAllowedSnapshotVersion: opt.MinAllowedSnapshotVersion,
+		Flag:                      uint32(opt.flag),
 	}
 }
 
 func (opt TxnSnapshotReadOption) Equals(another TxnSnapshotReadOption) bool {
-	return opt.SnapshotVersion == another.SnapshotVersion && opt.flag == another.flag
+	return opt.SnapshotVersion == another.SnapshotVersion && opt.MinAllowedSnapshotVersion == another.MinAllowedSnapshotVersion && opt.flag == another.flag
 }
 
 func (opt TxnSnapshotReadOption) IsExplicitSnapshotVersion() bool {
@@ -283,28 +286,21 @@ func (opt TxnSnapshotReadOption) AllowsVersionBack() bool {
 }
 
 func (opt TxnSnapshotReadOption) IsEmpty() bool {
-	return opt.SnapshotVersion == 0 && opt.flag == 0
+	return opt.SnapshotVersion == 0 && opt.MinAllowedSnapshotVersion == 0 && opt.flag == 0
 }
 
-func (opt *TxnSnapshotReadOption) SetSnapshotVersion(snapshotVersion uint64) {
+func (opt TxnSnapshotReadOption) WithClearDontAllowsVersionBack() TxnSnapshotReadOption {
+	opt.flag &= ^consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack & 0xff
+	assert.Must(opt.AllowsVersionBack()) // TODO remove this
+	return opt
+}
+
+func (opt *TxnSnapshotReadOption) SetSnapshotVersion(snapshotVersion uint64, checkMinAllowedSnapshotVersion bool) {
 	assert.Must(!opt.IsExplicitSnapshotVersion() || opt.SnapshotVersion != 0)
-	if opt.SnapshotVersion == 0 || (opt.AllowsVersionBack() && snapshotVersion < opt.SnapshotVersion) {
+	if (opt.SnapshotVersion == 0 || (opt.AllowsVersionBack() && snapshotVersion < opt.SnapshotVersion)) &&
+		(!checkMinAllowedSnapshotVersion || snapshotVersion >= opt.MinAllowedSnapshotVersion) {
 		opt.SnapshotVersion = snapshotVersion
 	}
-}
-
-func (opt *TxnSnapshotReadOption) ResetSnapshotVersion(snapshotVersion uint64) {
-	assert.Must(opt.SnapshotVersion != 0)
-	if opt.IsExplicitSnapshotVersion() {
-		assert.Must(!opt.AllowsVersionBack())
-		return
-	}
-	if opt.AllowsVersionBack() && snapshotVersion < opt.SnapshotVersion {
-		opt.SnapshotVersion = snapshotVersion
-	} else {
-		opt.SnapshotVersion = 0
-	}
-	return
 }
 
 func (opt TxnSnapshotReadOption) String() string {
@@ -340,14 +336,32 @@ func (opt TxnOption) ToPB() *txnpb.TxnOption {
 }
 
 func (opt TxnOption) WithSnapshotVersion(snapshotVersion uint64) TxnOption {
+	assert.Must(opt.IsSnapshotRead())
 	opt.SnapshotReadOption.SnapshotVersion = snapshotVersion
 	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion
 	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack
 	return opt
 }
 
-func (opt TxnOption) WithDontAllowVersionBack() TxnOption {
+func (opt TxnOption) WithSnapshotReadMinAllowedSnapshotVersion(minAllowedSnapshotVersion uint64) TxnOption {
+	assert.Must(opt.IsSnapshotRead())
+	opt.SnapshotReadOption.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
+	return opt
+}
+
+func (opt TxnOption) WithSnapshotReadDontAllowVersionBack() TxnOption {
+	assert.Must(opt.IsSnapshotRead())
 	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack
+	return opt
+}
+
+func (opt TxnOption) CondSnapshotReadDontAllowVersionBack(b bool) TxnOption {
+	if !opt.IsSnapshotRead() {
+		return opt
+	}
+	if b {
+		opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack
+	}
 	return opt
 }
 

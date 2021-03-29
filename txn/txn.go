@@ -78,8 +78,6 @@ type Txn struct {
 	preventFutureWriteKeys  basic.Set
 	readModifyWriteReadKeys basic.Set
 
-	minAllowedSnapshotVersion uint64 // only used by snapshot read txn, for other types of transaction, the value will be zero
-
 	txnRecordTask *basic.Task
 
 	allWriteTasksFinished bool

@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 10
+	rounds             = 5
 )
 
 var (
@@ -229,13 +229,25 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 
 	lastWriteTxns := make(map[string]int)
 	for i := 0; i < len(txns); i++ {
-		if txns[i].GetType().IsSnapshotRead() {
+		if opt := txns[i].GetSnapshotReadOption(); txns[i].GetType().IsSnapshotRead() {
 			var ssVersion = txns[i].GetSnapshotReadOption().SnapshotVersion
 			if !assert.NotEmpty(ssVersion) {
 				return false
 			}
+			if !assert.GreaterOrEqual(ssVersion, opt.MinAllowedSnapshotVersion) {
+				return false
+			}
 			for _, readVal := range txns[i].ReadValues {
-				if !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+				if !opt.AllowsVersionBack() {
+					if !assert.Equal(readVal.SnapshotVersion, ssVersion) {
+						return false
+					}
+				} else {
+					if !assert.GreaterOrEqual(readVal.SnapshotVersion, ssVersion) {
+						return false
+					}
+				}
+				if !assert.GreaterOrEqual(opt.MinAllowedSnapshotVersion, readVal.Version) {
 					return false
 				}
 			}
@@ -291,11 +303,12 @@ type TestCase struct {
 	TxnManagerCfg types.TxnManagerConfig
 	TableTxnCfg   types.TabletTxnConfig
 
-	GoRoutineNum       int
-	TxnNumPerGoRoutine int
-	timeoutPerRound    time.Duration
-	LogLevel           glog.Level
-	maxRetryPerTxn     int
+	GoRoutineNum                     int
+	TxnNumPerGoRoutine               int
+	timeoutPerRound                  time.Duration
+	LogLevel                         glog.Level
+	maxRetryPerTxn                   int
+	snapshotReadDontAllowVersionBack bool
 
 	SimulatedLatency   time.Duration
 	FailurePattern     FailurePattern
@@ -353,6 +366,7 @@ func (ts *TestCase) Run() {
 	ts.NoError(flag.Set("log_dir", consts.DefaultTestLogDir))
 	ts.NoError(flag.Set("alsologtostderr", fmt.Sprintf("%t", true)))
 	ts.NoError(flag.Set("v", fmt.Sprintf("%d", ts.LogLevel)))
+	ts.LogParameters()
 
 	for i := 0; i < ts.rounds; i++ {
 		if !ts.runOneRound(i) {
@@ -363,8 +377,7 @@ func (ts *TestCase) Run() {
 }
 
 func (ts *TestCase) runOneRound(i int) bool {
-	ts.LogParameters(i)
-
+	ts.t.Logf("round %d", i)
 	ts.allExecutedTxns = nil
 	ts.initialGoRoutineRelatedFields()
 
@@ -394,7 +407,7 @@ func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *s
 }
 func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
-	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, types.NewTxnOption(ts.ReadOnlyTxnType), f)
+	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, types.NewTxnOption(ts.ReadOnlyTxnType).CondSnapshotReadDontAllowVersionBack(ts.snapshotReadDontAllowVersionBack), f)
 }
 func (ts *TestCase) DoTransactionOfOption(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
 	f func(ctx context.Context, txn types.Txn) error) bool {
@@ -505,6 +518,10 @@ func (ts *TestCase) SetReadOnlyTxnType(typ types.TxnType) *TestCase {
 	ts.ReadOnlyTxnType = typ
 	return ts
 }
+func (ts *TestCase) SetSnapshotReadDontAllowVersionBack(b bool) *TestCase {
+	ts.snapshotReadDontAllowVersionBack = b
+	return ts
+}
 func (ts *TestCase) SetMaxRetryPerTxn(v int) *TestCase { ts.maxRetryPerTxn = v; return ts }
 func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
 	ts.ReadOnlyTxnType |= typ
@@ -566,11 +583,12 @@ func (ts *TestCase) Close() {
 	ts.stopper = nil
 }
 
-func (ts *TestCase) LogParameters(round int) {
-	ts.t.Logf("%s @round %d\n"+
+func (ts *TestCase) LogParameters() {
+	ts.t.Logf("%s\n"+
 		"db type: \"%s\", txn type: \"%s\", read only txn type: \"%s\"\n"+
 		"stale threshold: %s, wound threshold: %s\n"+
-		"go routine number: %d, txn number per go routine: %d, log level: %d", ts.t.Name(), round,
+		"go routine number: %d, txn number per go routine: %d, log level: %d",
+		ts.t.Name(),
 		ts.DBType, ts.TxnType, ts.ReadOnlyTxnType,
 		ts.TableTxnCfg.StaleWriteThreshold, ts.TxnManagerCfg.WoundUncommittedTxnThreshold,
 		ts.GoRoutineNum, ts.TxnNumPerGoRoutine, ts.LogLevel)
@@ -578,10 +596,10 @@ func (ts *TestCase) LogParameters(round int) {
 
 func (ts *TestCase) LogExecuteInfos(totalCostInSeconds float64) {
 	stats := ts.allExecutedTxns.Statistics()
-	ts.t.Logf("Excuted %d txns in %.1fs, throughput: %.1ftxn/s, average latency: %s, average retry: %.3f times",
+	ts.t.Logf("Executed %d txns in %.1fs, throughput: %.1ftxn/s, average latency: %s, average retry: %.3f times",
 		len(ts.allExecutedTxns), totalCostInSeconds, float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
 	stats.ForEachTxnKind(func(txnKind types.TxnKind, ss ExecuteStatistic) {
-		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.2f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)
+		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.3f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)
 	})
 }
 

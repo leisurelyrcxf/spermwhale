@@ -172,7 +172,8 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 		val, err = kv.db.Get(ctx, key, opt.ToKVReadOption())
 	} else {
 		assert.Must(!getMaxReadVersion)
-		for i, readerVersion := 0, uint64(0); ; i, opt.ReaderVersion = i+1, readerVersion {
+		for i, readerVersion := 0, uint64(0); ; {
+			assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 			if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); err != nil || !val.IsDirty() {
 				break
 			}
@@ -184,6 +185,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 				retriedTooManyTimes = true
 				break
 			}
+			i, opt.ReaderVersion = i+1, readerVersion
 		}
 		val = val.WithSnapshotVersion(opt.ReaderVersion)
 	}
@@ -212,7 +214,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	if err != nil || !val.IsDirty() || !opt.IsWaitWhenReadDirty() {
 		if glog.V(60) {
 			if err != nil {
-				glog.Errorf("txn-%d get %s failed: '%v', cost: %s", opt.ReaderVersion, txnKey, err, bench.Elapsed())
+				glog.Errorf("txn-%d get %s failed: '%v', minAllowedSnapshotVersion: %d, cost: %s", opt.ReaderVersion, txnKey, err, opt.MinAllowedSnapshotVersion, bench.Elapsed())
 			} else {
 				glog.Infof("txn-%d get %s succeeded, dirty: %v, cost: %s", opt.ReaderVersion, txnKey, val.IsDirty(), bench.Elapsed())
 			}

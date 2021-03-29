@@ -10,12 +10,10 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 func TestTxnRead(t *testing.T) {
@@ -38,15 +36,40 @@ func TestTxnSnapshotReadInteractiveWaitWhenReadDirty(t *testing.T) {
 		return testTxnSnapshotRead(ctx, ts, true, false, false)
 	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
 }
-func TestTxnSnapshotReadInteractiveMixedMGetAndGet(t *testing.T) {
+func TestTxnSnapshotReadInteractiveMixedGetAndMGet(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotRead(ctx, ts, true, true, false)
 	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
 }
-func TestTxnSnapshotReadInteractiveMixedGetAndMGet(t *testing.T) {
+func TestTxnSnapshotReadInteractiveMixedMGetAndGet(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotRead(ctx, ts, true, true, true)
 	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
+}
+
+func TestTxnSnapshotReadInteractiveDontAllowVersionBack(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotRead(ctx, ts, true, false, false)
+	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).
+		SetSnapshotReadDontAllowVersionBack(true).Run()
+}
+func TestTxnSnapshotReadInteractiveWaitWhenReadDirtyDontAllowVersionBack(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotRead(ctx, ts, true, false, false)
+	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).
+		SetSnapshotReadDontAllowVersionBack(true).Run()
+}
+func TestTxnSnapshotReadInteractiveMixedGetAndMGetDontAllowVersionBack(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotRead(ctx, ts, true, true, false)
+	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).
+		SetSnapshotReadDontAllowVersionBack(true).Run()
+}
+func TestTxnSnapshotReadInteractiveMixedMGetAndGetDontAllowVersionBack(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotRead(ctx, ts, true, true, true)
+	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).
+		SetSnapshotReadDontAllowVersionBack(true).Run()
 }
 
 func TestTxnSnapshotReadWaitWhenReadDirtyMoreKeys(t *testing.T) {
@@ -392,6 +415,7 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 	const (
 		key          = "kkk"
 		initialValue = 101
+		delta        = 6
 	)
 	sc := ts.scs[0]
 	var (
@@ -411,13 +435,21 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 				})) {
 					firstWrittenTxnId = ts.executedTxnsPerGoRoutine[goRoutineIdx][len(ts.executedTxnsPerGoRoutine[goRoutineIdx])-1].GetId()
 					close(firstKeyWritten)
+
+					//ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
+					//	glog.V(60).Infof("secondWrittenTxnId: %d", txn.GetId().Version())
+					//	return txn.Set(ctx, key, types.NewIntValue(initialValue+delta).V)
+					//})
 				}
 			} else {
 				<-firstKeyWritten
-				opt := types.NewTxnOption(ts.ReadOnlyTxnType).WithDontAllowVersionBack()
+				var opt = types.NewTxnOption(ts.ReadOnlyTxnType)
 				if explicitSnapshotVersion {
 					glog.V(60).Infof("explicitSnapshotVersion: %d", firstWrittenTxnId)
-					opt = types.NewTxnOption(ts.ReadOnlyTxnType).WithSnapshotVersion(firstWrittenTxnId.Version())
+					opt = opt.WithSnapshotVersion(firstWrittenTxnId.Version())
+				} else {
+					glog.V(60).Infof("minAllowedSnapshotVersion: %d", firstWrittenTxnId)
+					opt = opt.WithSnapshotReadMinAllowedSnapshotVersion(firstWrittenTxnId.Version())
 				}
 				ts.True(ts.DoTransactionOfOption(ctx, goRoutineIdx, sc, opt, func(ctx context.Context, txn types.Txn) error {
 					r1, err := txn.Get(ctx, key)
@@ -429,8 +461,11 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 						return err
 					}
 					ts.Equal(initialValue, v1)
+					ts.Equal(firstWrittenTxnId.Version(), r1.Version)
 					if explicitSnapshotVersion {
 						ts.Equal(firstWrittenTxnId.Version(), txn.GetSnapshotReadOption().SnapshotVersion)
+					} else {
+						ts.Equal(txn.GetId().Version(), txn.GetSnapshotReadOption().SnapshotVersion)
 					}
 					return nil
 				}))
