@@ -399,14 +399,37 @@ type TxnManager interface {
 	Close() error
 }
 
+func ValidateMGetRequest(keys []string) error {
+	if len(keys) == 0 {
+		return errors.ErrEmptyKeys
+	}
+	for _, key := range keys {
+		if key == "" {
+			return errors.ErrEmptyKey
+		}
+	}
+	return nil
+}
+
+func ValidateMSetRequest(keys []string, values [][]byte) error {
+	if err := ValidateMGetRequest(keys); err != nil {
+		return err
+	}
+	if len(keys) != len(values) {
+		return errors.Annotatef(errors.ErrInvalidRequest, "len(keys) != len(values)")
+	}
+	return nil
+}
+
 type Txn interface {
 	GetId() TxnId
 	GetState() TxnState
 	GetType() TxnType
 	GetSnapshotReadOption() TxnSnapshotReadOption // only used when txn type is snapshot
-	MGet(ctx context.Context, keys []string) (values []Value, err error)
 	Get(ctx context.Context, key string) (Value, error)
+	MGet(ctx context.Context, keys []string) (values []Value, err error)
 	Set(ctx context.Context, key string, val []byte) error // async func, doesn't guarantee see set result after call
+	MSet(ctx context.Context, keys []string, values [][]byte) error
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 
@@ -462,6 +485,17 @@ func (txn *RecordValuesTxn) Set(ctx context.Context, key string, val []byte) err
 	if err == nil {
 		txn.writeValues[key] = NewValue(val, txn.Txn.GetId().Version()).
 			WithNoWriteIntent().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
+	}
+	return err
+}
+
+func (txn *RecordValuesTxn) MSet(ctx context.Context, keys []string, values [][]byte) error {
+	err := txn.Txn.MSet(ctx, keys, values)
+	if err == nil {
+		for idx, key := range keys {
+			txn.writeValues[key] = NewValue(values[idx], txn.Txn.GetId().Version()).
+				WithNoWriteIntent().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
+		}
 	}
 	return err
 }

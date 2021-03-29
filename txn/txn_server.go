@@ -84,6 +84,19 @@ func (s *Stub) Set(ctx context.Context, req *txnpb.TxnSetRequest) (*txnpb.TxnSet
 	}, nil
 }
 
+func (s *Stub) MSet(ctx context.Context, req *txnpb.TxnMSetRequest) (*txnpb.TxnMSetResponse, error) {
+	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
+	if err != nil {
+		return &txnpb.TxnMSetResponse{
+			Txn: InvalidTransactionInfo(types.TxnId(req.TxnId)).ToPB(), Err: errors.ToPBError(err)}, nil
+	}
+	err = txn.MSet(ctx, req.Keys, req.Values)
+	return &txnpb.TxnMSetResponse{
+		Txn: txn.ToPB(),
+		Err: errors.ToPBError(err),
+	}, nil
+}
+
 func (s *Stub) Rollback(ctx context.Context, req *txnpb.RollbackRequest) (*txnpb.RollbackResponse, error) {
 	txn, err := s.m.GetTxn(types.TxnId(req.TxnId))
 	if err != nil {

@@ -10,8 +10,6 @@ import (
 
 	"github.com/golang/glog"
 
-	testifyassert "github.com/stretchr/testify/assert"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
@@ -224,7 +222,7 @@ func (txns ExecuteInfos) Swap(i, j int) {
 	txns[i], txns[j] = txns[j], txns[i]
 }
 
-func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) bool {
+func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 	sort.Sort(txns)
 
 	lastWriteTxns := make(map[string]int)
@@ -258,7 +256,7 @@ func (txns ExecuteInfos) CheckSerializability(assert *testifyassert.Assertions) 
 					return false
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
-				if !assert.Equal(readVal.Version, txns[lastWriteTxnIndex].WriteValues[key].Version) {
+				if !assert.EqualIntValue(readVal, txns[lastWriteTxnIndex].WriteValues[key]) {
 					return false
 				}
 			}
@@ -290,7 +288,7 @@ func (txns ExecuteInfos) Statistics() ExecuteStatistics {
 
 type TestCase struct {
 	t types.T
-	*testifyassert.Assertions
+	*types.Assertions
 
 	embeddedTablet bool
 
@@ -442,7 +440,7 @@ func (ts *TestCase) GenTestEnv() bool {
 	}
 
 	var clientTxnManagers []*ClientTxnManager
-	if ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.t, ts.DBType, ts.TxnManagerCfg,
+	if ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.Assertions, ts.DBType, ts.TxnManagerCfg,
 		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
 		return false
 	}
@@ -502,7 +500,7 @@ func (ts *TestCase) CheckReadModifyWriteOnly(keys ...string) bool {
 	for i := 1; i < len(ts.allExecutedTxns); i++ {
 		prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
 		for _, key := range keys {
-			if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualValue(prevWrite, curRead) {
+			if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualIntValue(prevWrite, curRead) {
 				return false
 			}
 		}
@@ -620,34 +618,8 @@ func (ts *TestCase) initialGoRoutineRelatedFields() *TestCase {
 	return ts
 }
 
-func (ts *TestCase) EqualValue(exp types.Value, actual types.Value) (b bool) {
-	if !ts.Equal(exp.Version, actual.Version) {
-		return
-	}
-	if !ts.Equal(exp.InternalVersion, actual.InternalVersion) {
-		return
-	}
-	if !ts.Equal(exp.Flag, actual.Flag) {
-		return
-	}
-	expInt, err := exp.Int()
-	if !ts.NoError(err) {
-		return
-	}
-	actualInt, err := actual.Int()
-	if !ts.NoError(err) {
-		return
-	}
-	if !ts.Equal(expInt, actualInt) {
-		return
-	}
-	return true
-}
-
-func createCluster(t types.T, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
-	assert := testifyassert.New(t)
-
-	gates, stopTablets, stopGates := createTabletsGates(t, dbType, tabletCfg)
+func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+	gates, stopTablets, stopGates := createTabletsGates(assert, dbType, tabletCfg)
 	if !assert.Len(gates, 2) || !assert.NotNil(stopTablets) || !assert.NotNil(stopGates) {
 		return nil, nil, nil
 	}
@@ -733,9 +705,7 @@ func createCluster(t types.T, dbType types.DBType, cfg types.TxnManagerConfig, t
 	return txnServers, clientTxnManagers, stop
 }
 
-func createTabletsGates(t types.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
-	assert := testifyassert.New(t)
-
+func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
 		return nil, nil, nil
 	}
@@ -817,13 +787,11 @@ func createTabletsGates(t types.T, dbType types.DBType, tabletCfg types.TabletTx
 	return gates, stopTablets, stopGates
 }
 
-func createGate(t types.T, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
-	return createGateEx(t, types.DBTypeMemory, tabletCfg)
+func createGate(assert *types.Assertions, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
+	return createGateEx(assert, types.DBTypeMemory, tabletCfg)
 }
 
-func createGateEx(t types.T, dbType types.DBType, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
-	assert := testifyassert.New(t)
-
+func createGateEx(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
 		return nil, nil
 	}
@@ -871,7 +839,7 @@ func createGateEx(t types.T, dbType types.DBType, tabletCfg types.TabletTxnConfi
 	return g, stopper
 }
 
-func createTabletServer(assert *testifyassert.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnConfig) (server *kvcc.Server) {
+func createTabletServer(assert *types.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnConfig) (server *kvcc.Server) {
 	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 	if !assert.NoError(err) {
 		return nil
@@ -883,7 +851,7 @@ func createTabletServer(assert *testifyassert.Assertions, port int, dbType types
 	return kvcc.NewServerForTesting(port, db, cfg, gid, topo.NewStore(cli, defaultClusterName))
 }
 
-func createOracleServer(assert *testifyassert.Assertions, port int, dbType types.DBType) *impl.Server {
+func createOracleServer(assert *types.Assertions, port int, dbType types.DBType) *impl.Server {
 	oracleTopoCli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 	if !assert.NoError(err) {
 		return nil
@@ -914,7 +882,7 @@ var gid2MongoPort = map[int]int{
 	3: 57057,
 }
 
-func newDB(assert *testifyassert.Assertions, dbType types.DBType, gid int) types.KV {
+func newDB(assert *types.Assertions, dbType types.DBType, gid int) types.KV {
 	switch dbType {
 	case types.DBTypeMongo:
 		port, ok := gid2MongoPort[gid]

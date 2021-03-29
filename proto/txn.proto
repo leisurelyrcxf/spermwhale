@@ -75,6 +75,17 @@ message TxnSetResponse {
     Txn txn = 2;
 }
 
+message TxnMSetRequest {
+    repeated string keys = 1;
+    repeated bytes values = 2;
+    uint64 txn_id = 3;
+}
+
+message TxnMSetResponse {
+    Error err = 1;
+    Txn txn = 2;
+}
+
 message RollbackRequest {
     uint64 txn_id = 1;
 }
@@ -98,6 +109,7 @@ service TxnService {
     rpc Get(TxnGetRequest) returns (TxnGetResponse) {}
     rpc MGet(TxnMGetRequest) returns (TxnMGetResponse) {}
     rpc Set(TxnSetRequest) returns (TxnSetResponse) {}
+    rpc MSet(TxnMSetRequest) returns (TxnMSetResponse) {}
     rpc Rollback(RollbackRequest) returns (RollbackResponse) {}
     rpc Commit(CommitRequest) returns (CommitResponse) {}
 }

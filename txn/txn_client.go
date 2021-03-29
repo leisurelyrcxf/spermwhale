@@ -75,6 +75,10 @@ func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.
 }
 
 func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId) ([]types.Value, TransactionInfo, error) {
+	if err := types.ValidateMGetRequest(keys); err != nil {
+		return nil, InvalidTransactionInfo(txnID), err
+	}
+
 	resp, err := c.c.MGet(ctx, &txnpb.TxnMGetRequest{
 		Keys:  keys,
 		TxnId: uint64(txnID),
@@ -113,7 +117,7 @@ func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.Tx
 	resp, err := c.c.Set(ctx, &txnpb.TxnSetRequest{
 		Key:   key,
 		Value: val,
-		TxnId: uint64(txnID),
+		TxnId: txnID.Version(),
 	})
 	if err != nil {
 		return InvalidTransactionInfo(txnID), err
@@ -123,6 +127,28 @@ func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.Tx
 	}
 	if resp.Txn == nil {
 		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Set resp.Txn == nil")
+	}
+	assert.Must(types.TxnId(resp.Txn.Id) == txnID)
+	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
+}
+
+func (c *Client) MSet(ctx context.Context, keys []string, values [][]byte, txnID types.TxnId) (TransactionInfo, error) {
+	if err := types.ValidateMSetRequest(keys, values); err != nil {
+		return InvalidTransactionInfo(txnID), err
+	}
+	resp, err := c.c.MSet(ctx, &txnpb.TxnMSetRequest{
+		Keys:   keys,
+		Values: values,
+		TxnId:  txnID.Version(),
+	})
+	if err != nil {
+		return InvalidTransactionInfo(txnID), err
+	}
+	if resp == nil {
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::MSet resp == nil")
+	}
+	if resp.Txn == nil {
+		return InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::MSet resp.Txn == nil")
 	}
 	assert.Must(types.TxnId(resp.Txn.Id) == txnID)
 	return NewTransactionInfoFromPB(resp.Txn), errors.NewErrorFromPB(resp.Err)
@@ -226,6 +252,13 @@ func (txn *ClientTxn) MGet(ctx context.Context, keys []string) ([]types.Value, e
 
 func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
 	txnInfo, err := txn.c.Set(ctx, key, val, txn.ID)
+	assert.Must(txn.ID == txnInfo.ID)
+	txn.TransactionInfo = txnInfo
+	return err
+}
+
+func (txn *ClientTxn) MSet(ctx context.Context, keys []string, values [][]byte) error {
+	txnInfo, err := txn.c.MSet(ctx, keys, values, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
 	return err

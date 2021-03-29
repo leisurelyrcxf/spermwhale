@@ -332,7 +332,7 @@ func TestConcurrentInsert(t types.T, db *DB) (b bool) {
 			defer wg.Done()
 
 			if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(),
-				types.NewKVWriteOption()); !errors.AssertNilOrErr(assert, err, errors.ErrVersionAlreadyExists) {
+				types.NewKVWriteOption()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrVersionAlreadyExists) {
 				return
 			}
 		}()
@@ -445,14 +445,14 @@ func TestConcurrentRemoveVersion(t types.T, db *DB) (b bool) {
 		go func() {
 			defer wg.Done()
 
-			if _, err := db.Get(context.Background(), key, types.NewKVReadOption(2)); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
+			if _, err := db.Get(context.Background(), key, types.NewKVReadOption(2)); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist) {
 				return
 			}
 		}()
 	}
 
 	wg.Wait()
-	if _, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
+	if _, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(&assert.Assertions, err) {
 		return
 	}
 	return true
@@ -475,11 +475,11 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 			defer wg.Done()
 
 			if i%2 == 0 {
-				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
+				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist) {
 					return
 				}
 			} else {
-				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !errors.AssertNilOrErr(assert, err, errors.ErrCantRemoveCommittedValue) {
+				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrCantRemoveCommittedValue) {
 					return
 				}
 			}
@@ -491,7 +491,7 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 	if err == nil {
 		return assert.Equal(uint64(1), val.Version) && assert.False(val.IsDirty())
 	}
-	return errors.AssertIsErr(assert, err, errors.ErrKeyOrVersionNotExist)
+	return errors.AssertIsErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist)
 }
 
 func (db *DB) updateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8, modifyFlag func(Value) Value) error {

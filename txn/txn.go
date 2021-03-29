@@ -269,9 +269,10 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 }
 
 func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.Value, error) {
-	if len(keys) == 0 {
-		return nil, errors.ErrEmptyKeys
+	if err := types.ValidateMGetRequest(keys); err != nil {
+		return nil, err
 	}
+
 	ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
 	defer cancel()
 
@@ -379,6 +380,10 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	txn.Lock()
 	defer txn.Unlock()
 
+	return txn.set(ctx, key, val)
+}
+
+func (txn *Txn) set(ctx context.Context, key string, val []byte) error {
 	if txn.TxnState != types.TxnStateUncommitted {
 		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
 	}
@@ -400,6 +405,25 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 		if err := task.ErrUnsafe(); errors.IsMustRollbackWriteKeyErr(err) {
 			_ = txn.rollback(ctx, txn.ID, true, "Txn::Set write key io task '%s' failed: '%v'", task.ID, err)
 			txn.err = err
+			return err
+		}
+	}
+	return nil
+}
+
+func (txn *Txn) MSet(ctx context.Context, keys []string, values [][]byte) error {
+	if err := types.ValidateMSetRequest(keys, values); err != nil {
+		return err
+	}
+	if txn.IsSnapshotRead() {
+		return errors.Annotatef(errors.ErrNotAllowed, "can't write in snapshot isolation level")
+	}
+
+	txn.Lock()
+	defer txn.Unlock()
+
+	for idx, key := range keys {
+		if err := txn.set(ctx, key, values[idx]); err != nil {
 			return err
 		}
 	}

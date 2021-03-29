@@ -3,7 +3,6 @@ package smart_txn_client
 import (
 	"context"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -143,9 +142,26 @@ func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.Txn
 	return values, nil
 }
 
+func (c *SmartClient) MSet(ctx context.Context, keys []string, values [][]byte, txnType types.TxnType) error {
+	_, _, err := c.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) error {
+		return txn.MSet(ctx, keys, values)
+	})
+	return err
+}
+
 func (c *SmartClient) SetInt(ctx context.Context, key string, intVal int) error {
 	return c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
-		return txn.Set(ctx, key, []byte(strconv.Itoa(intVal)))
+		return txn.Set(ctx, key, types.NewIntValue(intVal).V)
+	})
+}
+
+func (c *SmartClient) MSetInts(ctx context.Context, keys []string, values []int) error {
+	vs := make([][]byte, len(values))
+	for i, v := range values {
+		vs[i] = types.NewIntValue(v).V
+	}
+	return c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) error {
+		return txn.MSet(ctx, keys, vs)
 	})
 }
 

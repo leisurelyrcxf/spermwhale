@@ -238,6 +238,49 @@ func testTxnReadModifyWrite2Keys(ctx context.Context, ts *TestCase) (b bool) {
 		ts.CheckReadModifyWriteOnly(key1, key2)
 }
 
+func testTxnReadModifyWrite2KeysMGetMSet(ctx context.Context, ts *TestCase) (b bool) {
+	const (
+		key1InitialValue = 10
+		key2InitialValue = 100
+
+		key1, key2           = "k1", "k2"
+		key1Delta, key2Delta = 6, 7
+	)
+	sc := ts.scs[0]
+	if err := sc.MSetInts(ctx, []string{key1, key2}, []int{key1InitialValue, key2InitialValue}); !ts.NoError(err) {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < ts.GoRoutineNum; i++ {
+		wg.Add(1)
+		go func(goRoutineIdx int) {
+			defer wg.Done()
+
+			ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
+				values, err := txn.MGet(ctx, []string{key1, key2})
+				if err != nil {
+					return err
+				}
+				return txn.MSet(ctx, []string{key1, key2, key2}, [][]byte{types.NewIntValue(values[0].MustInt() + key1Delta).V, types.NewIntValue(values[1].MustInt() + key2Delta).V, types.NewIntValue(values[1].MustInt() + key2Delta).V})
+			}))
+		}(i)
+	}
+
+	wg.Wait()
+	vs, err := sc.MGetInts(ctx, []string{key1, key2}, types.TxnTypeDefault)
+	if !ts.NoError(err) {
+		return
+	}
+	ts.t.Logf("'%s': %d, '%s': %d", key1, vs[0], key2, vs[1])
+	if !ts.Equal(ts.GoRoutineNum*key1Delta+key1InitialValue, vs[0]) ||
+		!ts.Equal(ts.GoRoutineNum*key2Delta+key2InitialValue, vs[1]) {
+		return
+	}
+	return ts.CheckSerializability() &&
+		ts.CheckReadModifyWriteOnly(key1, key2)
+}
+
 func testTxnReadModifyWrite2KeysDeadlock(ctx context.Context, ts *TestCase) (b bool) {
 	const (
 		key1InitialValue = 10
@@ -344,6 +387,59 @@ func testTxnReadModifyWrite2KeysDeadlock(ctx context.Context, ts *TestCase) (b b
 		}
 	}
 
+	return ts.CheckSerializability() &&
+		ts.CheckReadModifyWriteOnly(key1, key2)
+}
+
+func testTxnReadModifyWrite2KeysDeadlockMGetMSet(ctx context.Context, ts *TestCase) (b bool) {
+	const (
+		key1InitialValue = 10
+		key2InitialValue = 100
+
+		key1, key2           = "k1", "k2"
+		key1Delta, key2Delta = 6, 7
+	)
+	sc := ts.scs[0]
+	if err := sc.MSetInts(ctx, []string{key1, key2}, []int{key1InitialValue, key2InitialValue}); !ts.NoError(err) {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < ts.GoRoutineNum; i++ {
+		wg.Add(1)
+		go func(goRoutineIdx int) {
+			defer wg.Done()
+
+			if goRoutineIdx&1 == 1 {
+				ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
+					values, err := txn.MGet(ctx, []string{key1, key2})
+					if err != nil {
+						return err
+					}
+					return txn.MSet(ctx, []string{key1, key2}, [][]byte{types.NewIntValue(values[0].MustInt() + key1Delta).V, types.NewIntValue(values[1].MustInt() + key2Delta).V})
+				}))
+			} else {
+				ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
+					values, err := txn.MGet(ctx, []string{key2, key1})
+					if err != nil {
+						return err
+					}
+					return txn.MSet(ctx, []string{key2, key1}, [][]byte{types.NewIntValue(values[0].MustInt() + key2Delta).V, types.NewIntValue(values[1].MustInt() + key1Delta).V})
+				}))
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	vs, err := sc.MGetInts(ctx, []string{key1, key2}, types.TxnTypeDefault)
+	if !ts.NoError(err) {
+		return
+	}
+	ts.t.Logf("'%s': %d, '%s': %d", key1, vs[0], key2, vs[1])
+	if !ts.Equal(ts.GoRoutineNum*key1Delta+key1InitialValue, vs[0]) ||
+		!ts.Equal(ts.GoRoutineNum*key2Delta+key2InitialValue, vs[1]) {
+		return
+	}
 	return ts.CheckSerializability() &&
 		ts.CheckReadModifyWriteOnly(key1, key2)
 }
@@ -554,6 +650,66 @@ func testTxnReadWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
 					return err
 				}
 
+				val2, err := txn.Get(ctx, "k1")
+				if err != nil {
+					return err
+				}
+				v2, err := val2.Int()
+				if !ts.NoError(err) {
+					return err
+				}
+				if !ts.Equalf(v1, v2, "read_version: %d, txn_version: %d", val2.Version, txn.GetId()) {
+					return errors.ErrAssertFailed
+				}
+				return nil
+			}))
+		}(i)
+	}
+
+	wg.Wait()
+	val, err := sc.GetInt(ctx, "k1")
+	if !ts.NoError(err) {
+		return
+	}
+	ts.t.Logf("k1: %d", val)
+	if !ts.Equal(ts.GoRoutineNum*delta+initialValue, val) {
+		return
+	}
+
+	return ts.CheckSerializability()
+}
+
+func testTxnReadWriteAfterWriteMSet(ctx context.Context, ts *TestCase) (b bool) {
+	const (
+		initialValue = 101
+		delta        = 6
+	)
+	sc := ts.scs[0]
+	if err := sc.SetInt(ctx, "k1", initialValue); !ts.NoError(err) {
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < ts.GoRoutineNum; i++ {
+		wg.Add(1)
+
+		go func(goRoutineIdx int) {
+			defer wg.Done()
+
+			ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
+				val, err := txn.Get(ctx, "k1")
+				if err != nil {
+					return err
+				}
+				v1, err := val.Int()
+				if !ts.NoError(err) {
+					return err
+				}
+				v1 += delta
+
+				if err := txn.MSet(ctx, []string{"k1", "k1", "k1"}, [][]byte{types.NewIntValue(v1 - 1).V, types.NewIntValue(v1 - 3).V, types.NewIntValue(v1).V}); err != nil {
+					return err
+				}
 				val2, err := txn.Get(ctx, "k1")
 				if err != nil {
 					return err

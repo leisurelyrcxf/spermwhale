@@ -32,6 +32,40 @@ func isMain() bool {
 	return strings.Contains(ss, "testing.(*T).Run")
 }
 
-func NewAssertion(t T) *testifyassert.Assertions {
-	return testifyassert.New(myT{T: t})
+type Assertions struct {
+	testifyassert.Assertions
+}
+
+func (assert *Assertions) EqualIntValue(exp Value, actual Value) (b bool) {
+	if !assert.Equalf(exp.Version, actual.Version, "versions not same") {
+		return
+	}
+	if !assert.Equalf(exp.InternalVersion, actual.InternalVersion, "internal versions not same") {
+		return
+	}
+	if !assert.Equal(exp.Flag, actual.Flag, "flags not same") {
+		return
+	}
+	expInt, err := exp.Int()
+	if !assert.NoError(err) {
+		return
+	}
+	actualInt, err := actual.Int()
+	if !assert.NoError(err) {
+		return
+	}
+	if !assert.Equalf(expInt, actualInt, "int values not same") {
+		return
+	}
+	return true
+}
+
+func NewAssertion(t T) *Assertions {
+	var mt myT
+	if vt, ok := t.(myT); !ok {
+		mt = myT{T: t}
+	} else {
+		mt = vt
+	}
+	return &Assertions{Assertions: *testifyassert.New(mt)}
 }
