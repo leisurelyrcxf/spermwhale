@@ -102,12 +102,12 @@ func TestTxnSnapshotReadVisibilityWaitWhenReadDirty(t *testing.T) {
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
 		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
-func TestTxnSnapshotReadVisibilityRelativeMinAllowedSnapshotVersion(t *testing.T) {
+func TestTxnSnapshotReadVisibilityRelative(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnSnapshotReadVisibility(ctx, testCase, false, true)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).Run()
 }
-func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyRelativeMinAllowedSnapshotVersion(t *testing.T) {
+func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyRelative(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnSnapshotReadVisibility(ctx, testCase, false, true)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
@@ -121,6 +121,17 @@ func TestTxnSnapshotReadVisibilityExplicitSnapshotVersion(t *testing.T) {
 func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyExplicitSnapshotVersion(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnSnapshotReadVisibility(ctx, testCase, true, false)
+	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
+		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
+}
+func TestTxnSnapshotReadVisibilityExplicitSnapshotVersionRelative(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+		return testTxnSnapshotReadVisibility(ctx, testCase, true, true)
+	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).Run()
+}
+func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyExplicitSnapshotVersionRelative(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+		return testTxnSnapshotReadVisibility(ctx, testCase, true, true)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
 		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
@@ -422,17 +433,37 @@ func testTxnSnapshotReadInteractiveWriteIndex(ctx context.Context, ts *TestCase)
 	return true
 }
 
-func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSnapshotVersion bool, relativeMinAllowedSnapshotVersion bool) (b bool) {
+func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSnapshotVersion bool, relativeVersion bool) (b bool) {
 	const (
-		key                            = "kkk"
-		initialValue                   = 101
-		delta                          = 6
-		relativeMinAllowedSnapshotDiff = time.Millisecond * 100
+		key          = "kkk"
+		initialValue = 101
+		//delta        = 6
+		versionDiff = time.Millisecond * 100
 	)
+
 	sc := ts.scs[0]
 	var (
 		firstWrittenTxnId types.TxnId
 		firstKeyWritten   = make(chan struct{})
+
+		logFirstWrittenTxnIdOnce sync.Once
+		logFirstWrittenTxnId     = func() {
+			logFirstWrittenTxnIdOnce.Do(func() {
+				if explicitSnapshotVersion {
+					if !relativeVersion {
+						ts.t.Logf("explicit_snapshot_version: %d", firstWrittenTxnId)
+					} else {
+						ts.t.Logf("explicit_relative_snapshot_version: %s", versionDiff)
+					}
+				} else {
+					if !relativeVersion {
+						ts.t.Logf("min_allowed_snapshot_version: %d", firstWrittenTxnId)
+					} else {
+						ts.t.Logf("relative_min_allowed_snapshot_version: %s", versionDiff)
+					}
+				}
+			})
+		}
 	)
 	var wg sync.WaitGroup
 	for i := 0; i < ts.GoRoutineNum; i++ {
@@ -450,18 +481,23 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 				}
 			} else {
 				<-firstKeyWritten
+				logFirstWrittenTxnId()
 				var opt = types.NewTxnOption(ts.ReadOnlyTxnType)
 				if explicitSnapshotVersion {
-					glog.V(60).Infof("explicitSnapshotVersion: %d", firstWrittenTxnId)
-					opt = opt.WithSnapshotVersion(firstWrittenTxnId.Version())
+					if !relativeVersion {
+						opt = opt.WithSnapshotVersion(firstWrittenTxnId.Version())
+					} else {
+						opt = opt.WithRelativeSnapshotVersion(uint64(versionDiff))
+						assert.Must(!opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.IsRelativeSnapshotVersion() && opt.SnapshotReadOption.IsExplicitSnapshotVersion())
+						time.Sleep(time.Duration(float64(versionDiff) * 1.01))
+					}
 				} else {
-					if !relativeMinAllowedSnapshotVersion {
-						glog.V(60).Infof("minAllowedSnapshotVersion: %d", firstWrittenTxnId)
+					if !relativeVersion {
 						opt = opt.WithSnapshotReadMinAllowedSnapshotVersion(firstWrittenTxnId.Version())
 					} else {
-						glog.V(60).Infof("relative_minAllowedSnapshotVersion: %s", relativeMinAllowedSnapshotDiff)
-						opt = opt.WithSnapshotReadRelativeMinAllowedSnapshotVersion(uint64(relativeMinAllowedSnapshotDiff))
-						time.Sleep(time.Duration(float64(relativeMinAllowedSnapshotDiff) * 1.01))
+						opt = opt.WithSnapshotReadRelativeMinAllowedSnapshotVersion(uint64(versionDiff))
+						assert.Must(opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.IsRelativeMinAllowedSnapshotVersion() && !opt.SnapshotReadOption.IsExplicitSnapshotVersion())
+						time.Sleep(time.Duration(float64(versionDiff) * 1.01))
 					}
 				}
 				ts.True(ts.DoTransactionOfOption(ctx, goRoutineIdx, sc, opt, func(ctx context.Context, txn types.Txn) error {
@@ -476,9 +512,16 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 					ts.Equal(initialValue, v1)
 					ts.Equal(firstWrittenTxnId.Version(), r1.Version)
 					if explicitSnapshotVersion {
-						ts.Equal(firstWrittenTxnId.Version(), txn.GetSnapshotReadOption().SnapshotVersion)
+						if !relativeVersion {
+							ts.Equal(firstWrittenTxnId.Version(), txn.GetSnapshotReadOption().SnapshotVersion)
+						} else {
+							ts.Equal(txn.GetId().Version()-uint64(versionDiff), txn.GetSnapshotReadOption().SnapshotVersion)
+						}
 					} else {
 						ts.Equal(txn.GetId().Version(), txn.GetSnapshotReadOption().SnapshotVersion)
+						if relativeVersion {
+							ts.Equal(txn.GetId().Version()-uint64(versionDiff), txn.GetSnapshotReadOption().MinAllowedSnapshotVersion)
+						}
 					}
 					return nil
 				}))

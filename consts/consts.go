@@ -50,8 +50,9 @@ const (
 
 const (
 	TxnSnapshotReadOptionBitMaskExplicitSnapshotVersion           = 1
-	TxnSnapshotReadOptionBitMaskDontAllowVersionBack              = 1 << 1
+	TxnSnapshotReadOptionBitMaskRelativeSnapshotVersion           = 1 << 1
 	TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion = 1 << 2
+	TxnSnapshotReadOptionBitMaskDontAllowVersionBack              = 1 << 3
 )
 
 const (
