@@ -134,10 +134,10 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 func (txn *Txn) BeginSnapshotReadTxn(opt types.TxnSnapshotReadOption) error {
 	if opt.IsExplicitSnapshotVersion() {
 		if opt.SnapshotVersion == 0 {
-			return errors.Annotatef(errors.ErrInvalidExplicitSnapshotVersion, "opt.SnapshotVersion == 0")
+			return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "opt.SnapshotVersion == 0")
 		}
 		if opt.SnapshotVersion > txn.ID.Version() {
-			return errors.Annotatef(errors.ErrInvalidExplicitSnapshotVersion, "opt.SnapshotVersion > txn.ID.Version()")
+			return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "opt.SnapshotVersion > txn.ID.Version()")
 		}
 	}
 	if (opt.SnapshotVersion != 0 && opt.SnapshotVersion < opt.MinAllowedSnapshotVersion) ||
@@ -145,6 +145,12 @@ func (txn *Txn) BeginSnapshotReadTxn(opt types.TxnSnapshotReadOption) error {
 		return errors.ErrReadVersionViolatesMinAllowedSnapshot
 	}
 	txn.TxnSnapshotReadOption = opt
+	if opt.IsRelativeMinAllowedSnapshotVersion() {
+		if txn.ID.Version() < opt.MinAllowedSnapshotVersion {
+			return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "opt.IsRelativeMinAllowedSnapshotVersion() && txn.ID.Version() < opt.MinAllowedSnapshotVersion ")
+		}
+		txn.MinAllowedSnapshotVersion = txn.ID.Version() - opt.MinAllowedSnapshotVersion
+	}
 	if !txn.TxnSnapshotReadOption.IsEmpty() && bool(glog.V(60)) {
 		glog.Infof("[Txn::BeginSnapshotReadTxn] txn-%d snapshot read option initialized to %s", txn.ID, txn.TxnSnapshotReadOption)
 	}

@@ -285,6 +285,10 @@ func (opt TxnSnapshotReadOption) AllowsVersionBack() bool {
 	return opt.flag&consts.TxnSnapshotReadOptionBitMaskDontAllowVersionBack == 0
 }
 
+func (opt TxnSnapshotReadOption) IsRelativeMinAllowedSnapshotVersion() bool {
+	return opt.flag&consts.TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion == consts.TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion
+}
+
 func (opt TxnSnapshotReadOption) IsEmpty() bool {
 	return opt.SnapshotVersion == 0 && opt.MinAllowedSnapshotVersion == 0 && opt.flag == 0
 }
@@ -346,6 +350,13 @@ func (opt TxnOption) WithSnapshotVersion(snapshotVersion uint64) TxnOption {
 func (opt TxnOption) WithSnapshotReadMinAllowedSnapshotVersion(minAllowedSnapshotVersion uint64) TxnOption {
 	assert.Must(opt.IsSnapshotRead())
 	opt.SnapshotReadOption.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
+	return opt
+}
+
+func (opt TxnOption) WithSnapshotReadRelativeMinAllowedSnapshotVersion(relativeMinAllowedSnapshotVersionDiff uint64) TxnOption {
+	assert.Must(opt.IsSnapshotRead())
+	opt.SnapshotReadOption.MinAllowedSnapshotVersion = relativeMinAllowedSnapshotVersionDiff
+	opt.SnapshotReadOption.flag |= consts.TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion
 	return opt
 }
 

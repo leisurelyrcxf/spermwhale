@@ -93,23 +93,34 @@ func TestTxnSnapshotReadInteractiveWriteIndexWaitWhenReadDirty(t *testing.T) {
 
 func TestTxnSnapshotReadVisibility(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnSnapshotReadVisibility(ctx, testCase, false)
+		return testTxnSnapshotReadVisibility(ctx, testCase, false, false)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).Run()
 }
 func TestTxnSnapshotReadVisibilityWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnSnapshotReadVisibility(ctx, testCase, false)
+		return testTxnSnapshotReadVisibility(ctx, testCase, false, false)
+	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
+		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
+}
+func TestTxnSnapshotReadVisibilityRelativeMinAllowedSnapshotVersion(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+		return testTxnSnapshotReadVisibility(ctx, testCase, false, true)
+	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).Run()
+}
+func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyRelativeMinAllowedSnapshotVersion(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+		return testTxnSnapshotReadVisibility(ctx, testCase, false, true)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
 		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
 func TestTxnSnapshotReadVisibilityExplicitSnapshotVersion(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnSnapshotReadVisibility(ctx, testCase, true)
+		return testTxnSnapshotReadVisibility(ctx, testCase, true, false)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).Run()
 }
 func TestTxnSnapshotReadVisibilityWaitWhenReadDirtyExplicitSnapshotVersion(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
-		return testTxnSnapshotReadVisibility(ctx, testCase, true)
+		return testTxnSnapshotReadVisibility(ctx, testCase, true, false)
 	}).SetGoRoutineNum(1000).SetTxnNumPerGoRoutine(1).
 		AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).Run()
 }
@@ -411,11 +422,12 @@ func testTxnSnapshotReadInteractiveWriteIndex(ctx context.Context, ts *TestCase)
 	return true
 }
 
-func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSnapshotVersion bool) (b bool) {
+func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSnapshotVersion bool, relativeMinAllowedSnapshotVersion bool) (b bool) {
 	const (
-		key          = "kkk"
-		initialValue = 101
-		delta        = 6
+		key                            = "kkk"
+		initialValue                   = 101
+		delta                          = 6
+		relativeMinAllowedSnapshotDiff = time.Millisecond * 100
 	)
 	sc := ts.scs[0]
 	var (
@@ -435,11 +447,6 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 				})) {
 					firstWrittenTxnId = ts.executedTxnsPerGoRoutine[goRoutineIdx][len(ts.executedTxnsPerGoRoutine[goRoutineIdx])-1].GetId()
 					close(firstKeyWritten)
-
-					//ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-					//	glog.V(60).Infof("secondWrittenTxnId: %d", txn.GetId().Version())
-					//	return txn.Set(ctx, key, types.NewIntValue(initialValue+delta).V)
-					//})
 				}
 			} else {
 				<-firstKeyWritten
@@ -448,8 +455,14 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 					glog.V(60).Infof("explicitSnapshotVersion: %d", firstWrittenTxnId)
 					opt = opt.WithSnapshotVersion(firstWrittenTxnId.Version())
 				} else {
-					glog.V(60).Infof("minAllowedSnapshotVersion: %d", firstWrittenTxnId)
-					opt = opt.WithSnapshotReadMinAllowedSnapshotVersion(firstWrittenTxnId.Version())
+					if !relativeMinAllowedSnapshotVersion {
+						glog.V(60).Infof("minAllowedSnapshotVersion: %d", firstWrittenTxnId)
+						opt = opt.WithSnapshotReadMinAllowedSnapshotVersion(firstWrittenTxnId.Version())
+					} else {
+						glog.V(60).Infof("relative_minAllowedSnapshotVersion: %s", relativeMinAllowedSnapshotDiff)
+						opt = opt.WithSnapshotReadRelativeMinAllowedSnapshotVersion(uint64(relativeMinAllowedSnapshotDiff))
+						time.Sleep(time.Duration(float64(relativeMinAllowedSnapshotDiff) * 1.01))
+					}
 				}
 				ts.True(ts.DoTransactionOfOption(ctx, goRoutineIdx, sc, opt, func(ctx context.Context, txn types.Txn) error {
 					r1, err := txn.Get(ctx, key)

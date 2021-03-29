@@ -12,7 +12,7 @@ const (
 
 	ErrCodeSnapshotReadRetriedTooManyTimes                      = 19
 	ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion = 20
-	ErrCodeInvalidExplicitSnapshotVersion                       = 21
+	ErrCodeInvalidTxnSnapshotReadOption                         = 21
 
 	ErrCodeKeyOrVersionNotExists = 27
 	ErrCodeShardsNotReady        = 28
