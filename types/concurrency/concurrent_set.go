@@ -1,6 +1,8 @@
 package concurrency
 
-import "sync"
+import (
+	"sync"
+)
 
 type ConcurrentSet struct {
 	sync.RWMutex
@@ -23,6 +25,13 @@ func (s *ConcurrentSet) Insert(key string) (newLength int) {
 
 	s.set[key] = struct{}{}
 	return len(s.set)
+}
+
+func (s *ConcurrentSet) Remove(key string) {
+	s.Lock()
+	defer s.Unlock()
+
+	delete(s.set, key)
 }
 
 func (s *ConcurrentSet) Contains(key string) bool {

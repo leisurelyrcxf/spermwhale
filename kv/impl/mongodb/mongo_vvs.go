@@ -35,19 +35,19 @@ func newMongoVVS(cli *mongo.Client) MongoVVS {
 }
 
 func pkEqualOfKey(key string, version uint64) bson.D {
-	return bson.D{{attrId, bson.D{
+	return bson.D{{Key: attrId, Value: bson.D{
 		{Key: "$eq", Value: bson.D{
-			{keyAttrIdKey, key},
-			{keyAttrIdVersion, version}},
+			{Key: keyAttrIdKey, Value: key},
+			{Key: keyAttrIdVersion, Value: version}},
 		}},
 	}}
 }
 
 func encodeValueOfKey(val kv.Value) bson.D {
 	return bson.D{
-		{attrFlag, val.Flag},
-		{keyAttrInternalVersion, val.InternalVersion},
-		{attrValue, val.V},
+		{Key: attrFlag, Value: val.Flag},
+		{Key: keyAttrInternalVersion, Value: val.InternalVersion},
+		{Key: attrValue, Value: val.V},
 	}
 }
 
@@ -62,12 +62,12 @@ func (m MongoVVS) GetKey(ctx context.Context, key string, version uint64) (kv.Va
 
 func (m MongoVVS) FindMaxBelowOfKey(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
 	gotKey, value, version, err := m.getOne(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOne(ctx, bson.D{
-		{attrId, bson.D{
-			{"$lte", bson.D{
-				{keyAttrIdKey, key},
-				{keyAttrIdVersion, upperVersion}},
+		{Key: attrId, Value: bson.D{
+			{Key: "$lte", Value: bson.D{
+				{Key: keyAttrIdKey, Value: key},
+				{Key: keyAttrIdVersion, Value: upperVersion}},
 			}},
-		}}, options.FindOne().SetSort(bson.D{{attrId, -1}})))
+		}}, options.FindOne().SetSort(bson.D{{Key: attrId, Value: -1}})))
 	if err != nil {
 		return kv.EmptyValue, 0, err
 	}
@@ -91,7 +91,9 @@ func (m MongoVVS) UpsertKey(ctx context.Context, key string, version uint64, val
 
 func (m MongoVVS) UpdateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOneAndUpdate(ctx, pkEqualOfKey(key, version),
-		bson.D{{"$set", bson.D{{attrFlag, newFlag}}}}).Err(), mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: attrFlag, Value: newFlag}},
+		}}).Err(), mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 }
 
 func (m MongoVVS) RemoveKey(ctx context.Context, key string, version uint64) error {

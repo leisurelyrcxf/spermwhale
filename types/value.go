@@ -41,7 +41,11 @@ func (m Meta) IsDirty() bool {
 }
 
 func (m Meta) IsFirstWriteOfKey() bool {
-	return m.InternalVersion == TxnInternalVersionMin
+	return m.InternalVersion == TxnInternalVersionMin // For txn record, InternalVersion is always 0
+}
+
+func (m Meta) IsWriteOfKey() bool {
+	return m.InternalVersion >= TxnInternalVersionMin // For txn record, InternalVersion is always 0
 }
 
 type Value struct {

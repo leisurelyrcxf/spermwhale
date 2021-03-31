@@ -179,4 +179,8 @@ var (
 		Code: consts.ErrCodeInvalidTxnSnapshotReadOption,
 		Msg:  "invalid TxnSnapshotReadOption",
 	}
+	ErrWriteKeyAfterTabletTxnRollbacked = &Error{
+		Code: consts.ErrCodeWriteKeyAfterTabletTxnRollbacked,
+		Msg:  "write key after tablet transaction rollbacked",
+	}
 )

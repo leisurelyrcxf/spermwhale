@@ -28,7 +28,7 @@ type ExecuteInfo struct {
 type ExecuteInfos struct {
 	infos []ExecuteInfo
 
-	*testifyassert.Assertions
+	*types.Assertions
 	t *testing.T
 }
 

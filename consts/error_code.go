@@ -14,6 +14,8 @@ const (
 	ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion = 20
 	ErrCodeInvalidTxnSnapshotReadOption                         = 21
 
+	ErrCodeWriteKeyAfterTabletTxnRollbacked = 23
+
 	ErrCodeKeyOrVersionNotExists = 27
 	ErrCodeShardsNotReady        = 28
 	ErrCodeEmptyKey              = 29

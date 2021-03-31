@@ -5,6 +5,8 @@ package assert
 import (
 	"fmt"
 	"sort"
+
+	"github.com/golang/glog"
 )
 
 func Must(b bool) {
@@ -12,6 +14,13 @@ func Must(b bool) {
 		return
 	}
 	panic("assertion failed")
+}
+
+func Mustf(b bool, format string, args ...interface{}) {
+	if b {
+		return
+	}
+	glog.Fatalf(format, args...)
 }
 
 func MustEqualStrings(s1, s2 []string) {

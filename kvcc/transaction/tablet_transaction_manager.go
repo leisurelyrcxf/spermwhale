@@ -12,14 +12,13 @@ import (
 )
 
 const (
-	EstimatedMaxQPS        = 1000000
-	RemoveTxnDelay         = time.Millisecond * 200
-	EstimateMaxBufferedTxn = int(EstimatedMaxQPS * (float64(RemoveTxnDelay) / float64(time.Second)))
-	TimerPartitionNum      = 8
-	TimerPartitionChSize   = EstimateMaxBufferedTxn / TimerPartitionNum
+	EstimatedMaxQPS                = 1000000
+	TimerPartitionNum              = 8
+	AdditionalRemoveTxnDelayPeriod = time.Second * 3
 )
 
 type Manager struct {
+	removeTxnDelay                        time.Duration
 	writeTxns                             concurrency.ConcurrentTxnMap
 	readModifyWriteQueues                 concurrency.ConcurrentMap
 	maxReadModifyWriteQueueCapacityPerKey int
@@ -28,8 +27,9 @@ type Manager struct {
 	timer                                 scheduler.ConcurrentBasicTimer
 }
 
-func NewManager(maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
+func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
 	tm := &Manager{
+		removeTxnDelay:                        cfg.StaleWriteThreshold + AdditionalRemoveTxnDelayPeriod,
 		maxReadModifyWriteQueueCapacityPerKey: maxReadModifyWriteQueueCapacityPerKey,
 		readModifyWriteQueueMaxReadersRatio:   readModifyWriteQueueMaxReadersRatio,
 		readModifyWriteReaderMaxQueuedAge:     readModifyWriteReaderMaxQueuedAge,
@@ -37,18 +37,15 @@ func NewManager(maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueM
 
 	tm.writeTxns.Initialize(64)
 	tm.readModifyWriteQueues.Initialize(64)
-	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(TimerPartitionChSize, 100))
+	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(tm.estimatedTimerPartitionChSize(), 100))
 
 	tm.timer.Start()
 	return tm
 }
 
-func (tm *Manager) GetTxnState(txnId types.TxnId) types.TxnState {
-	txn := tm.getTxn(txnId)
-	if txn == nil {
-		return types.TxnStateInvalid
-	}
-	return txn.GetState()
+func (tm *Manager) estimatedTimerPartitionChSize() int {
+	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.removeTxnDelay) / float64(time.Second)))
+	return estimateMaxBufferedTxn / TimerPartitionNum
 }
 
 func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
@@ -65,60 +62,46 @@ func (tm *Manager) SignalReadModifyWriteKeyEvent(readModifyWriteTxnId types.TxnI
 	pq.(*readModifyWriteQueue).notifyKeyEvent(readModifyWriteTxnId, event.Type)
 }
 
-func (tm *Manager) AddWriteTransactionWrittenKey(id types.TxnId) {
-	tm.writeTxns.GetLazy(id, func() interface{} {
-		return newTransaction(id)
-	}).(*transaction).addWrittenKey()
+func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted bool, txn *Transaction) {
+	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
+		return newTransaction(id, db, func(transaction *Transaction) {
+			tm.removeTxn(transaction)
+		})
+	})
+	return inserted, obj.(*Transaction)
 }
 
 func (tm *Manager) RegisterKeyEventWaiter(waitForWriteTxnId types.TxnId, key string) (*KeyEventWaiter, KeyEvent, error) {
-	waitFor := tm.getTxn(waitForWriteTxnId)
-	if waitFor == nil {
+	waitFor, err := tm.GetTxn(waitForWriteTxnId)
+	if err != nil {
 		assert.Must(false) // TODO remove in product
-		return nil, InvalidKeyEvent, errors.Annotatef(errors.ErrTabletWriteTransactionNotFound, "key: %s", key)
+		return nil, InvalidKeyEvent, errors.Annotatef(err, "key: %s", key)
 	}
 	return waitFor.registerKeyEventWaiter(key)
 }
 
-func (tm *Manager) SignalKeyEvent(writeTxnId types.TxnId, event KeyEvent, checkDone bool) {
-	txn := tm.getTxn(writeTxnId)
-	if txn == nil {
-		return
-	}
-	if txn.signalKeyEvent(event, checkDone) {
-		tm.removeTxn(txn)
-	}
-}
-
-func (tm *Manager) DoneWrittenKeyWriteIntentCleared(txnId types.TxnId, key string) {
-	txn := tm.getTxn(txnId)
-	if txn == nil {
-		return
-	}
-	if txn.doneKey(key) {
-		tm.removeTxn(txn)
-	}
-}
-
-func (tm *Manager) getTxn(txnId types.TxnId) *transaction {
+func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 	i, ok := tm.writeTxns.Get(txnId)
 	if !ok {
-		return nil
+		return nil, errors.Annotatef(errors.ErrTabletWriteTransactionNotFound, "txn-%d", txnId)
 	}
-	return i.(*transaction)
+	return i.(*Transaction), nil
 }
 
-func (tm *Manager) removeTxn(txn *transaction) {
+func (tm *Manager) removeTxn(txn *Transaction) {
 	// TODO remove this in product
-	assert.Must(txn.GetState().IsTerminated())
+
+	txn.Lock()
+	assert.Must(txn.IsTerminated())
 	waiterCount, waiterKeyCount := txn.getWaiterCounts()
 	assert.Must(waiterCount == 0)
-	assert.Must(waiterKeyCount <= int(txn.writtenKeyCount.Get()))
+	assert.Must(waiterKeyCount <= txn.WrittenKeys.GetAddedKeyCountUnsafe())
+	txn.Unlock()
 
 	tm.timer.Schedule(
 		scheduler.NewTimerTask(
-			time.Now().Add(RemoveTxnDelay), func() {
-				tm.writeTxns.Del(txn.id)
+			time.Now().Add(tm.removeTxnDelay), func() {
+				tm.writeTxns.Del(txn.ID)
 			},
 		),
 	)

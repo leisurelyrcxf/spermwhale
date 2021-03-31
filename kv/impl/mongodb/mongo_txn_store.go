@@ -30,16 +30,16 @@ func newMongoTxnStore(cli *mongo.Client) MTxnStore {
 
 func pkEqualOfTxnRecord(version uint64) bson.D {
 	return bson.D{
-		{attrId, bson.D{
-			{"$eq", version}},
+		{Key: attrId, Value: bson.D{
+			{Key: "$eq", Value: version}},
 		}}
 }
 
 func encodeTxnRecord(val kv.Value) bson.D {
 	assert.Must(val.InternalVersion == 0)
 	return bson.D{
-		{attrFlag, val.Flag},
-		{attrValue, val.V},
+		{Key: attrFlag, Value: val.Flag},
+		{Key: attrValue, Value: val.V},
 	}
 }
 

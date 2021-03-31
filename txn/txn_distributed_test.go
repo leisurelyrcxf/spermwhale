@@ -28,6 +28,9 @@ func TestDistributedTxnReadConsistencySnapshotRead(t *testing.T) {
 func TestDistributedTxnReadConsistencyDeadlock(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).Run()
 }
+func TestDistributedTxnReadConsistencyDeadlockReadModifyWriteWaitWhenReadDirty(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetLogLevel(10).Run()
+}
 
 func TestDistributedTxnWriteSkew(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnWriteSkew).Run()
@@ -261,7 +264,7 @@ func testDistributedTxnReadConsistencyDeadlock(ctx context.Context, ts *TestCase
 			start := time.Now()
 			for round := 0; round < ts.TxnNumPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
+					ts.True(ts.DoReadOnlyTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						key1Val, err := txn.Get(ctx, key1)
 						if err != nil {
 							return err

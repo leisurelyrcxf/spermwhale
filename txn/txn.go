@@ -160,6 +160,10 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	txn.Lock()
 	defer txn.Unlock()
 
+	if txn.TxnState != types.TxnStateUncommitted {
+		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+	}
+
 	if txn.IsSnapshotRead() {
 		return txn.getSnapshot(ctx, key)
 	}
@@ -167,9 +171,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 }
 
 func (txn *Txn) getLatest(ctx context.Context, key string) (_ types.Value, err error) {
-	if txn.IsSnapshotRead() {
-		return types.EmptyValue, errors.Annotatef(errors.ErrNotSupported, "call Txn::getLatest() with snapshot_read txn type")
-	}
+	assert.Must(!txn.IsSnapshotRead())
 	defer func() {
 		if err != nil {
 			txn.err = err
@@ -279,6 +281,10 @@ func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.Value, error) 
 	txn.Lock()
 	defer txn.Unlock()
 
+	if txn.TxnState != types.TxnStateUncommitted {
+		return nil, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+	}
+
 	if !txn.IsSnapshotRead() {
 		values := make([]types.Value, 0, len(keys))
 		for _, key := range keys {
@@ -300,11 +306,6 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key))
 		}
-		//if txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchWrittenKeys(keysWithWriteIntent) {
-		//	txn.State = types.TxnStateCommitted
-		//	txn.onCommitted(callerTxn.ID, "[CheckCommitState] txn.GetWrittenKeyCount() == len(keysWithWriteIntent) && txn.MatchWrittenKeys(keysWithWriteIntent)") // help commit since original txn coordinator may have gone
-		//	return true, false
-		//}
 
 		var (
 			txnWrittenKeys = txn.GetWrittenKey2LastVersion()
@@ -380,14 +381,13 @@ func (txn *Txn) Set(ctx context.Context, key string, val []byte) error {
 	txn.Lock()
 	defer txn.Unlock()
 
+	if txn.TxnState != types.TxnStateUncommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+	}
 	return txn.set(ctx, key, val)
 }
 
 func (txn *Txn) set(ctx context.Context, key string, val []byte) error {
-	if txn.TxnState != types.TxnStateUncommitted {
-		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
-	}
-
 	if txn.preventFutureWriteKeys.Contains(key) {
 		txn.err = errors.Annotatef(errors.ErrWriteReadConflict, "a transaction with higher timestamp has read the key '%s'", key)
 		_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Set: %v", txn.err)
@@ -421,6 +421,10 @@ func (txn *Txn) MSet(ctx context.Context, keys []string, values [][]byte) error 
 
 	txn.Lock()
 	defer txn.Unlock()
+
+	if txn.TxnState != types.TxnStateUncommitted {
+		return errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+	}
 
 	for idx, key := range keys {
 		if err := txn.set(ctx, key, values[idx]); err != nil {
