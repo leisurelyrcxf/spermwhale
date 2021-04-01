@@ -256,7 +256,7 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 					return false
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
-				if !assert.EqualIntValue(readVal, txns[lastWriteTxnIndex].WriteValues[key]) {
+				if !assert.EqualValue(readVal, txns[lastWriteTxnIndex].WriteValues[key]) {
 					return false
 				}
 			}

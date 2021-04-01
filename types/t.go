@@ -60,6 +60,22 @@ func (assert *Assertions) EqualIntValue(exp Value, actual Value) (b bool) {
 	return true
 }
 
+func (assert *Assertions) EqualValue(exp Value, actual Value) (b bool) {
+	if !assert.Equalf(exp.Version, actual.Version, "versions not same") {
+		return
+	}
+	if !assert.Equalf(exp.InternalVersion, actual.InternalVersion, "internal versions not same") {
+		return
+	}
+	if !assert.Equal(exp.Flag, actual.Flag, "flags not same") {
+		return
+	}
+	if !assert.Equalf(exp.V, actual.V, "V not the same") {
+		return
+	}
+	return true
+}
+
 func NewAssertion(t T) *Assertions {
 	var mt myT
 	if vt, ok := t.(myT); !ok {

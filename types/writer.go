@@ -33,8 +33,6 @@ func (w *Writer) Unlock() {
 	w.OnUnlocked()
 }
 
-func void() {}
-
 func (w *Writer) Wait() {
 	if w != nil && w.writing.Get() {
 		w.rw.RLock()

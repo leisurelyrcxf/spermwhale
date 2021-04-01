@@ -21,7 +21,8 @@ type Transaction struct {
 
 	ID types.TxnId
 	types.TxnState
-	WrittenKeys concurrency.Future
+
+	writtenKeys concurrency.Future
 
 	db types.KV
 
@@ -78,15 +79,15 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 		}
 		t.Lock()
 	}
-	checkDone = err == nil && !opt.IsWriteByDifferentTransaction() && !t.WrittenKeys.Done
+	checkDone = err == nil && !opt.IsWriteByDifferentTransaction()
 	if opt.IsClearWriteIntent() {
 		if err == nil && glog.V(60) {
 			glog.Infof("txn-%d clear write intent of key '%s' cleared, cost: %s", txnId, key, bench.Elapsed())
 		}
 		if checkDone {
 			assert.Must(isWrittenKey)
-			if doneOnce = t.WrittenKeys.DoneUnsafe(key); doneOnce && bool(glog.V(60)) {
-				glog.Infof("[KVCC::clearOrRemoveKey] txn-%d commit-cleared (all %d written keys include '%s' have been cleared)", txnId, t.WrittenKeys.GetAddedKeyCountUnsafe(), key)
+			if doneOnce = t.writtenKeys.DoneOnceUnsafe(key); doneOnce && bool(glog.V(60)) {
+				glog.Infof("[KVCC::clearOrRemoveKey] txn-%d commit-cleared (all %d written keys include '%s' have been cleared)", txnId, t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 			}
 		}
 	} else {
@@ -95,7 +96,7 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 		}
 		if doneOnce = t.signalKeyEventUnsafe(NewKeyEvent(key,
 			GetKeyEventTypeRemoveVersion(err == nil)), checkDone); doneOnce && bool(glog.V(60)) {
-			glog.Infof("[KVCC::clearOrRemoveKey] txn-%d rollbacked (all %d written keys include '%s' have been removed)", txnId, t.WrittenKeys.GetAddedKeyCountUnsafe(), key)
+			glog.Infof("[KVCC::clearOrRemoveKey] txn-%d rollbacked (all %d written keys include '%s' have been removed)", txnId, t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		}
 	}
 	t.Unlock()
@@ -136,8 +137,8 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 	}
 
 	txnKey := types.TxnId(val.Version).String()
-	assert.Must(!t.WrittenKeys.Done)
-	inserted, keyDone := t.WrittenKeys.AddUnsafe(txnKey)
+	assert.Must(!t.writtenKeys.Done)
+	inserted, keyDone := t.writtenKeys.AddUnsafe(txnKey)
 	assert.Must(!keyDone)
 	if inserted {
 		glog.V(70).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", txnKey, val.Version)
@@ -175,8 +176,10 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 
 	t.Lock()
 	var doneOnce bool
-	if err == nil && !opt.IsWriteByDifferentTransaction() && !t.WrittenKeys.Done {
-		doneOnce = t.WrittenKeys.DoneUnsafe(types.TxnId(val.Version).String())
+	if err == nil && !opt.IsWriteByDifferentTransaction() {
+		if doneOnce = t.writtenKeys.DoneOnceUnsafe(types.TxnId(val.Version).String()); doneOnce {
+			t.TxnState = types.TxnStateRollbacked
+		}
 	}
 	t.Unlock()
 
@@ -184,6 +187,14 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 		t.GC()
 	}
 	return err
+}
+
+func (t *Transaction) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) {
+	return t.writtenKeys.AddUnsafe(key)
+}
+
+func (t *Transaction) Done() bool {
+	return t.writtenKeys.Done
 }
 
 func (t *Transaction) GC() {
@@ -232,7 +243,7 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent, checkDone bool) (done
 	if t.TxnState == types.TxnStateCommitted || t.TxnState == types.TxnStateRollbacked {
 		return false
 	}
-	assert.Must(!t.WrittenKeys.Done)
+	assert.Must(!t.writtenKeys.Done)
 	switch event.Type {
 	case KeyEventTypeClearWriteIntent:
 		t.TxnState = types.TxnStateCommitted
@@ -248,7 +259,7 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent, checkDone bool) (done
 			t.rollbackedKey2Success = make(map[string]bool)
 		}
 		t.rollbackedKey2Success[event.Key] = true
-		if checkDone && t.WrittenKeys.DoneUnsafe(event.Key) {
+		if checkDone && t.writtenKeys.DoneUnsafe(event.Key) {
 			t.TxnState = types.TxnStateRollbacked
 			doneOnce = true
 		}

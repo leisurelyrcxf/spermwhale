@@ -12,6 +12,10 @@ func NewFuture() *Future {
 	return &Future{}
 }
 
+func (s *Future) GetKeyCountUnsafe() int {
+	return len(s.keys)
+}
+
 func (s *Future) GetAddedKeyCountUnsafe() int {
 	return s.addedKeyCount
 }
@@ -28,6 +32,13 @@ func (s *Future) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) {
 	return true, false
 }
 
+func (s *Future) DoneOnceUnsafe(key string) (doneOnce bool) {
+	if s.Done {
+		return false
+	}
+	return s.DoneUnsafe(key)
+}
+
 func (s *Future) DoneUnsafe(key string) (futureDone bool) {
 	if doneKey, ok := s.keys[key]; ok {
 		if !doneKey {
@@ -41,7 +52,7 @@ func (s *Future) DoneUnsafe(key string) (futureDone bool) {
 	return s.Done
 }
 
-func (s *Future) DoneUnsafeEx(key string) (doneOnce, done bool) {
+func (s *Future) doneUnsafeEx(key string) (doneOnce, done bool) {
 	oldFlyingKeyCount := s.flyingKeyCount
 	done = s.DoneUnsafe(key)
 	return s.flyingKeyCount < oldFlyingKeyCount, done

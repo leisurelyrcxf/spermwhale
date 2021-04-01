@@ -95,7 +95,7 @@ func (tm *Manager) removeTxn(txn *Transaction) {
 	assert.Must(txn.IsTerminated())
 	waiterCount, waiterKeyCount := txn.getWaiterCounts()
 	assert.Must(waiterCount == 0)
-	assert.Must(waiterKeyCount <= txn.WrittenKeys.GetAddedKeyCountUnsafe())
+	assert.Must(waiterKeyCount <= txn.writtenKeys.GetKeyCountUnsafe())
 	txn.Unlock()
 
 	tm.timer.Schedule(

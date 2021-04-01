@@ -58,7 +58,7 @@ func (txn *TestTxn) Done(key string) bool {
 	//if txn.IsTerminated() {
 	//	return true
 	//}
-	doneOnce, done := txn.Future.DoneUnsafeEx(key)
+	doneOnce, done := txn.Future.doneUnsafeEx(key)
 	if done {
 		for key, done := range txn.Future.keys {
 			assert.Mustf(done, "'%s' not done yet", key)

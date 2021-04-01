@@ -21,12 +21,13 @@ type KeyInfo struct {
 	//maxWriterId types.TxnId
 	maxBuffered, maxBufferedLower int
 
-	writers redblacktree.Tree
+	writers                 redblacktree.Tree
+	maxRemovedWriterVersion uint64
 	//writingWriters redblacktree.Tree
 }
 
 func NewKeyInfo(key string) *KeyInfo {
-	info := &KeyInfo{
+	return &KeyInfo{
 		key:              key,
 		maxBuffered:      consts.DefaultTimestampCacheMaxBufferedWriters,
 		maxBufferedLower: int(float64(consts.DefaultTimestampCacheMaxBufferedWriters) * consts.DefaultTimestampCacheMaxBufferedWritersLowerRatio),
@@ -45,7 +46,6 @@ func NewKeyInfo(key string) *KeyInfo {
 	//	}
 	//	return -1
 	//})
-	return info
 }
 
 func (i *KeyInfo) GetMaxReaderVersion() uint64 {
@@ -60,31 +60,35 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 		return nil, errors.ErrWriteReadConflict
 	}
 
-	//if i.writers.Size()+1 > i.maxBuffered {
-	//	return nil, errors.ErrTimestampCacheWriteQueueFull // TODO changed to wait.
-	//}
+	if i.writers.Size()+1 > i.maxBuffered {
+		return nil, errors.ErrTimestampCacheWriteQueueFull // TODO changed to wait.
+	}
+
+	if writerVersion <= i.maxRemovedWriterVersion {
+		return nil, errors.Annotatef(errors.ErrStaleWrite, "writerVersion <= i.maxRemovedWriterVersion")
+	}
 
 	w := types.NewWriter(writerVersion)
 	w.OnUnlocked = func() {
 		i.mu.Lock()
 		defer i.mu.Unlock()
 
-		//iterator := i.writers.Iterator()
-		//var toRemoveKeys []interface{}
-		//for iterator.Next() && i.writers.Size() > i.maxBufferedLower {
-		//	if k, w := iterator.Key(), iterator.Value().(*types.Writer); !w.IsWriting() {
-		//		toRemoveKeys = append(toRemoveKeys, k)
-		//	} else {
-		//		break
-		//	}
-		//}
-		//for _, k := range toRemoveKeys {
-		//	i.writers.Remove(k)
-		//}
-		//i.writingWriters.Remove(w.Version)
+		iterator := i.writers.Iterator()
+		var toRemoveKeys []interface{}
+		for iterator.Next() && i.writers.Size() > i.maxBufferedLower {
+			if k, w := iterator.Key(), iterator.Value().(*types.Writer); !w.IsWriting() {
+				toRemoveKeys = append(toRemoveKeys, k)
+				i.maxRemovedWriterVersion = w.Version
+			} else {
+				break
+			}
+		}
+		for _, k := range toRemoveKeys {
+			i.writers.Remove(k)
+		}
 	}
 	i.writers.Put(writerVersion, w)
-	glog.V(60).Infof("[TimestampCache][KeyInfo][TryLock] add writer-%d, max reader version: %d", writerVersion, i.maxReaderVersion)
+	glog.V(60).Infof("[TimestampCache][KeyInfo '%s'][TryLock] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
 	//i.writingWriters.Put(writerId.Version(), w)
 	w.Lock()
 	return w, nil
@@ -93,6 +97,7 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxReadVersion uint64, err error) {
 	i.mu.RLock()
 	defer func() {
+		assert.Must(!opt.IsNotUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
 		if !opt.IsNotUpdateTimestampCache() && err == nil {
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		} else {
@@ -100,6 +105,15 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 		}
 		i.mu.RUnlock()
 	}()
+
+	if opt.IsGetExactVersion() {
+		exactNode, found := i.writers.Get(opt.ExactVersion) // max <=
+		if !found {                                         //  all writer id > opt.ReaderVersion or empty
+			return nil, 0, nil
+		}
+		assert.Must(!opt.IsSnapshotRead())
+		return exactNode.(*types.Writer), 0, nil
+	}
 
 	maxBelowOrEqualWriterNode, found := i.writers.Floor(opt.ReaderVersion) // max <=
 	if !found {                                                            //  all writer id > opt.ReaderVersion or empty

@@ -129,18 +129,18 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	if !opt.IsSnapshotRead() {
 		//assert.Must(newReaderId == types.TxnId(opt.ReaderVersion))
 		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); w != nil && w.IsClean() {
-			assert.Must(val.Version <= w.Version)
+			assert.Must(val.Version == w.Version)
 			val = val.WithNoWriteIntent() // TODO not correct if val.Version != w.Version
 		}
 		//assert.Must(w == nil || val.Version == w.Version)
 	} else if w != nil {
 		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); w.IsClean() {
-			assert.Must(val.Version <= w.Version)
+			assert.Must(val.Version == w.Version)
 			val = val.WithNoWriteIntent() // TODO not correct if val.Version != w.Version
-		} else {
-			//assert.Must(val.Version == w.Version)
+		} else if val.IsDirty() {
 			minSnapshotVersionViolated = true
 		}
+		//assert.Must(val.Version == w.Version)
 	} else {
 		assert.Must(!getMaxReadVersion)
 		for i, readerVersion := 0, uint64(0); ; {
@@ -323,22 +323,17 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		glog.V(70).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
-	assert.Must(!txn.WrittenKeys.Done)
-	inserted, keyDone := txn.WrittenKeys.AddUnsafe(key)
+	assert.Must(!txn.Done())
+	inserted, keyDone := txn.AddUnsafe(key)
 	assert.Must(!keyDone)
 	if inserted {
 		glog.V(70).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", key, txnId)
 	}
 
-	// guarantee mutual exclusion with get,
-	// note this is different from row lock in 2PL because it gets
-	// unlocked immediately after read finish, which is not allowed in 2PL
-	w, err := kv.tsCache.TryLock(key, val.Version) // TODO make write parallel?
+	w, err := kv.tsCache.TryLock(key, val.Version)
 	if err != nil {
 		return err
 	}
-
-	// ignore write-write conflict, handling write-write conflict is not necessary for concurrency control
 	err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 	w.Unlock()
 
