@@ -1,4 +1,4 @@
-package concurrency
+package basic
 
 import (
 	"sync/atomic"

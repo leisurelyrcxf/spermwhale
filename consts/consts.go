@@ -106,3 +106,8 @@ const (
 	ReadModifyWriteQueueMaxReadersRatio       = 0.3333
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )
+
+const (
+	DefaultTimestampCacheMaxBufferedWriters           = 1024
+	DefaultTimestampCacheMaxBufferedWritersLowerRatio = 0.5
+)

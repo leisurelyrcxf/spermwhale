@@ -19,13 +19,13 @@ var (
 	}
 
 	retryableTxnErrs = mergeSet(mustRollbackGetErrs, map[int]struct{}{
-		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined:          {},
-		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:              {},
-		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:             {},
-		consts.ErrCodeTxnRollbacking:                                       {},
-		consts.ErrCodeTxnRollbacked:                                        {},
-		consts.ErrCodeSnapshotReadRetriedTooManyTimes:                      {},
-		consts.ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion: {},
+		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
+		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
+		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
+		consts.ErrCodeTxnRollbacking:                              {},
+		consts.ErrCodeTxnRollbacked:                               {},
+		consts.ErrCodeSnapshotReadRetriedTooManyTimes:             {},
+		consts.ErrCodeMinAllowedSnapshotVersionViolated:           {},
 	})
 )
 
@@ -153,7 +153,7 @@ func IsRetryableTabletGetErr(err error) bool {
 func IsSnapshotReadTabletErr(err error) bool {
 	code := GetErrorCode(err)
 	return code == consts.ErrCodeSnapshotReadRetriedTooManyTimes ||
-		code == consts.ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion
+		code == consts.ErrCodeMinAllowedSnapshotVersionViolated
 }
 
 func IsErrType(err error, code int) bool {

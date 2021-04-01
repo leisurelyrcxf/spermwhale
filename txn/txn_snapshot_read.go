@@ -149,7 +149,7 @@ func (txn *Txn) BeginSnapshotReadTxn(opt types.TxnSnapshotReadOption) error {
 	}
 	if (opt.SnapshotVersion != 0 && opt.SnapshotVersion < opt.MinAllowedSnapshotVersion) ||
 		(opt.SnapshotVersion == 0 && txn.ID.Version() < opt.MinAllowedSnapshotVersion) {
-		return errors.ErrReadVersionViolatesMinAllowedSnapshot
+		return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, errors.ErrMinAllowedSnapshotVersionViolated.Msg)
 	}
 
 	txn.TxnSnapshotReadOption = opt

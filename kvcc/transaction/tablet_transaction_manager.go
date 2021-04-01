@@ -29,7 +29,7 @@ type Manager struct {
 
 func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
 	tm := &Manager{
-		removeTxnDelay:                        cfg.StaleWriteThreshold + AdditionalRemoveTxnDelayPeriod,
+		removeTxnDelay:                        cfg.GetWaitTimestampCacheInvalidTimeout(),
 		maxReadModifyWriteQueueCapacityPerKey: maxReadModifyWriteQueueCapacityPerKey,
 		readModifyWriteQueueMaxReadersRatio:   readModifyWriteQueueMaxReadersRatio,
 		readModifyWriteReaderMaxQueuedAge:     readModifyWriteReaderMaxQueuedAge,

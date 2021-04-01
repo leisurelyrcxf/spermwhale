@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/topo"
-
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
 const (
@@ -16,8 +16,8 @@ const (
 )
 
 type Oracle struct {
-	counter   concurrency.AtomicUint64
-	persisted concurrency.AtomicUint64
+	counter   basic.AtomicUint64
+	persisted basic.AtomicUint64
 	store     *topo.Store
 
 	allocInAdvance uint64
@@ -30,8 +30,8 @@ func NewOracle(allocInAdvance uint64, c *topo.Store) (*Oracle, error) {
 		return nil, err
 	}
 	return &Oracle{
-		counter:   concurrency.NewAtomicUint64(val + 1),
-		persisted: concurrency.NewAtomicUint64(val + 1),
+		counter:   basic.NewAtomicUint64(val + 1),
+		persisted: basic.NewAtomicUint64(val + 1),
 		store:     c,
 
 		allocInAdvance: allocInAdvance,

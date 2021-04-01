@@ -6,19 +6,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/algo"
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type readModifyWriteCond struct {
 	waitress   chan struct{}
-	timeouted  concurrency.AtomicBool
+	timeouted  basic.AtomicBool
 	NotifyTime int64
 }
 
@@ -112,7 +113,7 @@ type readModifyWriteQueue struct {
 	kMaxReaders readers
 
 	maxReaderVersion, lastMaxReaderVersion uint64
-	maxHeadVersion                         concurrency.AtomicUint64
+	maxHeadVersion                         basic.AtomicUint64
 	notified                               int64
 }
 

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -15,7 +17,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/txn"
 	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
@@ -41,7 +42,7 @@ type TestSuite struct {
 	KVClient  *kv.Client
 
 	testifyassert.Assertions
-	exiting  concurrency.AtomicBool
+	exiting  basic.AtomicBool
 	commands []*types.Command
 }
 

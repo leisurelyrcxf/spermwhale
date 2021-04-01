@@ -31,6 +31,9 @@ func TestDistributedTxnReadConsistencyDeadlock(t *testing.T) {
 func TestDistributedTxnReadConsistencyDeadlockReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetLogLevel(10).Run()
 }
+func TestDistributedTxnReadConsistencyDeadlockReadModifyWriteWaitWhenReadDirtySnapshotRead(t *testing.T) {
+	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetLogLevel(10).Run()
+}
 
 func TestDistributedTxnWriteSkew(t *testing.T) {
 	NewTestCase(t, rounds, testDistributedTxnWriteSkew).Run()

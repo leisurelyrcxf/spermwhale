@@ -155,6 +155,10 @@ var (
 		Code: consts.ErrCodeReadModifyWriteReaderTimeouted,
 		Msg:  "read for write reader timeouted",
 	}
+	ErrTimestampCacheWriteQueueFull = &Error{
+		Code: consts.ErrCodeTimestampCacheWriteQueueFull,
+		Msg:  "timestamp cache write queue full, retry later",
+	}
 	ErrWriteIntentQueueFull = &Error{
 		Code: consts.ErrCodeWriteIntentQueueFull,
 		Msg:  "write intent queue full, retry later",
@@ -171,9 +175,9 @@ var (
 		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
 		Msg:  "snapshot read retried too many times",
 	}
-	ErrReadVersionViolatesMinAllowedSnapshot = &Error{
-		Code: consts.ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion,
-		Msg:  "reader version violates min allowed snapshot version",
+	ErrMinAllowedSnapshotVersionViolated = &Error{
+		Code: consts.ErrCodeMinAllowedSnapshotVersionViolated,
+		Msg:  "min allowed snapshot version violated",
 	}
 	ErrInvalidTxnSnapshotReadOption = &Error{
 		Code: consts.ErrCodeInvalidTxnSnapshotReadOption,

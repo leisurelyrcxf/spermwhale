@@ -75,12 +75,12 @@ func TestTxnSnapshotReadInteractiveMixedMGetAndGetDontAllowVersionBack(t *testin
 func TestTxnSnapshotReadWaitWhenReadDirtyMoreKeys(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotReadMoreKeys(ctx, ts, false, false, false)
-	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
+	}).SetGoRoutineNum(25).SetReadOnlyTxnType(types.TxnTypeDefault).SetTxnNumPerGoRoutine(2000).Run()
 }
 func TestTxnSnapshotReadInteractiveWaitWhenReadDirtyMoreKeys(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotReadMoreKeys(ctx, ts, true, false, false)
-	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
+	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).SetLogLevel(26).Run()
 }
 
 func TestTxnSnapshotReadInteractiveWriteIndex(t *testing.T) {

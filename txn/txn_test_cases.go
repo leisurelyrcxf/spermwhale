@@ -6,11 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
 func testTxnLostUpdate(ctx context.Context, ts *TestCase) (b bool) {
@@ -747,7 +748,7 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 
 	var (
 		wg                     sync.WaitGroup
-		goodTxns               concurrency.AtomicUint64
+		goodTxns               basic.AtomicUint64
 		abortedTxnPerGoRoutine = make([]types.Txn, ts.GoRoutineNum)
 		sc                     = ts.scs[0]
 	)
@@ -823,7 +824,7 @@ func testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx context.Context, ts *Tes
 
 	var (
 		wg                     sync.WaitGroup
-		goodTxns               concurrency.AtomicUint64
+		goodTxns               basic.AtomicUint64
 		abortedTxnPerGoRoutine = make([]types.Txn, ts.GoRoutineNum)
 		sc                     = ts.scs[0]
 	)

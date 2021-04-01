@@ -211,7 +211,7 @@ func (opt KVCCWriteOption) IsRemoveVersion() bool {
 	return IsWriteOptRemoveVersion(opt.flag)
 }
 
-func (opt KVCCWriteOption) isRollbackVersion() bool {
+func (opt KVCCWriteOption) IsRollbackVersion() bool {
 	return IsWriteOptRollbackVersion(opt.flag)
 }
 
@@ -228,7 +228,7 @@ func (opt KVCCWriteOption) IsWriteByDifferentTransaction() bool {
 }
 
 func (opt KVCCWriteOption) IsRollbackKey() bool {
-	return !opt.IsTxnRecord() && opt.isRollbackVersion()
+	return !opt.IsTxnRecord() && opt.IsRollbackVersion()
 }
 
 func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {

@@ -10,9 +10,9 @@ const (
 	ErrCodeTxnRollbacking                              = 7
 	ErrCodeTxnRollbacked                               = 8
 
-	ErrCodeSnapshotReadRetriedTooManyTimes                      = 19
-	ErrCodeSnapshotReadVersionViolatesMinAllowedSnapshotVersion = 20
-	ErrCodeInvalidTxnSnapshotReadOption                         = 21
+	ErrCodeSnapshotReadRetriedTooManyTimes   = 19
+	ErrCodeMinAllowedSnapshotVersionViolated = 20
+	ErrCodeInvalidTxnSnapshotReadOption      = 21
 
 	ErrCodeWriteKeyAfterTabletTxnRollbacked = 23
 
@@ -28,7 +28,8 @@ const (
 	ErrCodeTransactionStateCorrupted          = 64
 	ErrCodeTransactionInternalVersionOverflow = 65
 
-	ErrCodeWriteIntentQueueFull = 70
+	ErrCodeWriteIntentQueueFull         = 70
+	ErrCodeTimestampCacheWriteQueueFull = 71
 
 	ErrCodeReadModifyWriteWaitFailed = 80
 	ErrCodeReadModifyWriteQueueFull  = 81
