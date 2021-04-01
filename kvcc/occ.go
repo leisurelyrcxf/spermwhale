@@ -128,9 +128,13 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	w.Wait()
 	if !opt.IsSnapshotRead() {
 		//assert.Must(newReaderId == types.TxnId(opt.ReaderVersion))
-		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); w != nil && w.IsClean() {
-			assert.Must(val.Version == w.Version)
-			val = val.WithNoWriteIntent() // TODO not correct if val.Version != w.Version
+		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); w != nil {
+			if w.IsClean() {
+				assert.Must(val.Version == w.Version)
+				val = val.WithNoWriteIntent() // TODO not correct if val.Version != w.Version
+			} else if val.Version != w.Version {
+				w.CheckLegalReadVersion(val.Version)
+			}
 		}
 		//assert.Must(w == nil || val.Version == w.Version)
 	} else if w != nil {
@@ -266,9 +270,14 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 			return txn.RemoveTxnRecord(ctx, val, opt)
 		}
 		assert.Must(opt.IsClearWriteIntent() || opt.IsRollbackKey())
-		err := txn.DoneKey(ctx, key, val, opt)
 		if opt.IsClearWriteIntent() {
-			kv.tsCache.MarkCommitted(key, txnId)
+			kv.tsCache.MarkCommitted(key, val.Version)
+		} else {
+			kv.tsCache.MarkRollbacked(key, val.Version)
+		}
+		err := txn.DoneKey(ctx, key, val, opt)
+		if err == nil && opt.IsRollbackKey() {
+			kv.tsCache.RemoveVersion(key, val.Version)
 		}
 		if opt.IsReadModifyWrite() {
 			if opt.IsClearWriteIntent() {

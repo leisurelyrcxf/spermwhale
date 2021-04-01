@@ -13,8 +13,9 @@ type Writer struct {
 	Version    uint64
 	OnUnlocked func()
 
-	writing, clean basic.AtomicBool
-	rw             sync.RWMutex
+	writing, clean, rollbacked basic.AtomicBool
+	rw                         sync.RWMutex
+	Next                       *Writer
 }
 
 func NewWriter(version uint64) *Writer {
@@ -44,12 +45,26 @@ func (w *Writer) MarkClean() {
 	w.clean.Set(true)
 }
 
+func (w *Writer) MarkRollbacked() {
+	w.rollbacked.Set(true)
+}
+
 func (w *Writer) IsClean() bool {
 	return w.clean.Get()
 }
 
+func (w *Writer) IsRollbacked() bool {
+	return w.rollbacked.Get()
+}
+
 func (w *Writer) IsWriting() bool {
 	return w.writing.Get()
+}
+
+func (w *Writer) CheckLegalReadVersion(valVersion uint64) {
+	assert.Must(valVersion < w.Version)
+	assert.Must(w.IsRollbacked())
+	assert.Must(w.Next == nil || valVersion >= w.Next.Version || w.Next.IsRollbacked())
 }
 
 type Writers struct {

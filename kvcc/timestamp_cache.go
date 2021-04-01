@@ -23,7 +23,7 @@ type KeyInfo struct {
 
 	writers                 redblacktree.Tree
 	maxRemovedWriterVersion uint64
-	//writingWriters redblacktree.Tree
+	writingWriters          redblacktree.Tree
 }
 
 func NewKeyInfo(key string) *KeyInfo {
@@ -38,14 +38,14 @@ func NewKeyInfo(key string) *KeyInfo {
 			}
 			return -1
 		}),
+		writingWriters: *redblacktree.NewWith(func(a, b interface{}) int {
+			av, bv := a.(uint64), b.(uint64)
+			if av >= bv {
+				return int(av - bv)
+			}
+			return -1
+		}),
 	}
-	//info.writingWriters = *redblacktree.NewWith(func(a, b interface{}) int {
-	//	av, bv := a.(uint64), b.(uint64)
-	//	if av >= bv {
-	//		return int(av - bv)
-	//	}
-	//	return -1
-	//})
 }
 
 func (i *KeyInfo) GetMaxReaderVersion() uint64 {
@@ -86,10 +86,11 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 		for _, k := range toRemoveKeys {
 			i.writers.Remove(k)
 		}
+		i.writingWriters.Remove(writerVersion)
 	}
 	i.writers.Put(writerVersion, w)
 	glog.V(60).Infof("[TimestampCache][KeyInfo '%s'][TryLock] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
-	//i.writingWriters.Put(writerId.Version(), w)
+	i.writingWriters.Put(writerVersion, w)
 	w.Lock()
 	return w, nil
 }
@@ -102,6 +103,11 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		} else {
 			maxReadVersion = i.GetMaxReaderVersion()
+		}
+		if w != nil {
+			if maxBelowNode, found := i.writingWriters.Floor(w.Version - 1); found {
+				w.Next = maxBelowNode.Value.(*types.Writer)
+			}
 		}
 		i.mu.RUnlock()
 	}()
@@ -139,21 +145,34 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 			return node.Value.(*types.Writer), 0, nil
 		}
 		opt.ReaderVersion = node.Value.(*types.Writer).Version - 1
-		old := node
 		if node = i.prev(node); node == nil {
 			return nil, 0, nil
 		}
-		assert.Must(i.next(node) == old)
 		// hold invariant (node.Version <= opt.ReaderVersion && node is the largest one)
 	}
 }
 
-func (i *KeyInfo) MarkCommitted(id types.TxnId) {
-	i.mu.Lock()
-	val, ok := i.writers.Get(id.Version())
+func (i *KeyInfo) MarkCommitted(writerVersion uint64) {
+	i.mu.RLock()
+	val, ok := i.writers.Get(writerVersion)
 	if ok {
 		val.(*types.Writer).MarkClean()
 	}
+	i.mu.RUnlock()
+}
+
+func (i *KeyInfo) MarkRollbacked(writerVersion uint64) {
+	i.mu.RLock()
+	val, ok := i.writers.Get(writerVersion)
+	if ok {
+		val.(*types.Writer).MarkRollbacked()
+	}
+	i.mu.RUnlock()
+}
+
+func (i *KeyInfo) RemoveVersion(version uint64) {
+	i.mu.Lock()
+	i.writers.Remove(version)
 	i.mu.Unlock()
 }
 
@@ -222,8 +241,16 @@ func (cache *TimestampCache) FindWriter(key string, opt *types.KVCCReadOption) (
 	return cache.getLazy(key).FindWriter(opt)
 }
 
-func (cache *TimestampCache) MarkCommitted(key string, id types.TxnId) {
-	cache.getLazy(key).MarkCommitted(id)
+func (cache *TimestampCache) MarkCommitted(key string, writerVersion uint64) {
+	cache.getLazy(key).MarkCommitted(writerVersion)
+}
+
+func (cache *TimestampCache) MarkRollbacked(key string, writerVersion uint64) {
+	cache.getLazy(key).MarkRollbacked(writerVersion)
+}
+
+func (cache *TimestampCache) RemoveVersion(key string, writerVersion uint64) {
+	cache.getLazy(key).RemoveVersion(writerVersion)
 }
 
 func (cache *TimestampCache) getLazy(key string) *KeyInfo {
