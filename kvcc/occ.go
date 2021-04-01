@@ -16,6 +16,8 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
+const OCCVerboseLevel = 160
+
 // KV with concurrency control
 type KVCC struct {
 	types.TabletTxnConfig
@@ -264,7 +266,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if !val.IsDirty() {
 		inserted, txn := kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
 		if inserted {
-			glog.V(70).Infof("[KVCC::Set::ClearOrRemoveVersion] created new txn-%d", txn.ID)
+			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::ClearOrRemoveVersion] created new txn-%d", txn.ID)
 		}
 		if isTxnRecord {
 			return txn.RemoveTxnRecord(ctx, val, opt)
@@ -302,7 +304,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if isTxnRecord {
 		inserted, txn := kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
 		if inserted {
-			glog.V(70).Infof("[KVCC::Set::setTxnRecord] created new txn-%d", txnId)
+			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setTxnRecord] created new txn-%d", txnId)
 		}
 		return txn.SetTxnRecord(ctx, val, opt)
 	}
@@ -311,7 +313,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if val.IsFirstWriteOfKey() {
 		var inserted bool
 		if inserted, txn = kv.txnManager.InsertTxnIfNotExists(txnId, kv.db); inserted {
-			glog.V(70).Infof("[KVCC::Set::setKey] created new txn-%d", txnId)
+			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setKey] created new txn-%d", txnId)
 		}
 	} else {
 		assert.Must(val.IsWriteOfKey())
@@ -329,14 +331,14 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 			glog.Fatalf("txn-%d write key '%s' after committed", txnId, key)
 		}
 		assert.Must(txn.IsAborted())
-		glog.V(70).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
+		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
 	assert.Must(!txn.Done())
 	inserted, keyDone := txn.AddUnsafe(key)
 	assert.Must(!keyDone)
 	if inserted {
-		glog.V(70).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", key, txnId)
+		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", key, txnId)
 	}
 
 	w, err := kv.tsCache.TryLock(key, val.Version)
@@ -356,7 +358,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	if opt.IsReadModifyWrite() {
 		kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key, transaction.ReadModifyWriteKeyEventTypeKeyWritten))
 	}
-	if glog.V(60) {
+	if glog.V(OCCVerboseLevel) {
 		glog.Infof("txn-%d set key '%s' (internal_version: %d) succeeded, cost %s", txnId, key, val.InternalVersion, bench.Elapsed())
 	}
 	return nil

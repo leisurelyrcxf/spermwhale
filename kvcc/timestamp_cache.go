@@ -13,6 +13,8 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
+const TimestampCacheVerboseLevel = 260
+
 type KeyInfo struct {
 	mu sync.RWMutex
 
@@ -89,7 +91,7 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 		i.writingWriters.Remove(writerVersion)
 	}
 	i.writers.Put(writerVersion, w)
-	glog.V(60).Infof("[TimestampCache][KeyInfo '%s'][TryLock] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
+	glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][TryLock] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
 	i.writingWriters.Put(writerVersion, w)
 	w.Lock()
 	return w, nil
@@ -135,7 +137,7 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 	for {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		if node.Value.(*types.Writer).IsClean() {
-			glog.V(60).Infof("[TimestampCache][KeyInfo '%s'][FindWriter] found clean writer-%d, max reader version: %d", i.key, node.Value.(*types.Writer).Version, i.maxReaderVersion)
+			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriter] found clean writer-%d, max reader version: %d", i.key, node.Value.(*types.Writer).Version, i.maxReaderVersion)
 			return node.Value.(*types.Writer), 0, nil
 		}
 		if node.Value.(*types.Writer).Version-1 < opt.MinAllowedSnapshotVersion {
