@@ -57,6 +57,11 @@ var (
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
 		Msg:  "read uncommitted data previous txn key has been rollbacked",
 	})
+	ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite = registerErr(&Error{
+		Code:    consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
+		SubCode: 1,
+		Msg:     "read uncommitted data previous txn key has been rollbacked: read after write",
+	})
 	ErrReadUncommittedDataPrevTxnToBeRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
 		Msg:  "read uncommitted data previous txn to be rollbacked",
@@ -220,5 +225,9 @@ var (
 	ErrWriteKeyAfterTabletTxnRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeWriteKeyAfterTabletTxnRollbacked,
 		Msg:  "write key after tablet transaction rollbacked",
+	})
+	ErrRemoveKeyFailed = registerErr(&Error{
+		Code: consts.ErrCodeRemoveKeyFailed,
+		Msg:  "remove key failed",
 	})
 )

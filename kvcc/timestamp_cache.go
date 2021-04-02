@@ -1,6 +1,7 @@
 package kvcc
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 
@@ -104,7 +105,22 @@ func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Wri
 	return w, nil
 }
 
-func (i *KeyInfo) FindWriters(opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
+// Deprecated
+func (i *KeyInfo) FindWriters(ctx context.Context, opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
+	cctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout/2)
+	defer cancel()
+
+	for {
+		if w, writingWritersBefore, maxReadVersion, err = i.findWriters(opt); w == nil || !w.IsAborted() {
+			return
+		}
+		if err := w.WaitKeyRemoved(cctx, i.key); err != nil {
+			return nil, nil, 0, err
+		}
+	}
+}
+
+func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
 	i.mu.RLock()
 	defer func() {
 		assert.Must(opt.IsUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
@@ -236,7 +252,7 @@ func (cache *TimestampCache) TryLock(key string, txn *transaction.Transaction) (
 }
 
 func (cache *TimestampCache) FindWriters(key string, opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
-	return cache.getLazy(key).FindWriters(opt)
+	return cache.getLazy(key).findWriters(opt)
 }
 
 func (cache *TimestampCache) RemoveVersion(key string, writerVersion uint64) {

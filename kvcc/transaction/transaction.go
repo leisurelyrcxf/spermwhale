@@ -55,47 +55,58 @@ func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
 	return len(waiters) == 0 && waiters != nil
 }
 
-func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) (err error) {
+func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption, beforeSignalKeyRemovedEvent func()) error {
 	var (
 		txnId              = types.TxnId(val.Version)
 		isClearWriteIntent = opt.IsClearWriteIntent()
 		isRollbackKey      = opt.IsRollbackKey()
 		isWrittenKey       = !opt.IsReadModifyWriteRollbackOrClearReadKey() // clear or rollbacked written key
-		doneOnce           bool
+		action             string
+		err                error
 	)
 
 	t.Lock()
 	if isClearWriteIntent {
+		action = "clear write intent of key"
 		// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed
 		// TODO needs test against kv.db.Set() failed.
 		t.signalKeyEventUnsafe(NewKeyEvent(key, KeyEventTypeClearWriteIntent))
 	} else {
 		assert.Must(isRollbackKey)
+		action = "rollback key"
 		if !t.IsAborted() {
 			t.SetTxnStateUnsafe(types.TxnStateRollbacking)
 		}
 	}
+	t.Unlock()
 
-	if isWrittenKey {
-		t.Unlock()
-		if err = t.db.Set(ctx, key, val, opt.ToKVWriteOption()); err != nil && glog.V(10) {
-			glog.Errorf("txn-%d set key '%s' failed: %v", txnId, key, err)
-		}
-		t.Lock()
+	if !isWrittenKey {
+		return nil
 	}
+
+	if err = t.db.Set(ctx, key, val, opt.ToKVWriteOption()); err != nil {
+		if glog.V(5) {
+			glog.Errorf("txn-%d %s '%s' failed: %v", txnId, action, key, err)
+		}
+	} else if glog.V(60) {
+		glog.Infof("txn-%d %s '%s' succeeded, cost: %s", txnId, action, key, bench.Elapsed())
+	}
+
 	if isClearWriteIntent {
-		if err == nil && glog.V(60) {
-			glog.Infof("txn-%d cleared write intent of key '%s', cost: %s", txnId, key, bench.Elapsed())
-		}
+		t.Lock()
 	} else {
-		if err == nil && glog.V(60) {
-			glog.Infof("txn-%d key '%s' rollbacked, cost: %s", txnId, key, bench.Elapsed())
+		var eventType KeyEventType
+		if err == nil {
+			eventType = KeyEventTypeVersionRemoved
+			beforeSignalKeyRemovedEvent() // NOTE: be careful with potential deadlock
+		} else {
+			eventType = KeyEventTypeRemoveVersionFailed
 		}
-		if isWrittenKey {
-			t.signalKeyEventUnsafe(NewKeyEvent(key, GetKeyEventTypeRemoveVersion(err == nil)))
-		}
-	}
 
+		t.Lock()
+		t.signalKeyEventUnsafe(NewKeyEvent(key, eventType))
+	}
+	var doneOnce bool
 	if err == nil && !opt.IsWriteByDifferentTransaction() {
 		doneOnce = t.doneOnceUnsafe(key, isRollbackKey, "DoneKey")
 	}

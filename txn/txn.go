@@ -213,25 +213,22 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		if writeErr := lastWriteTask.Err(); writeErr != nil {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
 		}
-	}
-	var readOpt types.KVCCReadOption
-	if lastWriteTask == nil {
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()))
+	} else {
 		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).
 			CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)).
 			CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
-	} else {
-		vv, err = txn.kv.Get(ctx, key, readOpt.WithExactVersion(txn.ID.Version()))
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
-		txn.preventFutureWriteKeys.Insert(key)
+		txn.preventFutureWriteKeys.Insert(key) // TODO return to client instead
 	}
 	if txn.IsReadModifyWrite() {
 		txn.readModifyWriteReadKeys.Insert(key)
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
-			return types.EmptyValueCC, errors.Annotatef(errors.ErrWriteReadConflict, "reason: previous write intent disappeared probably rollbacked")
+			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite
 		}
 		return types.EmptyValueCC, err
 	}
@@ -240,7 +237,6 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		vv.Version == txn.ID.Version() /* read after write */ {
 		return vv, nil
 	}
-	assert.Must(!readOpt.IsSnapshotRead())
 	assert.Must(txn.ID.Version() > vv.Version)
 	var preventFutureWrite = utils.IsTooOld(vv.Version, txn.cfg.WoundUncommittedTxnThreshold)
 	writeTxn, err := txn.store.inferTransactionRecordWithRetry(

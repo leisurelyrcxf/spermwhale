@@ -17,13 +17,6 @@ const (
 	KeyEventTypeRemoveVersionFailed
 )
 
-func GetKeyEventTypeRemoveVersion(success bool) KeyEventType {
-	if success {
-		return KeyEventTypeVersionRemoved
-	}
-	return KeyEventTypeRemoveVersionFailed
-}
-
 func (t KeyEventType) String() string {
 	switch t {
 	case KeyEventTypeInvalid:
@@ -70,13 +63,17 @@ func newKeyEventWaiter(key string) *KeyEventWaiter {
 	}
 }
 
-func (w *KeyEventWaiter) Wait(ctx context.Context, timeout time.Duration) (KeyEvent, error) {
+func (w *KeyEventWaiter) WaitWithTimeout(ctx context.Context, timeout time.Duration) (KeyEvent, error) {
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	return w.Wait(waitCtx)
+}
+
+func (w *KeyEventWaiter) Wait(ctx context.Context) (KeyEvent, error) {
 	select {
-	case <-waitCtx.Done():
-		return InvalidKeyEvent, waitCtx.Err()
+	case <-ctx.Done():
+		return InvalidKeyEvent, ctx.Err()
 	case event := <-w.waitress:
 		return event, nil
 	}

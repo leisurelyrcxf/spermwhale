@@ -130,7 +130,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 		assert.Must(maxReadVersion == 0)
 		return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.IsGetMaxReadVersion()), err, false
 	}
-	w.WaitKeyDone()
+	w.WaitWritten()
 	if !opt.IsSnapshotRead() || w != nil {
 		//assert.Must(newReaderId == types.TxnId(opt.ReaderVersion))
 		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); (err == nil || errors.IsNotExistsErr(err)) && w != nil {
@@ -224,7 +224,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	}
 	if waiter != nil {
 		var waitErr error
-		event, waitErr = waiter.Wait(ctx, consts.DefaultReadTimeout/10)
+		event, waitErr = waiter.WaitWithTimeout(ctx, consts.DefaultReadTimeout/10)
 		valCC = kv.addMaxReadVersionForceFetchLatest(key, val, getMaxReadVersion)
 		if waitErr != nil {
 			glog.V(8).Infof("KVCC:get failed to wait event of dirty key '%s' @version-%d, err: %v", key, val.Version, waitErr)
@@ -284,9 +284,9 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		)
 		assert.Must(isClearWriteIntent || isRollbackKey)
 		assert.Must(!isClearWriteIntent || !isRollbackKey)
-		if err = txn.DoneKey(ctx, key, val, opt); err == nil && isRollbackKey {
+		err = txn.DoneKey(ctx, key, val, opt, func() {
 			kv.tsCache.RemoveVersion(key, val.Version)
-		}
+		})
 		if opt.IsReadModifyWrite() {
 			if isClearWriteIntent {
 				kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key,

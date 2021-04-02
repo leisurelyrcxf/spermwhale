@@ -43,6 +43,7 @@ const (
 	ErrCodeNilResponse                                       = 99
 	ErrCodeInvalidResponse                                   = 100
 	ErrCodeTxnRetriedTooManyTimes                            = 101
+	ErrCodeRemoveKeyFailed                                   = 102
 	ErrCodeNotSupported                                      = 111
 	ErrCodeNotAllowed                                        = 222
 	ErrCodeInvalidRequest                                    = 333

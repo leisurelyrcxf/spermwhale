@@ -40,10 +40,30 @@ func (w *Writer) IsWriting() bool {
 	return w.writing.Get()
 }
 
-func (w *Writer) WaitKeyDone() {
+func (w *Writer) WaitWritten() {
 	if w != nil && w.writing.Get() {
 		w.rw.RLock()
 		w.rw.RUnlock()
+	}
+}
+
+func (w *Writer) WaitKeyRemoved(ctx context.Context, key string) error {
+	waiter, keyEvent, err := w.registerKeyEventWaiter(key)
+	if err != nil {
+		return err
+	}
+	if waiter != nil {
+		if keyEvent, err = waiter.Wait(ctx); err != nil {
+			return err
+		}
+	}
+	switch keyEvent.Type {
+	case KeyEventTypeVersionRemoved:
+		return nil
+	case KeyEventTypeRemoveVersionFailed:
+		return errors.ErrRemoveKeyFailed
+	default:
+		panic(fmt.Sprintf("impossible type: '%s'", keyEvent.Type))
 	}
 }
 

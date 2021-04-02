@@ -40,10 +40,10 @@ func (s *Future) DoneOnceUnsafe(key string) (doneOnce bool) {
 	if s.done {
 		return false
 	}
-	return s.DoneUnsafe(key)
+	return s.doneUnsafe(key)
 }
 
-func (s *Future) DoneUnsafe(key string) (futureDone bool) {
+func (s *Future) doneUnsafe(key string) (futureDone bool) {
 	if doneKey, ok := s.keys[key]; ok {
 		if !doneKey {
 			s.set(key, true)
@@ -58,7 +58,7 @@ func (s *Future) DoneUnsafe(key string) (futureDone bool) {
 
 func (s *Future) doneUnsafeEx(key string) (doneOnce, done bool) {
 	oldFlyingKeyCount := s.flyingKeyCount
-	done = s.DoneUnsafe(key)
+	done = s.doneUnsafe(key)
 	return s.flyingKeyCount < oldFlyingKeyCount, done
 }
 
