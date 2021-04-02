@@ -52,17 +52,19 @@ func (c *SmartClient) DoTransactionEx(ctx context.Context, f func(ctx context.Co
 func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnType, f func(ctx context.Context, txn types.Txn) error) (_ types.Txn, retryTimes int, _ error) {
 	return c.DoTransactionRaw(ctx, types.NewTxnOption(typ), func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
-	}, nil, nil)
+	}, nil, nil, VoidOnRetry)
 }
 
-func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error) (_ types.Txn, retryTimes int, _ error) {
+func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error, onRetry func(err error)) (_ types.Txn, retryTimes int, _ error) {
 	return c.DoTransactionRaw(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
-	}, nil, nil)
+	}, nil, nil, onRetry)
 }
 
+func VoidOnRetry(err error) {}
+
 func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
-	beforeCommit, beforeRollback func() error) (_ types.Txn, retryTimes int, _ error) {
+	beforeCommit, beforeRollback func() error, onRetry func(err error)) (_ types.Txn, retryTimes int, _ error) {
 	for i := 0; i < c.maxRetry; i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, i + 1, err
@@ -70,6 +72,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 		tx, err := c.TxnManager.BeginTransaction(ctx, opt)
 		if err != nil {
 			if errors.IsRetryableTransactionManagerErr(err) {
+				onRetry(err)
 				continue
 			}
 			return nil, i + 1, err
@@ -94,6 +97,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 			}
 			rand.Seed(time.Now().UnixNano())
 			time.Sleep(time.Millisecond * time.Duration(rand.Intn(4)))
+			onRetry(err)
 			continue
 		}
 		if !tx.GetState().IsAborted() {
@@ -112,6 +116,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
 		glog.V(201).Infof("[SmartClient::DoTransactionRaw] user function returns err: %v, retrying for %dth round...", err.Error(), i+2)
+		onRetry(err)
 	}
 	return nil, c.maxRetry, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)
 }

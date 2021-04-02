@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -116,6 +118,40 @@ func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types
 	return nil
 }
 
+type RetryDetailItem struct {
+	errors.ErrorKey
+	Count int
+}
+
+func (i RetryDetailItem) String() string {
+	return fmt.Sprintf("\"%s\": %d,", errors.AllErrors[i.ErrorKey].Msg, i.Count)
+}
+
+type RetryDetailItems []RetryDetailItem
+
+func (r RetryDetailItems) Len() int           { return len(r) }
+func (r RetryDetailItems) Less(i, j int) bool { return r[i].Count > r[j].Count }
+func (r RetryDetailItems) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+
+type RetryDetails map[errors.ErrorKey]int
+
+func (d RetryDetails) collect(another RetryDetails) {
+	for errType, count := range another {
+		d[errType] += count
+	}
+}
+
+func (d RetryDetails) GetSortedRetryDetails() (items RetryDetailItems) {
+	for errKey, count := range d {
+		items = append(items, RetryDetailItem{
+			ErrorKey: errKey,
+			Count:    count,
+		})
+	}
+	sort.Sort(items)
+	return items
+}
+
 type ExecuteStatistic struct {
 	SumRetryTimes int
 	SumCost       time.Duration
@@ -123,12 +159,18 @@ type ExecuteStatistic struct {
 
 	AverageRetryTimes float64
 	AverageCost       time.Duration
+	RetryDetails      RetryDetails
+}
+
+func NewExecuteStatistic() *ExecuteStatistic {
+	return &ExecuteStatistic{RetryDetails: make(RetryDetails)}
 }
 
 func (es *ExecuteStatistic) collect(info ExecuteInfo) {
 	es.SumRetryTimes += info.RetryTimes
 	es.SumCost += info.Cost
 	es.Count++
+	es.RetryDetails.collect(info.RetryDetails)
 }
 
 func (es *ExecuteStatistic) calc() {
@@ -142,14 +184,17 @@ type ExecuteStatistics struct {
 }
 
 func NewExecuteStatistics() *ExecuteStatistics {
-	return &ExecuteStatistics{perTxnKind: make(map[types.TxnKind]*ExecuteStatistic)}
+	return &ExecuteStatistics{
+		total:      *NewExecuteStatistic(),
+		perTxnKind: make(map[types.TxnKind]*ExecuteStatistic),
+	}
 }
 
 func (ess *ExecuteStatistics) collect(info ExecuteInfo) {
 	ess.total.collect(info)
 
 	if ess.perTxnKind[info.Kind] == nil {
-		ess.perTxnKind[info.Kind] = &ExecuteStatistic{}
+		ess.perTxnKind[info.Kind] = NewExecuteStatistic()
 	}
 	ess.perTxnKind[info.Kind].collect(info)
 }
@@ -181,20 +226,22 @@ type ExecuteInfo struct {
 	Kind                    types.TxnKind
 	ReadValues, WriteValues map[string]types.Value
 
-	RetryTimes int
-	Cost       time.Duration
+	RetryTimes   int
+	RetryDetails RetryDetails
+	Cost         time.Duration
 
 	AdditionalInfo interface{}
 }
 
-func NewExecuteInfo(tx types.Txn, retryTimes int, cost time.Duration) ExecuteInfo {
+func NewExecuteInfo(tx types.Txn, retryTimes int, retryDetails RetryDetails, cost time.Duration) ExecuteInfo {
 	txn := ExecuteInfo{
-		Txn:         tx,
-		ID:          tx.GetId().Version(),
-		ReadValues:  tx.GetReadValues(),
-		WriteValues: tx.GetWriteValues(),
-		RetryTimes:  retryTimes,
-		Cost:        cost,
+		Txn:          tx,
+		ID:           tx.GetId().Version(),
+		ReadValues:   tx.GetReadValues(),
+		WriteValues:  tx.GetWriteValues(),
+		RetryTimes:   retryTimes,
+		RetryDetails: retryDetails,
+		Cost:         cost,
 	}
 	txn.Kind = types.TxnKindReadWrite
 	if len(txn.WriteValues) == 0 {
@@ -432,8 +479,17 @@ func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex in
 func (ts *TestCase) DoTransactionOfOption(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
 	f func(ctx context.Context, txn types.Txn) error) bool {
 	start := time.Now()
-	if tx, retryTimes, err := sc.DoTransactionOfOption(ctx, opt, f); ts.NoError(err) {
-		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, time.Since(start))
+	retryDetails := make(RetryDetails)
+	if tx, retryTimes, err := sc.DoTransactionOfOption(ctx, opt, f, func(err error) {
+		assert.Must(err != nil)
+		retryDetails[errors.GetErrorKey(err)]++
+	}); ts.NoError(err) {
+		var totalCount int
+		for _, count := range retryDetails {
+			totalCount += count
+		}
+		assert.Must(retryTimes-1 == totalCount)
+		ts.CollectExecutedTxnInfo(goRoutineIndex, tx, retryTimes, retryDetails, time.Since(start))
 		return true
 	}
 	return false
@@ -477,8 +533,8 @@ func (ts *TestCase) GenTestEnv() bool {
 	return true
 }
 
-func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, retryTimes int, cost time.Duration) {
-	txn := NewExecuteInfo(tx, retryTimes, cost)
+func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, retryTimes int, retryDetails RetryDetails, cost time.Duration) {
+	txn := NewExecuteInfo(tx, retryTimes, retryDetails, cost)
 	ts.False(txn.ID == 0)
 	ts.True(txn.GetState() == types.TxnStateCommitted)
 	ts.False(types.IsInvalidReadValues(txn.ReadValues))
@@ -629,6 +685,10 @@ func (ts *TestCase) LogExecuteInfos(totalCostInSeconds float64) {
 		len(ts.allExecutedTxns), totalCostInSeconds, float64(len(ts.allExecutedTxns))/totalCostInSeconds, stats.total.AverageCost, stats.total.AverageRetryTimes)
 	stats.ForEachTxnKind(func(txnKind types.TxnKind, ss ExecuteStatistic) {
 		ts.t.Logf("    [%s] count: %d, average latency: %s, average retry: %.3f", txnKind, ss.Count, ss.AverageCost, ss.AverageRetryTimes)
+		ts.t.Logf("      retry reasons: ")
+		for _, item := range ss.RetryDetails.GetSortedRetryDetails() {
+			ts.t.Logf("        " + item.String())
+		}
 	})
 }
 

@@ -339,11 +339,8 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
-	assert.Must(!txn.IsDoneUnsafe())
-	inserted, keyDone := txn.AddUnsafe(key)
-	assert.Must(!keyDone)
-	if inserted {
-		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", key, txnId)
+	if txn.AddUnsafe(key) {
+		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] added key '%s' to txn-%d", key, txnId)
 	}
 
 	w, err := kv.tsCache.TryLock(key, txn)

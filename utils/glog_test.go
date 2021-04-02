@@ -33,3 +33,31 @@ func TestSetLogLevel(t *testing.T) {
 	})
 	testifyassert.Equal(t, 7, GetLogLevel())
 }
+
+func TestVerbose(t *testing.T) {
+	var (
+		called   bool
+		testFunc = func() int {
+			called = true
+			println("called")
+			return 2222
+		}
+	)
+	glog.V(10).Infof("testFunc ret: %v", testFunc())
+	testifyassert.True(t, called)
+}
+
+func TestVerbose2(t *testing.T) {
+	var (
+		called   bool
+		testFunc = func() int {
+			called = true
+			println("called")
+			return 2222
+		}
+	)
+	if glog.V(10) {
+		glog.Infof("testFunc ret: %v", testFunc())
+	}
+	testifyassert.False(t, called)
+}

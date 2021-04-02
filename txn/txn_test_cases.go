@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
+
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -775,7 +777,7 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V), true
 				}, func() error {
 					return errors.ErrInject
-				}, nil); ts.Equal(errors.ErrInject, err) {
+				}, nil, smart_txn_client.VoidOnRetry); ts.Equal(errors.ErrInject, err) {
 					abortedTxnPerGoRoutine[goRoutineIdx] = tx
 				}
 			} else {
@@ -853,8 +855,8 @@ func testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx context.Context, ts *Tes
 					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V), true
 				}, nil, func() error {
 					return errors.ErrInject
-				}); err == nil {
-					ts.CollectExecutedTxnInfo(goRoutineIdx, tx, retryTimes, time.Since(start))
+				}, smart_txn_client.VoidOnRetry); err == nil {
+					ts.CollectExecutedTxnInfo(goRoutineIdx, tx, retryTimes, nil, time.Since(start))
 					goodTxns.Add(1)
 				} else if ts.Equal(errors.ErrInject, err) {
 					abortedTxnPerGoRoutine[goRoutineIdx] = tx

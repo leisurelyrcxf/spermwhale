@@ -6,7 +6,8 @@ option go_package = "proto/commonpb";
 
 message Error {
     int32 code = 1;
-    string msg = 2;
+    int32 sub_code = 2;
+    string msg = 3;
 }
 
 message ValueMeta {

@@ -151,12 +151,8 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteReadConflict
 	}
 
-	txnKey := types.TxnId(val.Version).String()
-	assert.Must(!t.writtenKeys.IsDoneUnsafe())
-	inserted, keyDone := t.writtenKeys.AddUnsafe(txnKey)
-	assert.Must(!keyDone)
-	if inserted {
-		glog.V(70).Infof("[KVCC::setKey] inserted key '%s' to txn-%d", txnKey, val.Version)
+	if txnKey := types.TxnId(val.Version).String(); t.AddUnsafe(txnKey) {
+		glog.V(70).Infof("[KVCC::SetTxnRecord] added key '%s' to txn-%d", txnKey, val.Version)
 	}
 
 	if err := t.db.Set(ctx, "", val, opt.ToKVWriteOption()); err != nil {
@@ -200,8 +196,12 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 	return err
 }
 
-func (t *Transaction) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) {
-	return t.writtenKeys.AddUnsafe(key)
+func (t *Transaction) AddUnsafe(key string) (addedNewKey bool) {
+	assert.Must(!t.IsDoneUnsafe())
+	var keyDone bool
+	addedNewKey, keyDone = t.writtenKeys.AddUnsafe(key)
+	assert.Must(!keyDone)
+	return addedNewKey
 }
 
 func (t *Transaction) IsDoneUnsafe() bool {

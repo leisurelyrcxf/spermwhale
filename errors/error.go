@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	mustRollbackGetErrs = map[int]struct{}{
+	mustRollbackGetErrs = map[int32]struct{}{
 		consts.ErrCodeWriteReadConflict:         {},
 		consts.ErrCodeStaleWrite:                {},
 		consts.ErrCodeReadAfterWriteFailed:      {},
@@ -18,7 +18,15 @@ var (
 		consts.ErrCodeReadModifyWriteQueueFull:  {},
 	}
 
-	retryableTxnErrs = mergeSet(mustRollbackGetErrs, map[int]struct{}{
+	mustRollbackCommitErrs = map[int32]struct{}{
+		consts.ErrCodeWriteReadConflict:                {},
+		consts.ErrCodeStaleWrite:                       {},
+		consts.ErrCodeWriteKeyAfterTabletTxnRollbacked: {},
+		consts.ErrCodeTabletWriteTransactionNotFound:   {},
+		consts.ErrCodeTimestampCacheWriteQueueFull:     {},
+	}
+
+	retryableTxnErrs = mergeCodeSets(mustRollbackGetErrs, mustRollbackCommitErrs, map[int32]struct{}{
 		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
 		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
 		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
@@ -29,39 +37,48 @@ var (
 	})
 )
 
-func mergeSet(codes1, codes2 map[int]struct{}) map[int]struct{} {
-	m := make(map[int]struct{})
-	for code := range codes1 {
-		m[code] = struct{}{}
-	}
-	for code := range codes2 {
-		m[code] = struct{}{}
+func mergeCodeSets(codeSets ...map[int32]struct{}) map[int32]struct{} {
+	m := make(map[int32]struct{})
+	for _, codeSet := range codeSets {
+		for code := range codeSet {
+			m[code] = struct{}{}
+		}
 	}
 	return m
 }
 
-func in(code int, codes map[int]struct{}) bool {
+func in(code int32, codes map[int32]struct{}) bool {
 	_, ok := codes[code]
 	return ok
 }
 
-type Error struct {
-	Code int
-	Msg  string
+type ErrorKey struct {
+	Code    int32
+	SubCode int32
 }
 
-func NewError(code int, msg string) *Error {
-	return &Error{
-		Code: code,
-		Msg:  msg,
-	}
+var AllErrors = make(map[ErrorKey]*Error, 256)
+
+func registerErr(e *Error) *Error {
+	AllErrors[e.Key()] = e
+	return e
+}
+
+type Error struct {
+	Code    int32
+	SubCode int32
+	Msg     string
 }
 
 func NewErrorFromPB(x *commonpb.Error) error {
 	if x == nil {
 		return nil
 	}
-	return NewError(int(x.Code), x.Msg)
+	return &Error{
+		Code:    x.Code,
+		SubCode: x.SubCode,
+		Msg:     x.Msg,
+	}
 }
 
 func (e *Error) ToPB() *commonpb.Error {
@@ -69,8 +86,9 @@ func (e *Error) ToPB() *commonpb.Error {
 		return nil
 	}
 	return &commonpb.Error{
-		Code: int32(e.Code),
-		Msg:  e.Msg,
+		Code:    e.Code,
+		SubCode: e.SubCode,
+		Msg:     e.Msg,
 	}
 }
 
@@ -79,6 +97,13 @@ func (e *Error) Error() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("%v, err_code:%v", e.Msg, e.Code)
+}
+
+func (e *Error) Key() ErrorKey {
+	return ErrorKey{
+		Code:    e.Code,
+		SubCode: e.SubCode,
+	}
 }
 
 func ToPBError(e error) *commonpb.Error {
@@ -100,6 +125,14 @@ func ToPBError(e error) *commonpb.Error {
 	}
 }
 
+func IsMustRollbackGetErr(e error) bool {
+	return in(GetErrorCode(e), mustRollbackGetErrs)
+}
+
+func IsMustRollbackCommitErr(e error) bool {
+	return in(GetErrorCode(e), mustRollbackCommitErrs)
+}
+
 func IsNotExistsErr(e error) bool {
 	return GetErrorCode(e) == consts.ErrCodeKeyOrVersionNotExists
 }
@@ -118,10 +151,6 @@ func IsRetryableGetErr(e error) bool {
 	return code == consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked
 }
 
-func IsMustRollbackGetErr(e error) bool {
-	return in(GetErrorCode(e), mustRollbackGetErrs)
-}
-
 func IsMustRollbackWriteKeyErr(e error) bool {
 	code := GetErrorCode(e)
 	return code == consts.ErrCodeWriteReadConflict ||
@@ -131,12 +160,6 @@ func IsMustRollbackWriteKeyErr(e error) bool {
 func IsQueueFullErr(e error) bool {
 	code := GetErrorCode(e)
 	return code == consts.ErrCodeReadModifyWriteQueueFull || code == consts.ErrCodeWriteIntentQueueFull
-}
-
-func IsMustRollbackCommitErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeWriteReadConflict ||
-		code == consts.ErrCodeStaleWrite
 }
 
 func IsNotSupportedErr(e error) bool {
@@ -156,7 +179,7 @@ func IsSnapshotReadTabletErr(err error) bool {
 		code == consts.ErrCodeMinAllowedSnapshotVersionViolated
 }
 
-func IsErrType(err error, code int) bool {
+func IsErrType(err error, code int32) bool {
 	return GetErrorCode(err) == code
 }
 
@@ -167,17 +190,17 @@ func ReplaceErr(original, replacement error) error {
 	return Annotatef(replacement, original.Error())
 }
 
-func GetErrorCode(e error) int {
+func GetErrorCode(e error) int32 {
 	if ve, ok := e.(*Error); ok && ve != nil {
 		return ve.Code
 	}
 	if ce, ok := e.(*commonpb.Error); ok && ce != nil {
-		return int(ce.Code)
+		return ce.Code
 	}
 	return consts.ErrCodeUnknown
 }
 
-func SetErrorCode(e error, code int) {
+func SetErrorCode(e error, code int32) {
 	if ve, ok := e.(*Error); ok {
 		ve.Code = code
 		return
@@ -189,7 +212,22 @@ func SetErrorCode(e error, code int) {
 	panic("impossible")
 }
 
-func CASErrorCode(e error, oldCode, newCode int) {
+func GetErrorKey(e error) ErrorKey {
+	if ve, ok := e.(*Error); ok && ve != nil {
+		return ve.Key()
+	}
+	if ce, ok := e.(*commonpb.Error); ok && ce != nil {
+		return ErrorKey{
+			Code:    ce.Code,
+			SubCode: ce.SubCode,
+		}
+	}
+	return ErrorKey{
+		Code: consts.ErrCodeUnknown,
+	}
+}
+
+func CASErrorCode(e error, oldCode, newCode int32) {
 	assert.Must(oldCode != consts.ErrCodeUnknown)
 
 	if GetErrorCode(e) == oldCode {
@@ -197,7 +235,7 @@ func CASErrorCode(e error, oldCode, newCode int) {
 	}
 }
 
-func CASError(e error, oldCode int, newErr error) error {
+func CASError(e error, oldCode int32, newErr error) error {
 	assert.Must(oldCode != consts.ErrCodeUnknown)
 
 	if GetErrorCode(e) == oldCode {

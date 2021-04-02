@@ -34,7 +34,7 @@ func NewKeyInfo(key string) *KeyInfo {
 	return &KeyInfo{
 		key:              key,
 		maxBuffered:      consts.DefaultTimestampCacheMaxBufferedWriters,
-		maxBufferedLower: int(float64(consts.DefaultTimestampCacheMaxBufferedWriters) * consts.DefaultTimestampCacheMaxBufferedWritersLowerRatio),
+		maxBufferedLower: consts.GetTimestampCacheMaxBufferedWritersLower(consts.DefaultTimestampCacheMaxBufferedWriters, consts.DefaultTimestampCacheMaxBufferedWritersLowerRatio),
 		writers: *redblacktree.NewWith(func(a, b interface{}) int {
 			av, bv := a.(uint64), b.(uint64)
 			if av >= bv {
@@ -70,7 +70,7 @@ func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Wri
 	}
 
 	if writerVersion <= i.maxRemovedWriterVersion {
-		return nil, errors.Annotatef(errors.ErrStaleWrite, "writerVersion <= i.maxRemovedWriterVersion")
+		return nil, errors.ErrStaleWriteWriterVersionSmallerThanMaxRemovedWriterVersion
 	}
 
 	w := transaction.NewWriter(txn)
@@ -79,11 +79,15 @@ func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Wri
 		defer i.mu.Unlock()
 
 		iterator := i.writers.Iterator()
-		var toRemoveKeys []interface{}
-		for iterator.Next() && i.writers.Size() > i.maxBufferedLower {
+		var (
+			toRemoveKeys []interface{}
+			writersSize  = i.writers.Size()
+		)
+		for iterator.Next() && writersSize > i.maxBufferedLower {
 			if k, w := iterator.Key(), iterator.Value().(*transaction.Writer); !w.IsWriting() {
 				toRemoveKeys = append(toRemoveKeys, k)
 				i.maxRemovedWriterVersion = w.ID.Version()
+				writersSize--
 			} else {
 				break
 			}

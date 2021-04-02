@@ -1,6 +1,8 @@
 package consts
 
 const (
+	ErrCodeUnknown = 0
+
 	ErrCodeWriteReadConflict                           = 1
 	ErrCodeStaleWrite                                  = 2
 	ErrCodeReadUncommittedDataPrevTxnStateUndetermined = 3
@@ -52,7 +54,6 @@ const (
 	ErrCodeInvalidConfig                                     = 999
 	ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys = 1000
 	ErrCodeReadModifyWriteReaderTimeouted                    = 1001
-	ErrCodeUnknown                                           = 1111
 	ErrCodeInject                                            = 11111
 	ErrCodeDummy                                             = 12222
 	ErrCodeAssertFailed                                      = 22222

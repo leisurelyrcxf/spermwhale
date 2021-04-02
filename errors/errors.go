@@ -6,193 +6,219 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/consts"
 )
 
+type SubCodeGenerator int32
+
+func NewSubCodeGenerator() *SubCodeGenerator {
+	g := new(SubCodeGenerator)
+	*g = -1
+	return g
+}
+
+func (g *SubCodeGenerator) Next() int32 {
+	*g++
+	return int32(*g)
+}
+
 var (
-	ErrWriteReadConflict = &Error{
-		Code: consts.ErrCodeWriteReadConflict,
-		Msg:  "write read conflict",
-	}
-	ErrWriteReadConflictReaderSkippedCommittedData = &Error{
-		Code: consts.ErrCodeWriteReadConflict,
-		Msg:  "write read conflict reader skipped committed data",
-	}
-	ErrWriteReadConflictUnsafeRead = &Error{
-		Code: consts.ErrCodeWriteReadConflict,
-		Msg:  "write read conflict unsafe read",
-	}
-	ErrStaleWrite = &Error{
-		Code: consts.ErrCodeStaleWrite,
-		Msg:  "stale write",
-	}
-	ErrReadUncommittedDataPrevTxnStatusUndetermined = &Error{
+	ErrWriteReadConflictSubCodeGenerator = NewSubCodeGenerator()
+	ErrWriteReadConflict                 = registerErr(&Error{
+		Code:    consts.ErrCodeWriteReadConflict,
+		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
+		Msg:     "write read conflict",
+	})
+	ErrWriteReadConflictReaderSkippedCommittedData = registerErr(&Error{
+		Code:    consts.ErrCodeWriteReadConflict,
+		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
+		Msg:     "write read conflict: reader skipped committed data",
+	})
+	ErrWriteReadConflictUnsafeRead = registerErr(&Error{
+		Code:    consts.ErrCodeWriteReadConflict,
+		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
+		Msg:     "write read conflict: unsafe read",
+	})
+
+	ErrStaleWriteSubCodeGenerator = NewSubCodeGenerator()
+	ErrStaleWrite                 = registerErr(&Error{
+		Code:    consts.ErrCodeStaleWrite,
+		SubCode: ErrStaleWriteSubCodeGenerator.Next(),
+		Msg:     "stale write",
+	})
+	ErrStaleWriteWriterVersionSmallerThanMaxRemovedWriterVersion = registerErr(&Error{
+		Code:    consts.ErrCodeStaleWrite,
+		SubCode: ErrStaleWriteSubCodeGenerator.Next(),
+		Msg:     "stale write: writer version smaller than max removed",
+	})
+
+	ErrReadUncommittedDataPrevTxnStatusUndetermined = registerErr(&Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined,
 		Msg:  "read uncommitted data previous txn state undetermined",
-	}
-	ErrReadUncommittedDataPrevTxnKeyRollbacked = &Error{
+	})
+	ErrReadUncommittedDataPrevTxnKeyRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
 		Msg:  "read uncommitted data previous txn key has been rollbacked",
-	}
-	ErrReadUncommittedDataPrevTxnToBeRollbacked = &Error{
+	})
+	ErrReadUncommittedDataPrevTxnToBeRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
 		Msg:  "read uncommitted data previous txn to be rollbacked",
-	}
-	ErrReadAfterWriteFailed = &Error{
+	})
+	ErrReadAfterWriteFailed = registerErr(&Error{
 		Code: consts.ErrCodeReadAfterWriteFailed,
 		Msg:  "read after write failed",
-	}
-	ErrTxnRollbacking = &Error{
+	})
+	ErrTxnRollbacking = registerErr(&Error{
 		Code: consts.ErrCodeTxnRollbacking,
 		Msg:  "txn rollbacking",
-	}
-	ErrTxnRollbacked = &Error{
+	})
+	ErrTxnRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeTxnRollbacked,
 		Msg:  "txn rollbacked",
-	}
-	ErrShardsNotReady = &Error{
+	})
+	ErrShardsNotReady = registerErr(&Error{
 		Code: consts.ErrCodeShardsNotReady,
 		Msg:  "shards not ready",
-	}
-	ErrKeyOrVersionNotExist = &Error{
+	})
+	ErrKeyOrVersionNotExist = registerErr(&Error{
 		Code: consts.ErrCodeKeyOrVersionNotExists,
 		Msg:  "key or version not exist",
-	}
-	ErrVersionAlreadyExists = &Error{
+	})
+	ErrVersionAlreadyExists = registerErr(&Error{
 		Code: consts.ErrCodeVersionAlreadyExists,
 		Msg:  "version already exists",
-	}
-	ErrNotSupported = &Error{
+	})
+	ErrNotSupported = registerErr(&Error{
 		Code: consts.ErrCodeNotSupported,
 		Msg:  "not supported",
-	}
-	ErrNotAllowed = &Error{
+	})
+	ErrNotAllowed = registerErr(&Error{
 		Code: consts.ErrCodeNotAllowed,
 		Msg:  "not allowed",
-	}
-	ErrInvalidRequest = &Error{
+	})
+	ErrInvalidRequest = registerErr(&Error{
 		Code: consts.ErrCodeInvalidRequest,
 		Msg:  "invalid request",
-	}
-	ErrTxnExists = &Error{
+	})
+	ErrTxnExists = registerErr(&Error{
 		Code: consts.ErrCodeTransactionAlreadyExists,
 		Msg:  "transaction already exists",
-	}
-	ErrTransactionNotFound = &Error{
+	})
+	ErrTransactionNotFound = registerErr(&Error{
 		Code: consts.ErrCodeTransactionNotFound,
 		Msg:  "transaction not found",
-	}
-	ErrTransactionStateCorrupted = &Error{
+	})
+	ErrTransactionStateCorrupted = registerErr(&Error{
 		Code: consts.ErrCodeTransactionStateCorrupted,
 		Msg:  "transaction state corrupted",
-	}
-	ErrTransactionInternalVersionOverflow = &Error{
+	})
+	ErrTransactionInternalVersionOverflow = registerErr(&Error{
 		Code: consts.ErrCodeTransactionInternalVersionOverflow,
 		Msg:  fmt.Sprintf("transaction internal version overflows %d", consts.MaxTxnInternalVersion),
-	}
-	ErrNilResponse = &Error{
+	})
+	ErrNilResponse = registerErr(&Error{
 		Code: consts.ErrCodeNilResponse,
 		Msg:  "response is nil",
-	}
-	ErrInvalidResponse = &Error{
+	})
+	ErrInvalidResponse = registerErr(&Error{
 		Code: consts.ErrCodeInvalidResponse,
 		Msg:  "response is invalid",
-	}
-	ErrTxnRetriedTooManyTimes = &Error{
+	})
+	ErrTxnRetriedTooManyTimes = registerErr(&Error{
 		Code: consts.ErrCodeTxnRetriedTooManyTimes,
 		Msg:  "transaction retried too many times",
-	}
-	ErrInject = &Error{
+	})
+	ErrInject = registerErr(&Error{
 		Code: consts.ErrCodeInject,
 		Msg:  "injected error",
-	}
-	ErrDummy = &Error{
+	})
+	ErrDummy = registerErr(&Error{
 		Code: consts.ErrCodeDummy,
 		Msg:  "dummy error",
-	}
-	ErrAssertFailed = &Error{
+	})
+	ErrAssertFailed = registerErr(&Error{
 		Code: consts.ErrCodeAssertFailed,
 		Msg:  "assert failed",
-	}
-	ErrSchedulerClosed = &Error{
+	})
+	ErrSchedulerClosed = registerErr(&Error{
 		Code: consts.ErrCodeSchedulerClosed,
 		Msg:  "scheduler closed",
-	}
-	ErrEmptyKey = &Error{
+	})
+	ErrEmptyKey = registerErr(&Error{
 		Code: consts.ErrCodeEmptyKey,
 		Msg:  "key is empty",
-	}
-	ErrEmptyKeys = &Error{
+	})
+	ErrEmptyKeys = registerErr(&Error{
 		Code: consts.ErrCodeEmptyKeys,
 		Msg:  "keys are empty",
-	}
-	ErrDontUseThisBeforeTaskFinished = &Error{
+	})
+	ErrDontUseThisBeforeTaskFinished = registerErr(&Error{
 		Code: consts.ErrCodeDontUseThisBeforeTaskFinished,
 		Msg:  "don't use this before task finish",
-	}
-	ErrGoRoutineExited = &Error{
+	})
+	ErrGoRoutineExited = registerErr(&Error{
 		Code: consts.ErrCodeGoRoutineExited,
 		Msg:  "go routine exited",
-	}
-	ErrCantRemoveCommittedValue = &Error{
+	})
+	ErrCantRemoveCommittedValue = registerErr(&Error{
 		Code: consts.ErrCodeCantRemoveCommittedValue,
 		Msg:  "can't remove committed value",
-	}
-	ErrInvalidTopoData = &Error{
+	})
+	ErrInvalidTopoData = registerErr(&Error{
 		Code: consts.ErrCodeInvalidTopoData,
 		Msg:  "invalid topo data",
-	}
-	ErrCantGetOracle = &Error{
+	})
+	ErrCantGetOracle = registerErr(&Error{
 		Code: consts.ErrCodeCantGetOracle,
 		Msg:  "can't get oracle",
-	}
-	ErrInvalidConfig = &Error{
+	})
+	ErrInvalidConfig = registerErr(&Error{
 		Code: consts.ErrCodeInvalidConfig,
 		Msg:  "invalid config",
-	}
-	ErrReadModifyWriteTransactionCommitWithNoWrittenKeys = &Error{
+	})
+	ErrReadModifyWriteTransactionCommitWithNoWrittenKeys = registerErr(&Error{
 		Code: consts.ErrCodeReadModifyWriteTransactionCommitWithNoWrittenKeys,
 		Msg:  "read modify write transaction commit with no written keys",
-	}
-	ErrReadModifyWriteWaitFailed = &Error{
+	})
+	ErrReadModifyWriteWaitFailed = registerErr(&Error{
 		Code: consts.ErrCodeReadModifyWriteWaitFailed,
 		Msg:  "read for write wait failed",
-	}
-	ErrReadModifyWriteQueueFull = &Error{
+	})
+	ErrReadModifyWriteQueueFull = registerErr(&Error{
 		Code: consts.ErrCodeReadModifyWriteQueueFull,
 		Msg:  "read for write queue full, retry later",
-	}
-	ErrReadModifyWriteReaderTimeouted = &Error{
+	})
+	ErrReadModifyWriteReaderTimeouted = registerErr(&Error{
 		Code: consts.ErrCodeReadModifyWriteReaderTimeouted,
 		Msg:  "read for write reader timeouted",
-	}
-	ErrTimestampCacheWriteQueueFull = &Error{
+	})
+	ErrTimestampCacheWriteQueueFull = registerErr(&Error{
 		Code: consts.ErrCodeTimestampCacheWriteQueueFull,
 		Msg:  "timestamp cache write queue full, retry later",
-	}
-	ErrWriteIntentQueueFull = &Error{
+	})
+	ErrWriteIntentQueueFull = registerErr(&Error{
 		Code: consts.ErrCodeWriteIntentQueueFull,
 		Msg:  "write intent queue full, retry later",
-	}
-	ErrTabletWriteTransactionNotFound = &Error{
+	})
+	ErrTabletWriteTransactionNotFound = registerErr(&Error{
 		Code: consts.ErrCodeTabletWriteTransactionNotFound,
 		Msg:  "tablet write transaction not found, probably removed",
-	}
-	ErrTransactionRecordNotFoundAndWontBeWritten = &Error{
+	})
+	ErrTransactionRecordNotFoundAndWontBeWritten = registerErr(&Error{
 		Code: consts.ErrCodeTransactionRecordNotFoundAndWontBeWritten,
 		Msg:  "transaction record not found and prevented from being written", // help rollback if original txn coordinator was gone
-	}
-	ErrSnapshotReadRetriedTooManyTimes = &Error{
+	})
+	ErrSnapshotReadRetriedTooManyTimes = registerErr(&Error{
 		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
 		Msg:  "snapshot read retried too many times",
-	}
-	ErrMinAllowedSnapshotVersionViolated = &Error{
+	})
+	ErrMinAllowedSnapshotVersionViolated = registerErr(&Error{
 		Code: consts.ErrCodeMinAllowedSnapshotVersionViolated,
 		Msg:  "min allowed snapshot version violated",
-	}
-	ErrInvalidTxnSnapshotReadOption = &Error{
+	})
+	ErrInvalidTxnSnapshotReadOption = registerErr(&Error{
 		Code: consts.ErrCodeInvalidTxnSnapshotReadOption,
 		Msg:  "invalid TxnSnapshotReadOption",
-	}
-	ErrWriteKeyAfterTabletTxnRollbacked = &Error{
+	})
+	ErrWriteKeyAfterTabletTxnRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeWriteKeyAfterTabletTxnRollbacked,
 		Msg:  "write key after tablet transaction rollbacked",
-	}
+	})
 )

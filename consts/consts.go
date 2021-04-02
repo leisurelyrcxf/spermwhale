@@ -109,5 +109,9 @@ const (
 
 const (
 	DefaultTimestampCacheMaxBufferedWriters           = 1024
-	DefaultTimestampCacheMaxBufferedWritersLowerRatio = 0.5
+	DefaultTimestampCacheMaxBufferedWritersLowerRatio = 0.8
 )
+
+func GetTimestampCacheMaxBufferedWritersLower(timestampCacheMaxBufferedWriters int, lowerRatio float64) int {
+	return int(float64(timestampCacheMaxBufferedWriters) * lowerRatio)
+}
