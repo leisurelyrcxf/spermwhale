@@ -74,6 +74,7 @@ var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
 type WritingWriters []*Writer
 
 func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, waitTimeout time.Duration) error {
+	//return errors.ErrWriteReadConflictUnsafeRead
 	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
 	defer cancel()
 

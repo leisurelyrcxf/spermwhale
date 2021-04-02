@@ -111,8 +111,20 @@ func (ctm *ConcurrentTreeMap) MaxIf(pred func(key interface{}) bool) (key interf
 	}
 }
 
-func (ctm *ConcurrentTreeMap) Find(f func(key interface{}, value interface{}) bool) (interface{}, interface{}) {
+func (ctm *ConcurrentTreeMap) Find(f func(key interface{}, value interface{}) bool) (foundKey interface{}, foundValue interface{}) {
 	ctm.mutex.RLock()
 	defer ctm.mutex.RUnlock()
 	return ctm.tm.Find(f)
+}
+
+func (ctm *ConcurrentTreeMap) Floor(key interface{}) (foundKey interface{}, foundValue interface{}) {
+	ctm.mutex.RLock()
+	defer ctm.mutex.RUnlock()
+	return ctm.tm.Floor(key)
+}
+
+func (ctm *ConcurrentTreeMap) Ceiling(key interface{}) (foundKey interface{}, foundValue interface{}) {
+	ctm.mutex.RLock()
+	defer ctm.mutex.RUnlock()
+	return ctm.tm.Ceiling(key)
 }

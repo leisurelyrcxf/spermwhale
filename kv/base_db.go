@@ -37,7 +37,7 @@ var EmptyValue = Value{}
 func NewValue(v types.Value) Value {
 	return Value{
 		Meta: Meta{
-			InternalVersion: v.InternalVersion,
+			InternalVersion: v.Meta.InternalVersion,
 			Flag:            v.Meta.Flag,
 		},
 		V: v.V,
@@ -73,12 +73,12 @@ func (v Value) WithVersion(version uint64) types.Value {
 }
 
 type KeyStore interface {
-	GetKey(ctx context.Context, key string, version uint64) (Value, error)
-	UpsertKey(ctx context.Context, key string, version uint64, val Value) error
-	RemoveKey(ctx context.Context, key string, version uint64) error
-	RemoveKeyIf(ctx context.Context, key string, version uint64, pred func(prev Value) error) error
-	UpdateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8) error
-	FindMaxBelowOfKey(ctx context.Context, key string, upperVersion uint64) (Value, uint64, error)
+	Get(ctx context.Context, key string, version uint64) (Value, error)
+	Upsert(ctx context.Context, key string, version uint64, val Value) error
+	Remove(ctx context.Context, key string, version uint64) error
+	RemoveIf(ctx context.Context, key string, version uint64, pred func(prev Value) error) error
+	UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error
+	Floor(ctx context.Context, key string, upperVersion uint64) (Value, uint64, error)
 	Close() error
 }
 
@@ -114,11 +114,11 @@ func (db *DB) Get(ctx context.Context, key string, opt types.KVReadOption) (type
 		if isTxnRecord {
 			val, err = db.ts.GetTxnRecord(ctx, version)
 		} else {
-			val, err = db.vvs.GetKey(ctx, key, version)
+			val, err = db.vvs.Get(ctx, key, version)
 		}
 	} else {
 		assert.Must(!isTxnRecord)
-		val, version, err = db.vvs.FindMaxBelowOfKey(ctx, key, version)
+		val, version, err = db.vvs.Floor(ctx, key, version)
 	}
 	if err != nil {
 		return types.EmptyValue, err
@@ -143,7 +143,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 				return err
 			})
 		}
-		oldVal, err := db.vvs.GetKey(ctx, key, val.Version)
+		oldVal, err := db.vvs.Get(ctx, key, val.Version)
 		if err != nil {
 			if errors.IsNotExistsErr(err) && !test {
 				glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", val.Version, key)
@@ -153,13 +153,13 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		if !oldVal.HasWriteIntent() {
 			return nil
 		}
-		return db.vvs.UpsertKey(ctx, key, val.Version, oldVal.WithNoWriteIntent())
+		return db.vvs.Upsert(ctx, key, val.Version, oldVal.WithNoWriteIntent())
 	}
 	if opt.IsRemoveVersion() {
 		assert.Must(!val.IsDirty())
 		// TODO can remove the check in the future if stable enough
 		if !isTxnRecord && utils.IsDebug() {
-			return db.vvs.RemoveKeyIf(ctx, key, val.Version, func(prev Value) error {
+			return db.vvs.RemoveIf(ctx, key, val.Version, func(prev Value) error {
 				if !prev.HasWriteIntent() {
 					if !test {
 						glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, val.Version)
@@ -172,13 +172,13 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		if isTxnRecord {
 			return db.ts.RemoveTxnRecord(ctx, val.Version)
 		} else {
-			return db.vvs.RemoveKey(ctx, key, val.Version)
+			return db.vvs.Remove(ctx, key, val.Version)
 		}
 	}
 	if isTxnRecord {
 		return errors.Annotatef(db.ts.UpsertTxnRecord(ctx, val.Version, NewValue(val)), "txn-record: %d", val.Version)
 	}
-	return errors.Annotatef(db.vvs.UpsertKey(ctx, key, val.Version, NewValue(val)), "key: '%s'", key)
+	return errors.Annotatef(db.vvs.Upsert(ctx, key, val.Version, NewValue(val)), "key: '%s'", key)
 }
 
 func (db *DB) Close() error {
@@ -190,7 +190,7 @@ func (db *DB) updateFlagOfKeyRaw(ctx context.Context, key string, version uint64
 	if vvsEx, ok := db.vvs.(KeyStoreEx); ok {
 		err = vvsEx.ReadModifyWriteKey(ctx, key, version, modifyFlag, onNotExists)
 	} else {
-		err = db.vvs.UpdateFlagOfKey(ctx, key, version, newFlag)
+		err = db.vvs.UpdateFlag(ctx, key, version, newFlag)
 	}
 	if err != nil {
 		return errors.Annotatef(err, "key: %s", key)

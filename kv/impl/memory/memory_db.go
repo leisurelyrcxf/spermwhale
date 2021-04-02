@@ -53,7 +53,7 @@ func NewVersionedValues() *VersionedValues {
 	return vvs
 }
 
-func (vvs *VersionedValues) GetKey(_ context.Context, key string, version uint64) (kv.Value, error) {
+func (vvs *VersionedValues) Get(_ context.Context, key string, version uint64) (kv.Value, error) {
 	kvvs, err := vvs.getKey(key)
 	if err != nil {
 		return kv.EmptyValue, err
@@ -61,13 +61,13 @@ func (vvs *VersionedValues) GetKey(_ context.Context, key string, version uint64
 	return kvvs.Get(version)
 }
 
-func (vvs *VersionedValues) UpsertKey(_ context.Context, key string, version uint64, val kv.Value) error {
+func (vvs *VersionedValues) Upsert(_ context.Context, key string, version uint64, val kv.Value) error {
 	return vvs.keys.GetLazy(key, func() interface{} {
 		return newKeyVersionedValues()
 	}).(*KeyVersionedValues).Upsert(version, val)
 }
 
-func (vvs *VersionedValues) UpdateFlagOfKey(context.Context, string, uint64, uint8) error {
+func (vvs *VersionedValues) UpdateFlag(context.Context, string, uint64, uint8) error {
 	return errors.ErrNotSupported
 }
 
@@ -80,15 +80,15 @@ func (vvs *VersionedValues) ReadModifyWriteKey(_ context.Context, key string, ve
 	return kvvs.ReadModifyWrite(version, modifyFlag, onNotExists)
 }
 
-func (vvs *VersionedValues) FindMaxBelowOfKey(_ context.Context, key string, upperVersion uint64) (val kv.Value, version uint64, err error) {
+func (vvs *VersionedValues) Floor(_ context.Context, key string, upperVersion uint64) (val kv.Value, version uint64, err error) {
 	kvvs, err := vvs.getKey(key)
 	if err != nil {
 		return kv.EmptyValue, 0, err
 	}
-	return kvvs.FindMaxBelow(upperVersion)
+	return kvvs.Floor(upperVersion)
 }
 
-func (vvs *VersionedValues) RemoveKey(_ context.Context, key string, version uint64) error {
+func (vvs *VersionedValues) Remove(_ context.Context, key string, version uint64) error {
 	kvvs, err := vvs.getKey(key)
 	if err != nil {
 		return err
@@ -96,7 +96,7 @@ func (vvs *VersionedValues) RemoveKey(_ context.Context, key string, version uin
 	return kvvs.Remove(version)
 }
 
-func (vvs *VersionedValues) RemoveKeyIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+func (vvs *VersionedValues) RemoveIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
 	kvvs, err := vvs.getKey(key)
 	if err != nil {
 		return err
@@ -182,13 +182,16 @@ func (kvvs *KeyVersionedValues) Min() (kv.Value, error) {
 	return dbVal.(kv.Value), nil
 }
 
-func (kvvs *KeyVersionedValues) FindMaxBelow(upperVersion uint64) (val kv.Value, version uint64, err error) {
+func (kvvs *KeyVersionedValues) Floor(upperVersion uint64) (val kv.Value, version uint64, err error) {
 	key, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Find(func(key interface{}, value interface{}) bool {
 		return key.(uint64) <= upperVersion
 	})
+
+	//key, dbVal := (*concurrency.ConcurrentTreeMap)(kvvs).Ceiling(upperVersion)
 	if key == nil {
 		return kv.EmptyValue, 0, errors.Annotatef(errors.ErrKeyOrVersionNotExist, "upperVersion: %d", upperVersion)
 	}
+	assert.Must(key.(uint64) != 0)
 	return dbVal.(kv.Value), key.(uint64), nil
 }
 

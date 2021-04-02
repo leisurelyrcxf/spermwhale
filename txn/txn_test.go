@@ -15,7 +15,7 @@ import (
 )
 
 func TestTxnLostUpdate(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).Run()
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
 func TestTxnLostUpdateReadModifyWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite).Run()

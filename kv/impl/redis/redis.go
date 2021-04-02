@@ -55,18 +55,18 @@ func (vvs RVVS) versionToScore(version uint64) string {
 }
 
 func (vvs RVVS) GetTxnRecord(ctx context.Context, version uint64) (kv.Value, error) {
-	return vvs.GetKey(ctx, types.TxnId(version).String(), version)
+	return vvs.Get(ctx, types.TxnId(version).String(), version)
 }
 
 func (vvs RVVS) UpsertTxnRecord(ctx context.Context, version uint64, val kv.Value) error {
-	return vvs.UpsertKey(ctx, types.TxnId(version).String(), version, val)
+	return vvs.Upsert(ctx, types.TxnId(version).String(), version, val)
 }
 
 func (vvs RVVS) RemoveTxnRecord(ctx context.Context, version uint64) error {
-	return vvs.RemoveKey(ctx, types.TxnId(version).String(), version)
+	return vvs.Remove(ctx, types.TxnId(version).String(), version)
 }
 
-func (vvs RVVS) GetKey(_ context.Context, key string, version uint64) (kv.Value, error) {
+func (vvs RVVS) Get(_ context.Context, key string, version uint64) (kv.Value, error) {
 	versionDesc := vvs.versionToScore(version)
 	cmd := vvs.cli.ZRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   versionDesc,
@@ -82,7 +82,7 @@ func (vvs RVVS) GetKey(_ context.Context, key string, version uint64) (kv.Value,
 	return val, err
 }
 
-func (vvs RVVS) UpsertKey(_ context.Context, key string, version uint64, val kv.Value) error {
+func (vvs RVVS) Upsert(_ context.Context, key string, version uint64, val kv.Value) error {
 	versionDesc := vvs.versionToScore(version)
 	_, err := vvs.cli.Pipelined(func(pipe redis.Pipeliner) error {
 		pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
@@ -93,7 +93,7 @@ func (vvs RVVS) UpsertKey(_ context.Context, key string, version uint64, val kv.
 	return err
 }
 
-func (vvs RVVS) UpdateFlagOfKey(_ context.Context, key string, version uint64, newFlag uint8) error {
+func (vvs RVVS) UpdateFlag(_ context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.ErrNotSupported
 }
 
@@ -149,7 +149,7 @@ func (vvs RVVS) Min(_ context.Context, key string) (kv.Value, uint64, error) {
 	return vvs.getOne(ret, err)
 }
 
-func (vvs RVVS) FindMaxBelowOfKey(_ context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+func (vvs RVVS) Floor(_ context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
 	cmd := vvs.cli.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   "-inf",
 		Max:   vvs.versionToScore(upperVersion),
@@ -159,17 +159,17 @@ func (vvs RVVS) FindMaxBelowOfKey(_ context.Context, key string, upperVersion ui
 	return vvs.getOne(ret, err)
 }
 
-func (vvs RVVS) RemoveKey(_ context.Context, key string, version uint64) error {
+func (vvs RVVS) Remove(_ context.Context, key string, version uint64) error {
 	versionDesc := vvs.versionToScore(version)
 	if err := vvs.cli.ZRemRangeByScore(key, versionDesc, versionDesc).Err(); err != nil {
-		glog.V(DebugLevel).Infof("[RemoveKey] remove version %d of key '%s' failed: '%s'", version, key, err)
+		glog.V(DebugLevel).Infof("[Remove] remove version %d of key '%s' failed: '%s'", version, key, err)
 		return err
 	}
-	glog.V(DebugLevel).Infof("[RemoveKey] removed version %d of key '%s'", version, key)
+	glog.V(DebugLevel).Infof("[Remove] removed version %d of key '%s'", version, key)
 	return nil
 }
 
-func (vvs RVVS) RemoveKeyIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+func (vvs RVVS) RemoveIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(_ context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
@@ -193,7 +193,7 @@ func (vvs RVVS) RemoveKeyIf(_ context.Context, key string, version uint64, pred 
 
 			_, err = tx.Pipelined(func(pipe redis.Pipeliner) error {
 				pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
-				glog.V(DebugLevel).Infof("[RemoveKeyIf] removed version %d of key '%s'", version, key)
+				glog.V(DebugLevel).Infof("[RemoveIf] removed version %d of key '%s'", version, key)
 				return nil
 			})
 			return err

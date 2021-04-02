@@ -51,7 +51,7 @@ func encodeValueOfKey(val kv.Value) bson.D {
 	}
 }
 
-func (m MongoVVS) GetKey(ctx context.Context, key string, version uint64) (kv.Value, error) {
+func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (kv.Value, error) {
 	gotKey, val, _, err := m.getOne(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOne(ctx, pkEqualOfKey(key, version)))
 	if err != nil {
 		return kv.EmptyValue, err
@@ -60,7 +60,7 @@ func (m MongoVVS) GetKey(ctx context.Context, key string, version uint64) (kv.Va
 	return val, nil
 }
 
-func (m MongoVVS) FindMaxBelowOfKey(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+func (m MongoVVS) Floor(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
 	gotKey, value, version, err := m.getOne(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOne(ctx, bson.D{
 		{Key: attrId, Value: bson.D{
 			{Key: "$lte", Value: bson.D{
@@ -78,7 +78,7 @@ func (m MongoVVS) FindMaxBelowOfKey(ctx context.Context, key string, upperVersio
 	return value, version, nil
 }
 
-func (m MongoVVS) UpsertKey(ctx context.Context, key string, version uint64, val kv.Value) error {
+func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val kv.Value) error {
 	single, err := m.cli.Database(defaultDatabase).Collection(keyCollection).ReplaceOne(ctx, pkEqualOfKey(key, version),
 		encodeValueOfKey(val), options.Replace().SetUpsert(true))
 	if err != nil {
@@ -89,32 +89,32 @@ func (m MongoVVS) UpsertKey(ctx context.Context, key string, version uint64, val
 	return nil
 }
 
-func (m MongoVVS) UpdateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8) error {
+func (m MongoVVS) UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOneAndUpdate(ctx, pkEqualOfKey(key, version),
 		bson.D{{Key: "$set", Value: bson.D{
 			{Key: attrFlag, Value: newFlag}},
 		}}).Err(), mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 }
 
-func (m MongoVVS) RemoveKey(ctx context.Context, key string, version uint64) error {
+func (m MongoVVS) Remove(ctx context.Context, key string, version uint64) error {
 	deleteResult, err := m.cli.Database(defaultDatabase).Collection(keyCollection).DeleteOne(ctx, pkEqualOfKey(key, version))
 	if err != nil {
-		glog.Errorf("[MongoVVS][RemoveKey] txn-%d remove key '%s' failed: '%v'", version, key, err)
+		glog.Errorf("[MongoVVS][Remove] txn-%d remove key '%s' failed: '%v'", version, key, err)
 		return err
 	}
-	glog.V(80).Infof("[MongoVVS][RemoveKey] txn-%d remove key '%s' succeeded, deleted count: %d", version, key, deleteResult.DeletedCount)
+	glog.V(80).Infof("[MongoVVS][Remove] txn-%d remove key '%s' succeeded, deleted count: %d", version, key, deleteResult.DeletedCount)
 	return nil
 }
 
-func (m MongoVVS) RemoveKeyIf(ctx context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
-	val, err := m.GetKey(ctx, key, version)
+func (m MongoVVS) RemoveIf(ctx context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+	val, err := m.Get(ctx, key, version)
 	if err != nil {
 		return err
 	}
 	if err := pred(val); err != nil {
 		return err
 	}
-	return m.RemoveKey(ctx, key, version)
+	return m.Remove(ctx, key, version)
 }
 
 func (m MongoVVS) Close() error {
