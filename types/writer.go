@@ -4,11 +4,11 @@ import (
 	"container/heap"
 	"sync"
 
-	"github.com/leisurelyrcxf/spermwhale/types/basic"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
 
+// Deprecated
 type Writer struct {
 	Version    uint64
 	OnUnlocked func()
@@ -18,6 +18,7 @@ type Writer struct {
 	Next                       *Writer
 }
 
+// Deprecated
 func NewWriter(version uint64) *Writer {
 	return &Writer{Version: version}
 }
@@ -34,7 +35,7 @@ func (w *Writer) Unlock() {
 	w.OnUnlocked()
 }
 
-func (w *Writer) Wait() {
+func (w *Writer) WaitFinish() {
 	if w != nil && w.writing.Get() {
 		w.rw.RLock()
 		w.rw.RUnlock()
@@ -59,12 +60,6 @@ func (w *Writer) IsRollbacked() bool {
 
 func (w *Writer) IsWriting() bool {
 	return w.writing.Get()
-}
-
-func (w *Writer) CheckLegalReadVersion(valVersion uint64) {
-	assert.Must(valVersion < w.Version)
-	assert.Must(w.IsRollbacked())
-	assert.Must(w.Next == nil || valVersion >= w.Next.Version || w.Next.IsRollbacked())
 }
 
 type Writers struct {

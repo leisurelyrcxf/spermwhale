@@ -34,10 +34,6 @@ func TestTxnLostUpdateInjectErr(t *testing.T) {
 func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
-func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
-		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
-}
 
 func TestTxnReadModifyWrite2Keys(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2Keys).Run()

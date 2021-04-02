@@ -135,8 +135,8 @@ func (s TxnState) ToPB() txnpb.TxnState {
 	return txnpb.TxnState(s)
 }
 
-func (s TxnState) String() string {
-	return stateStrings[s]
+func (s TxnState) IsUncommitted() bool {
+	return s == TxnStateUncommitted
 }
 
 func (s TxnState) IsStaging() bool {
@@ -151,8 +151,70 @@ func (s TxnState) IsAborted() bool {
 	return s == TxnStateRollbacking || s == TxnStateRollbacked
 }
 
+func (s TxnState) isRollbacked() bool {
+	return s == TxnStateRollbacked
+}
+
 func (s TxnState) IsTerminated() bool {
 	return s.IsAborted() || s.IsCommitted()
+}
+
+func (s TxnState) AsInt32() int32 {
+	return int32(s)
+}
+
+func (s TxnState) String() string {
+	return stateStrings[s]
+}
+
+type AtomicTxnState struct {
+	int32
+}
+
+func NewAtomicTxnState(state TxnState) AtomicTxnState {
+	return AtomicTxnState{int32: state.AsInt32()}
+}
+
+func (s *AtomicTxnState) GetTxnState() TxnState {
+	return TxnState(atomic.LoadInt32(&s.int32))
+}
+
+func (s *AtomicTxnState) SetTxnState(state TxnState) (oldState, newState TxnState, terminateOnce bool) {
+	for {
+		old := atomic.LoadInt32(&s.int32)
+		oldState = TxnState(old)
+		assert.Must(oldState != TxnStateInvalid)
+		assert.Must(!state.IsCommitted() || !oldState.IsAborted())
+		assert.Must(!state.IsAborted() || !oldState.IsCommitted())
+		assert.Must(!oldState.isRollbacked() || state != TxnStateRollbacking) // rollbacked->rollbacking now allowed
+		if atomic.CompareAndSwapInt32(&s.int32, old, state.AsInt32()) {
+			return oldState, state, !oldState.IsTerminated() && state.IsTerminated()
+		}
+	}
+}
+
+func (s *AtomicTxnState) IsUncommitted() bool {
+	return s.GetTxnState().IsUncommitted()
+}
+
+func (s *AtomicTxnState) IsStaging() bool {
+	return s.GetTxnState().IsStaging()
+}
+
+func (s *AtomicTxnState) IsCommitted() bool {
+	return s.GetTxnState().IsCommitted()
+}
+
+func (s *AtomicTxnState) IsAborted() bool {
+	return s.GetTxnState().IsAborted()
+}
+
+func (s *AtomicTxnState) IsTerminated() bool {
+	return s.GetTxnState().IsTerminated()
+}
+
+func (s *AtomicTxnState) String() string {
+	return s.GetTxnState().String()
 }
 
 type TxnKind uint8

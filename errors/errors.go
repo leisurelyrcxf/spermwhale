@@ -11,6 +11,14 @@ var (
 		Code: consts.ErrCodeWriteReadConflict,
 		Msg:  "write read conflict",
 	}
+	ErrWriteReadConflictReaderSkippedCommittedData = &Error{
+		Code: consts.ErrCodeWriteReadConflict,
+		Msg:  "write read conflict reader skipped committed data",
+	}
+	ErrWriteReadConflictUnsafeRead = &Error{
+		Code: consts.ErrCodeWriteReadConflict,
+		Msg:  "write read conflict unsafe read",
+	}
 	ErrStaleWrite = &Error{
 		Code: consts.ErrCodeStaleWrite,
 		Msg:  "stale write",

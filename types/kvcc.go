@@ -100,12 +100,12 @@ func (opt KVCCReadOption) IsTxnRecord() bool {
 	return opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord
 }
 
-func (opt KVCCReadOption) IsNotUpdateTimestampCache() bool {
-	return opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == KVCCReadOptBitMaskNotUpdateTimestampCache
+func (opt KVCCReadOption) IsUpdateTimestampCache() bool {
+	return opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0
 }
 
-func (opt KVCCReadOption) IsNotGetMaxReadVersion() bool {
-	return opt.flag&KVCCReadOptBitMaskNotGetMaxReadVersion == KVCCReadOptBitMaskNotGetMaxReadVersion
+func (opt KVCCReadOption) IsGetMaxReadVersion() bool {
+	return opt.flag&KVCCReadOptBitMaskNotGetMaxReadVersion == 0
 }
 
 func (opt KVCCReadOption) IsReadModifyWrite() bool {

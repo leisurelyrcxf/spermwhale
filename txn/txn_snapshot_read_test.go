@@ -16,6 +16,15 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
+func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
+}
+func TestTxnLostUpdateWriteAfterWriteSnapshotReadWithLatency(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetSimulatedLatency(time.Millisecond * 10).Run()
+}
+
 func TestTxnRead(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotRead(ctx, ts, true, false, false)
@@ -72,15 +81,26 @@ func TestTxnSnapshotReadInteractiveMixedMGetAndGetDontAllowVersionBack(t *testin
 		SetSnapshotReadDontAllowVersionBack(true).Run()
 }
 
+func TestTxnReadMoreKeys(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotReadMoreKeys(ctx, ts, false, false, false)
+	}).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).Run()
+}
 func TestTxnSnapshotReadWaitWhenReadDirtyMoreKeys(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotReadMoreKeys(ctx, ts, false, false, false)
-	}).SetGoRoutineNum(25).SetReadOnlyTxnType(types.TxnTypeDefault).SetTxnNumPerGoRoutine(2000).Run()
+	}).SetGoRoutineNum(25).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetTxnNumPerGoRoutine(2000).Run()
 }
 func TestTxnSnapshotReadInteractiveWaitWhenReadDirtyMoreKeys(t *testing.T) {
 	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
 		return testTxnSnapshotReadMoreKeys(ctx, ts, true, false, false)
-	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).SetLogLevel(26).Run()
+	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).SetLogLevel(6).Run()
+}
+func TestTxnSnapshotReadInteractiveWaitWhenReadDirtyMoreKeysWithLatency(t *testing.T) {
+	NewEmbeddedSnapshotReadTestCase(t, rounds, func(ctx context.Context, ts *TestCase) bool {
+		return testTxnSnapshotReadMoreKeys(ctx, ts, true, false, false)
+	}).AddReadOnlyTxnType(types.TxnTypeWaitWhenReadDirty).SetGoRoutineNum(25).SetTxnNumPerGoRoutine(2000).
+		SetRandomLatency(time.Microsecond*20, 0, 10).SetLogLevel(6).Run()
 }
 
 func TestTxnSnapshotReadInteractiveWriteIndex(t *testing.T) {

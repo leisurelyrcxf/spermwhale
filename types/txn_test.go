@@ -2,16 +2,47 @@ package types
 
 import (
 	"math"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
+func TestAtomicTxnState_SetTxnState(t *testing.T) {
+	assert := NewAssertion(t)
+
+	s := NewAtomicTxnState(TxnStateUncommitted)
+
+	const (
+		goRoutineNumber = 10000
+	)
+
+	var (
+		wg              sync.WaitGroup
+		terminatedTimes basic.AtomicInt32
+	)
+	wg.Add(goRoutineNumber)
+	for i := 0; i < goRoutineNumber; i++ {
+		go func() {
+			defer wg.Done()
+
+			if _, _, terminateOnce := s.SetTxnState(TxnStateRollbacking); terminateOnce {
+				terminatedTimes.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(int32(1), terminatedTimes.Get())
+}
+
 func TestSafeIncr(t *testing.T) {
 	assert := testifyassert.New(t)
 
-	u := MaxTxnVersion
+	u := uint64(math.MaxUint64)
 	assert.Equal(uint64(math.MaxUint64), u)
 	SafeIncr(&u)
 	assert.Equal(uint64(math.MaxUint64), u)

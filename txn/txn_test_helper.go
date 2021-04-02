@@ -57,6 +57,9 @@ func (p FailurePattern) IsReqLost() bool {
 type testDB struct {
 	types.KV
 	latency                                  time.Duration
+	randomLatency                            bool
+	randomLatencyUnit                        time.Duration
+	randomLatencyMin, randomLatencyMax       int
 	probabilityOfTxnRecordFailureDenominator int
 	failurePattern                           FailurePattern
 }
@@ -74,13 +77,29 @@ func newTestDB(db types.KV, latency time.Duration, failurePattern FailurePattern
 	}
 }
 
+func (d *testDB) SetRandomLatency(randomLatency bool, unit time.Duration, min, max int) *testDB {
+	d.randomLatency = randomLatency
+	d.randomLatencyUnit = unit
+	d.randomLatencyMin = min
+	d.randomLatencyMax = max
+	return d
+}
+
 func (d *testDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
-	time.Sleep(d.latency)
+	if d.randomLatency {
+		time.Sleep(utils.RandomPeriod(d.randomLatencyUnit, d.randomLatencyMin, d.randomLatencyMax))
+	} else {
+		time.Sleep(d.latency)
+	}
 	return d.KV.Get(ctx, key, opt)
 }
 
 func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
-	time.Sleep(d.latency)
+	if d.randomLatency {
+		time.Sleep(utils.RandomPeriod(d.randomLatencyUnit, d.randomLatencyMin, d.randomLatencyMax))
+	} else {
+		time.Sleep(d.latency)
+	}
 	if d.failurePattern.IsReqLost() {
 		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
 			return errors.ErrInject
@@ -308,9 +327,12 @@ type TestCase struct {
 	maxRetryPerTxn                   int
 	snapshotReadDontAllowVersionBack bool
 
-	SimulatedLatency   time.Duration
-	FailurePattern     FailurePattern
-	FailureProbability int
+	SimulatedLatency                   time.Duration
+	RandomLatency                      bool
+	RandomLatencyUnit                  time.Duration
+	RandomLatencyMin, RandomLatencyMax int
+	FailurePattern                     FailurePattern
+	FailureProbability                 int
 
 	additionalParameters map[string]interface{}
 
@@ -356,7 +378,7 @@ func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *
 }
 
 func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
-	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet().SetReadOnlyTxnType(types.TxnTypeSnapshotRead)
+	return NewEmbeddedTestCase(t, rounds, testFunc).SetReadOnlyTxnType(types.TxnTypeSnapshotRead)
 }
 
 func (ts *TestCase) Run() {
@@ -428,7 +450,8 @@ func (ts *TestCase) GenTestEnv() bool {
 			ts.Close()
 			return false
 		}
-		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability), ts.TableTxnCfg)
+		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability).
+			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnCfg)
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
 		ts.txnManagers = append(ts.txnManagers, m)
 		ts.stopper = func() {
@@ -512,19 +535,20 @@ func (ts *TestCase) SetEmbeddedTablet() *TestCase           { ts.embeddedTablet 
 func (ts *TestCase) GetGate1() *gate.Gate                   { return ts.txnServers[0].tm.kv.(*gate.Gate) }
 func (ts *TestCase) GetGate2() *gate.Gate                   { return ts.txnServers[1].tm.kv.(*gate.Gate) }
 func (ts *TestCase) SetTxnType(typ types.TxnType) *TestCase { ts.TxnType = typ; return ts }
+func (ts *TestCase) AddTxnType(typ types.TxnType) *TestCase { ts.TxnType |= typ; return ts }
 func (ts *TestCase) SetReadOnlyTxnType(typ types.TxnType) *TestCase {
 	ts.ReadOnlyTxnType = typ
+	return ts
+}
+func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
+	ts.ReadOnlyTxnType |= typ
 	return ts
 }
 func (ts *TestCase) SetSnapshotReadDontAllowVersionBack(b bool) *TestCase {
 	ts.snapshotReadDontAllowVersionBack = b
 	return ts
 }
-func (ts *TestCase) SetMaxRetryPerTxn(v int) *TestCase { ts.maxRetryPerTxn = v; return ts }
-func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
-	ts.ReadOnlyTxnType |= typ
-	return ts
-}
+func (ts *TestCase) SetMaxRetryPerTxn(v int) *TestCase    { ts.maxRetryPerTxn = v; return ts }
 func (ts *TestCase) SetDBType(typ types.DBType) *TestCase { ts.DBType = typ; return ts }
 func (ts *TestCase) SetTimeoutPerRound(timeout time.Duration) *TestCase {
 	ts.timeoutPerRound = timeout
@@ -562,6 +586,13 @@ func (ts *TestCase) SetTxnNumPerGoRoutine(num int) *TestCase { ts.TxnNumPerGoRou
 func (ts *TestCase) SetLogLevel(lvl int) *TestCase           { ts.LogLevel = glog.Level(lvl); return ts }
 func (ts *TestCase) SetSimulatedLatency(latency time.Duration) *TestCase {
 	ts.SimulatedLatency = latency
+	return ts
+}
+func (ts *TestCase) SetRandomLatency(unit time.Duration, min, max int) *TestCase {
+	ts.RandomLatency = true
+	ts.RandomLatencyUnit = unit
+	ts.RandomLatencyMin = min
+	ts.RandomLatencyMax = max
 	return ts
 }
 func (ts *TestCase) SetFailureProbability(prob int) *TestCase     { ts.FailureProbability = prob; return ts }

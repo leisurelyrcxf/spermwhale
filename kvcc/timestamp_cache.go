@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
+
 	"github.com/emirpasic/gods/trees/redblacktree"
 	"github.com/golang/glog"
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -54,10 +56,11 @@ func (i *KeyInfo) GetMaxReaderVersion() uint64 {
 	return atomic.LoadUint64(&i.maxReaderVersion)
 }
 
-func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error) {
+func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Writer, err error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
+	writerVersion := txn.ID.Version()
 	if writerVersion < i.GetMaxReaderVersion() { // TODO no need atomic no need to atomic load here
 		return nil, errors.ErrWriteReadConflict
 	}
@@ -70,7 +73,7 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 		return nil, errors.Annotatef(errors.ErrStaleWrite, "writerVersion <= i.maxRemovedWriterVersion")
 	}
 
-	w := types.NewWriter(writerVersion)
+	w := transaction.NewWriter(txn)
 	w.OnUnlocked = func() {
 		i.mu.Lock()
 		defer i.mu.Unlock()
@@ -78,9 +81,9 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 		iterator := i.writers.Iterator()
 		var toRemoveKeys []interface{}
 		for iterator.Next() && i.writers.Size() > i.maxBufferedLower {
-			if k, w := iterator.Key(), iterator.Value().(*types.Writer); !w.IsWriting() {
+			if k, w := iterator.Key(), iterator.Value().(*transaction.Writer); !w.IsWriting() {
 				toRemoveKeys = append(toRemoveKeys, k)
-				i.maxRemovedWriterVersion = w.Version
+				i.maxRemovedWriterVersion = w.ID.Version()
 			} else {
 				break
 			}
@@ -97,18 +100,16 @@ func (i *KeyInfo) TryLock(writerVersion uint64) (writer *types.Writer, err error
 	return w, nil
 }
 
-func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxReadVersion uint64, err error) {
+func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *transaction.Writer, maxReadVersion uint64, err error) {
 	i.mu.RLock()
 	defer func() {
-		assert.Must(!opt.IsNotUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
-		if !opt.IsNotUpdateTimestampCache() && err == nil {
+		assert.Must(opt.IsUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
+		if opt.IsUpdateTimestampCache() && err == nil {
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
-		} else {
-			maxReadVersion = i.GetMaxReaderVersion()
 		}
 		if w != nil {
-			if maxBelowNode, found := i.writingWriters.Floor(w.Version - 1); found {
-				w.Next = maxBelowNode.Value.(*types.Writer)
+			if maxBelowNode, found := i.writingWriters.Floor(w.ID.Version() - 1); found {
+				w.Next = maxBelowNode.Value.(*transaction.Writer)
 			}
 		}
 		i.mu.RUnlock()
@@ -120,7 +121,7 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 			return nil, 0, nil
 		}
 		assert.Must(!opt.IsSnapshotRead())
-		return exactNode.(*types.Writer), 0, nil
+		return exactNode.(*transaction.Writer), 0, nil
 	}
 
 	maxBelowOrEqualWriterNode, found := i.writers.Floor(opt.ReaderVersion) // max <=
@@ -129,47 +130,30 @@ func (i *KeyInfo) FindWriter(opt *types.KVCCReadOption) (w *types.Writer, maxRea
 	}
 
 	if !opt.IsSnapshotRead() {
-		return maxBelowOrEqualWriterNode.Value.(*types.Writer), 0, nil
+		return maxBelowOrEqualWriterNode.Value.(*transaction.Writer), 0, nil
 	}
 
 	assert.Must(maxBelowOrEqualWriterNode != nil)
 	var node = maxBelowOrEqualWriterNode
 	for {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
-		if node.Value.(*types.Writer).IsClean() {
-			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriter] found clean writer-%d, max reader version: %d", i.key, node.Value.(*types.Writer).Version, i.maxReaderVersion)
-			return node.Value.(*types.Writer), 0, nil
+		if node.Value.(*transaction.Writer).IsCommitted() {
+			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriter] found clean writer-%d, max reader version: %d", i.key, node.Value.(*transaction.Writer).ID.Version(), i.maxReaderVersion)
+			return node.Value.(*transaction.Writer), 0, nil
 		}
-		if node.Value.(*types.Writer).Version-1 < opt.MinAllowedSnapshotVersion {
+		newReaderVersion := node.Value.(*transaction.Writer).ID.Version() - 1
+		if newReaderVersion < opt.MinAllowedSnapshotVersion {
 			if !opt.IsWaitWhenReadDirty() {
-				return node.Value.(*types.Writer), 0, errors.ErrMinAllowedSnapshotVersionViolated
+				return node.Value.(*transaction.Writer), 0, errors.ErrMinAllowedSnapshotVersionViolated
 			}
-			return node.Value.(*types.Writer), 0, nil
+			return node.Value.(*transaction.Writer), 0, nil
 		}
-		opt.ReaderVersion = node.Value.(*types.Writer).Version - 1
+		opt.ReaderVersion = newReaderVersion
 		if node = i.prev(node); node == nil {
 			return nil, 0, nil
 		}
 		// hold invariant (node.Version <= opt.ReaderVersion && node is the largest one)
 	}
-}
-
-func (i *KeyInfo) MarkCommitted(writerVersion uint64) {
-	i.mu.RLock()
-	val, ok := i.writers.Get(writerVersion)
-	if ok {
-		val.(*types.Writer).MarkClean()
-	}
-	i.mu.RUnlock()
-}
-
-func (i *KeyInfo) MarkRollbacked(writerVersion uint64) {
-	i.mu.RLock()
-	val, ok := i.writers.Get(writerVersion)
-	if ok {
-		val.(*types.Writer).MarkRollbacked()
-	}
-	i.mu.RUnlock()
 }
 
 func (i *KeyInfo) RemoveVersion(version uint64) {
@@ -235,20 +219,12 @@ func (cache *TimestampCache) GetMaxReaderVersion(key string) uint64 {
 	return keyInfo.GetMaxReaderVersion()
 }
 
-func (cache *TimestampCache) TryLock(key string, writerVersion uint64) (writer *types.Writer, err error) {
-	return cache.getLazy(key).TryLock(writerVersion)
+func (cache *TimestampCache) TryLock(key string, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
+	return cache.getLazy(key).TryLock(txn)
 }
 
-func (cache *TimestampCache) FindWriter(key string, opt *types.KVCCReadOption) (w *types.Writer, maxReadVersion uint64, err error) {
+func (cache *TimestampCache) FindWriter(key string, opt *types.KVCCReadOption) (w *transaction.Writer, maxReadVersion uint64, err error) {
 	return cache.getLazy(key).FindWriter(opt)
-}
-
-func (cache *TimestampCache) MarkCommitted(key string, writerVersion uint64) {
-	cache.getLazy(key).MarkCommitted(writerVersion)
-}
-
-func (cache *TimestampCache) MarkRollbacked(key string, writerVersion uint64) {
-	cache.getLazy(key).MarkRollbacked(writerVersion)
 }
 
 func (cache *TimestampCache) RemoveVersion(key string, writerVersion uint64) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/leisurelyrcxf/spermwhale/bench"
 
@@ -20,7 +21,7 @@ type Transaction struct {
 	sync.RWMutex
 
 	ID types.TxnId
-	types.TxnState
+	types.AtomicTxnState
 
 	writtenKeys concurrency.Future
 
@@ -33,15 +34,18 @@ type Transaction struct {
 
 	txnRecordMaxReadVersion uint64
 
+	terminated chan struct{}
+
 	destroy func(*Transaction)
 }
 
 func newTransaction(id types.TxnId, db types.KV, destroy func(*Transaction)) *Transaction {
 	return &Transaction{
-		ID:       id,
-		db:       db,
-		TxnState: types.TxnStateUncommitted,
-		destroy:  destroy,
+		ID:             id,
+		db:             db,
+		AtomicTxnState: types.NewAtomicTxnState(types.TxnStateUncommitted),
+		terminated:     make(chan struct{}),
+		destroy:        destroy,
 	}
 }
 
@@ -61,14 +65,14 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 
 	t.Lock()
 	if opt.IsClearWriteIntent() {
+		assert.Must(!t.IsAborted())
 		// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed
 		// TODO needs test against kv.db.Set() failed.
 		t.signalKeyEventUnsafe(NewKeyEvent(key, KeyEventTypeClearWriteIntent))
 	} else {
 		assert.Must(isRollbackKey)
-		assert.Must(!t.IsCommitted())
-		if t.TxnState != types.TxnStateRollbacked {
-			t.TxnState = types.TxnStateRollbacking
+		if !t.IsAborted() {
+			t.SetTxnState(types.TxnStateRollbacking)
 		}
 	}
 
@@ -101,23 +105,39 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 	return err
 }
 
+func (t *Transaction) GetMaxTxnRecordReadVersion() uint64 {
+	return atomic.LoadUint64(&t.txnRecordMaxReadVersion)
+}
+
+func (t *Transaction) updateMaxTxnRecordReadVersion(readerVersion uint64) uint64 {
+	assert.Must(readerVersion == types.MaxTxnVersion)
+	atomic.StoreUint64(&t.txnRecordMaxReadVersion, readerVersion)
+	return readerVersion
+}
+
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
 	t.RLock()
 	defer t.RUnlock()
 
-	if !opt.IsNotUpdateTimestampCache() {
-		assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
-		t.txnRecordMaxReadVersion = opt.ReaderVersion
+	var maxReadVersion uint64
+	if opt.IsUpdateTimestampCache() {
+		maxReadVersion = t.updateMaxTxnRecordReadVersion(opt.ReaderVersion)
 	}
 	val, err := t.db.Get(ctx, "", opt.ToKVReadOption())
-	return val.WithMaxReadVersion(t.txnRecordMaxReadVersion), err
+	if !opt.IsGetMaxReadVersion() {
+		return val.WithMaxReadVersion(0), err
+	}
+	if maxReadVersion != 0 {
+		return val.WithMaxReadVersion(maxReadVersion), err
+	}
+	return val.WithMaxReadVersion(t.GetMaxTxnRecordReadVersion()), err // TODO maybe return max reader version to user?
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) error {
 	t.Lock()
 	defer t.Unlock()
 
-	if t.TxnState != types.TxnStateUncommitted {
+	if !t.IsUncommitted() {
 		if t.IsCommitted() {
 			glog.Fatalf("txn-%d write txn record after committed", val.Version)
 		}
@@ -154,12 +174,10 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 	assert.Must(opt.IsRemoveVersion())
 	t.Lock()
 	if !opt.IsRollbackVersion() {
-		assert.Must(!t.IsAborted())
-		t.TxnState = types.TxnStateCommitted
+		t.SetTxnState(types.TxnStateCommitted)
 	} else {
-		assert.Must(!t.IsCommitted())
-		if t.TxnState != types.TxnStateRollbacked {
-			t.TxnState = types.TxnStateRollbacking
+		if !t.IsAborted() {
+			t.SetTxnState(types.TxnStateRollbacking)
 		}
 	}
 	t.Unlock()
@@ -193,7 +211,7 @@ func (t *Transaction) doneOnceUnsafe(key string, isRollback bool, caller string)
 	if doneOnce = t.writtenKeys.DoneOnceUnsafe(key); doneOnce {
 		glog.V(60).Infof("[Transaction::%s] txn-%d done (all %d written keys include '%s' have been done)", caller, t.ID, t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		if isRollback {
-			t.TxnState = types.TxnStateRollbacked
+			t.SetTxnState(types.TxnStateRollbacked)
 		} else {
 			assert.Must(t.IsCommitted())
 		}
@@ -209,7 +227,7 @@ func (t *Transaction) registerKeyEventWaiter(key string) (*KeyEventWaiter, KeyEv
 	t.RLock()
 	defer t.RUnlock()
 
-	switch t.TxnState {
+	switch t.GetTxnState() {
 	case types.TxnStateCommitted:
 		return nil, NewKeyEvent(key, KeyEventTypeClearWriteIntent), nil
 	case types.TxnStateRollbacked:
@@ -239,26 +257,27 @@ func (t *Transaction) registerKeyEventWaiter(key string) (*KeyEventWaiter, KeyEv
 		t.keyEventWaiters[key] = append(t.keyEventWaiters[key], w)
 		return w, InvalidKeyEvent, nil
 	default:
-		panic(fmt.Sprintf("impossible state %s", t.TxnState))
+		panic(fmt.Sprintf("impossible state %s", t.GetTxnState()))
 	}
 }
 
 func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
-	if t.TxnState == types.TxnStateCommitted || t.TxnState == types.TxnStateRollbacked {
+	state := t.GetTxnState()
+	if state == types.TxnStateCommitted || state == types.TxnStateRollbacked {
 		return
 	}
 	assert.Must(!t.writtenKeys.Done)
 	switch event.Type {
 	case KeyEventTypeClearWriteIntent:
-		t.TxnState = types.TxnStateCommitted
+		state = t.SetTxnState(types.TxnStateCommitted)
 	case KeyEventTypeRemoveVersionFailed:
-		t.TxnState = types.TxnStateRollbacking
+		assert.Must(state == types.TxnStateRollbacking)
 		if t.rollbackedKey2Success == nil {
 			t.rollbackedKey2Success = make(map[string]bool)
 		}
 		t.rollbackedKey2Success[event.Key] = false
 	case KeyEventTypeVersionRemoved:
-		t.TxnState = types.TxnStateRollbacking
+		assert.Must(state == types.TxnStateRollbacking)
 		if t.rollbackedKey2Success == nil {
 			t.rollbackedKey2Success = make(map[string]bool)
 		}
@@ -270,7 +289,7 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 	t.keyEventWaitersMu.Lock()
 	defer t.keyEventWaitersMu.Unlock()
 
-	switch t.TxnState {
+	switch state {
 	case types.TxnStateCommitted:
 		for key, ws := range t.keyEventWaiters {
 			for _, w := range ws {
@@ -292,9 +311,26 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 			t.keyEventWaiters[event.Key] = invalidKeyWaiters // once fired, should no longer register again // TODO remove this in product
 		}
 	default:
-		panic(fmt.Sprintf("Transaction::signalKeyEventUnsafe: invalid Transaction state: %s", t.TxnState))
+		panic(fmt.Sprintf("Transaction::signalKeyEventUnsafe: invalid Transaction state: %s", t.GetTxnState()))
 	}
 	return
+}
+
+func (t *Transaction) SetTxnState(state types.TxnState) (newState types.TxnState) {
+	var terminateOnce bool
+	if _, newState, terminateOnce = t.AtomicTxnState.SetTxnState(state); terminateOnce {
+		close(t.terminated)
+	}
+	return
+}
+
+func (t *Transaction) waitTerminate(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.terminated:
+		return nil
+	}
 }
 
 func (t *Transaction) getWaiterCounts() (waiterCount, waiterKeyCount int) {
