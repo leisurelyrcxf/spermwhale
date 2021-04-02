@@ -135,10 +135,6 @@ func (s TxnState) ToPB() txnpb.TxnState {
 	return txnpb.TxnState(s)
 }
 
-func (s TxnState) IsUncommitted() bool {
-	return s == TxnStateUncommitted
-}
-
 func (s TxnState) IsStaging() bool {
 	return s == TxnStateStaging
 }
@@ -179,22 +175,43 @@ func (s *AtomicTxnState) GetTxnState() TxnState {
 	return TxnState(atomic.LoadInt32(&s.int32))
 }
 
-func (s *AtomicTxnState) SetTxnState(state TxnState) (oldState, newState TxnState, terminateOnce bool) {
+func (s *AtomicTxnState) SetTxnState(state TxnState) (newState TxnState, terminateOnce bool) {
 	for {
 		old := atomic.LoadInt32(&s.int32)
-		oldState = TxnState(old)
+		oldState := TxnState(old)
 		assert.Must(oldState != TxnStateInvalid)
 		assert.Must(!state.IsCommitted() || !oldState.IsAborted())
 		assert.Must(!state.IsAborted() || !oldState.IsCommitted())
 		assert.Must(!oldState.isRollbacked() || state != TxnStateRollbacking) // rollbacked->rollbacking now allowed
 		if atomic.CompareAndSwapInt32(&s.int32, old, state.AsInt32()) {
-			return oldState, state, !oldState.IsTerminated() && state.IsTerminated()
+			return state, !oldState.IsTerminated() && state.IsTerminated()
 		}
 	}
 }
 
-func (s *AtomicTxnState) IsUncommitted() bool {
-	return s.GetTxnState().IsUncommitted()
+func (s *AtomicTxnState) SetTxnStateUnsafe(state TxnState) (newState TxnState, terminateOnce bool) {
+	old := atomic.LoadInt32(&s.int32)
+	oldState := TxnState(old)
+	assert.Must(oldState != TxnStateInvalid)
+	assert.Must(!state.IsCommitted() || !oldState.IsAborted())
+	assert.Must(!state.IsAborted() || !oldState.IsCommitted())
+	assert.Must(!oldState.isRollbacked() || state != TxnStateRollbacking) // rollbacked->rollbacking now allowed
+	atomic.StoreInt32(&s.int32, state.AsInt32())
+	return state, !oldState.IsTerminated() && state.IsTerminated()
+}
+
+func (s *AtomicTxnState) SetRollbacking() (abortOnce bool) {
+	for {
+		old := atomic.LoadInt32(&s.int32)
+		oldState := TxnState(old)
+		assert.Must(oldState != TxnStateInvalid && !oldState.IsCommitted())
+		if oldState.IsAborted() {
+			return false
+		}
+		if atomic.CompareAndSwapInt32(&s.int32, old, TxnStateRollbacking.AsInt32()) {
+			return true
+		}
+	}
 }
 
 func (s *AtomicTxnState) IsStaging() bool {

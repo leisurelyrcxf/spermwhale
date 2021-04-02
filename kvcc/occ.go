@@ -331,7 +331,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	txn.Lock()
 	defer txn.Unlock()
 
-	if !txn.IsUncommitted() {
+	if txn.GetTxnState() != types.TxnStateUncommitted {
 		if txn.IsCommitted() {
 			glog.Fatalf("txn-%d write key '%s' after committed", txnId, key)
 		}
@@ -339,7 +339,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
-	assert.Must(!txn.Done())
+	assert.Must(!txn.IsDoneUnsafe())
 	inserted, keyDone := txn.AddUnsafe(key)
 	assert.Must(!keyDone)
 	if inserted {

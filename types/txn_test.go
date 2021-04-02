@@ -7,17 +7,25 @@ import (
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
-
 	testifyassert "github.com/stretchr/testify/assert"
 )
 
-func TestAtomicTxnState_SetTxnState(t *testing.T) {
-	assert := NewAssertion(t)
+const AtomicTxnStateTestRounds = 1000000
 
+func TestAtomicTxnState_SetTxnState(t *testing.T) {
+	for i := 0; i < AtomicTxnStateTestRounds; i++ {
+		if !testAtomicTxnStateSetTxnState(t) {
+			t.Errorf("%s failed @round %d", t.Name(), i)
+			return
+		}
+	}
+}
+
+func testAtomicTxnStateSetTxnState(t *testing.T) (b bool) {
 	s := NewAtomicTxnState(TxnStateUncommitted)
 
 	const (
-		goRoutineNumber = 10000
+		goRoutineNumber = 10
 	)
 
 	var (
@@ -29,14 +37,52 @@ func TestAtomicTxnState_SetTxnState(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			if _, _, terminateOnce := s.SetTxnState(TxnStateRollbacking); terminateOnce {
+			if _, terminateOnce := s.SetTxnState(TxnStateRollbacking); terminateOnce {
 				terminatedTimes.Add(1)
 			}
 		}()
 	}
 	wg.Wait()
 
-	assert.Equal(int32(1), terminatedTimes.Get())
+	return NewAssertion(t).Equal(int32(1), terminatedTimes.Get())
+}
+
+func TestAtomicTxnState_SetTxnStateUnsafe(t *testing.T) {
+	for i := 0; i < AtomicTxnStateTestRounds; i++ {
+		if !testAtomicTxnStateSetTxnStateUnsafe(t) {
+			t.Errorf("%s failed @round %d", t.Name(), i)
+			return
+		}
+	}
+}
+
+func testAtomicTxnStateSetTxnStateUnsafe(t *testing.T) (b bool) {
+	s := NewAtomicTxnState(TxnStateUncommitted)
+
+	const (
+		goRoutineNumber = 10
+	)
+
+	var (
+		wg              sync.WaitGroup
+		terminatedTimes basic.AtomicInt32
+		mu              sync.Mutex
+	)
+	wg.Add(goRoutineNumber)
+	for i := 0; i < goRoutineNumber; i++ {
+		go func() {
+			defer wg.Done()
+
+			mu.Lock()
+			if _, terminateOnce := s.SetTxnStateUnsafe(TxnStateRollbacking); terminateOnce {
+				terminatedTimes.Add(1)
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	return NewAssertion(t).Equal(int32(1), terminatedTimes.Get())
 }
 
 func TestSafeIncr(t *testing.T) {

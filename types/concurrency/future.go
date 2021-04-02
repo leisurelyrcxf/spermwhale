@@ -5,7 +5,7 @@ type Future struct {
 	flyingKeyCount int
 	addedKeyCount  int
 
-	Done bool
+	done bool
 }
 
 func NewFuture() *Future {
@@ -18,6 +18,10 @@ func (s *Future) GetKeyCountUnsafe() int {
 
 func (s *Future) GetAddedKeyCountUnsafe() int {
 	return s.addedKeyCount
+}
+
+func (s *Future) IsDoneUnsafe() bool {
+	return s.done
 }
 
 func (s *Future) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) {
@@ -33,7 +37,7 @@ func (s *Future) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) {
 }
 
 func (s *Future) DoneOnceUnsafe(key string) (doneOnce bool) {
-	if s.Done {
+	if s.done {
 		return false
 	}
 	return s.DoneUnsafe(key)
@@ -48,8 +52,8 @@ func (s *Future) DoneUnsafe(key string) (futureDone bool) {
 	} else {
 		s.set(key, true) // prevent future inserts
 	}
-	s.Done = s.flyingKeyCount == 0
-	return s.Done
+	s.done = s.flyingKeyCount == 0
+	return s.done
 }
 
 func (s *Future) doneUnsafeEx(key string) (doneOnce, done bool) {

@@ -65,14 +65,13 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 
 	t.Lock()
 	if opt.IsClearWriteIntent() {
-		assert.Must(!t.IsAborted())
 		// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed
 		// TODO needs test against kv.db.Set() failed.
 		t.signalKeyEventUnsafe(NewKeyEvent(key, KeyEventTypeClearWriteIntent))
 	} else {
 		assert.Must(isRollbackKey)
 		if !t.IsAborted() {
-			t.SetTxnState(types.TxnStateRollbacking)
+			t.setTxnStateUnsafe(types.TxnStateRollbacking)
 		}
 	}
 
@@ -91,7 +90,9 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 		if err == nil && glog.V(60) {
 			glog.Infof("txn-%d key '%s' rollbacked, cost: %s", txnId, key, bench.Elapsed())
 		}
-		t.signalKeyEventUnsafe(NewKeyEvent(key, GetKeyEventTypeRemoveVersion(err == nil)))
+		if isWrittenKey {
+			t.signalKeyEventUnsafe(NewKeyEvent(key, GetKeyEventTypeRemoveVersion(err == nil)))
+		}
 	}
 
 	if err == nil && !opt.IsWriteByDifferentTransaction() {
@@ -137,7 +138,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 	t.Lock()
 	defer t.Unlock()
 
-	if !t.IsUncommitted() {
+	if t.GetTxnState() != types.TxnStateUncommitted {
 		if t.IsCommitted() {
 			glog.Fatalf("txn-%d write txn record after committed", val.Version)
 		}
@@ -151,7 +152,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 	}
 
 	txnKey := types.TxnId(val.Version).String()
-	assert.Must(!t.writtenKeys.Done)
+	assert.Must(!t.writtenKeys.IsDoneUnsafe())
 	inserted, keyDone := t.writtenKeys.AddUnsafe(txnKey)
 	assert.Must(!keyDone)
 	if inserted {
@@ -174,10 +175,10 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 	assert.Must(opt.IsRemoveVersion())
 	t.Lock()
 	if !opt.IsRollbackVersion() {
-		t.SetTxnState(types.TxnStateCommitted)
+		t.setTxnStateUnsafe(types.TxnStateCommitted)
 	} else {
 		if !t.IsAborted() {
-			t.SetTxnState(types.TxnStateRollbacking)
+			t.setTxnStateUnsafe(types.TxnStateRollbacking)
 		}
 	}
 	t.Unlock()
@@ -203,17 +204,19 @@ func (t *Transaction) AddUnsafe(key string) (insertedNewKey bool, keyDone bool) 
 	return t.writtenKeys.AddUnsafe(key)
 }
 
-func (t *Transaction) Done() bool {
-	return t.writtenKeys.Done
+func (t *Transaction) IsDoneUnsafe() bool {
+	return t.writtenKeys.IsDoneUnsafe()
 }
 
 func (t *Transaction) doneOnceUnsafe(key string, isRollback bool, caller string) (doneOnce bool) {
 	if doneOnce = t.writtenKeys.DoneOnceUnsafe(key); doneOnce {
-		glog.V(60).Infof("[Transaction::%s] txn-%d done (all %d written keys include '%s' have been done)", caller, t.ID, t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		if isRollback {
-			t.SetTxnState(types.TxnStateRollbacked)
+			t.setTxnStateUnsafe(types.TxnStateRollbacked)
 		} else {
 			assert.Must(t.IsCommitted())
+		}
+		if glog.V(60) {
+			glog.Infof("[Transaction::%s] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", caller, t.ID, t.GetTxnState(), t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		}
 	}
 	return doneOnce
@@ -266,10 +269,10 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 	if state == types.TxnStateCommitted || state == types.TxnStateRollbacked {
 		return
 	}
-	assert.Must(!t.writtenKeys.Done)
+	assert.Must(!t.writtenKeys.IsDoneUnsafe())
 	switch event.Type {
 	case KeyEventTypeClearWriteIntent:
-		state = t.SetTxnState(types.TxnStateCommitted)
+		state = t.setTxnStateUnsafe(types.TxnStateCommitted)
 	case KeyEventTypeRemoveVersionFailed:
 		assert.Must(state == types.TxnStateRollbacking)
 		if t.rollbackedKey2Success == nil {
@@ -316,9 +319,9 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 	return
 }
 
-func (t *Transaction) SetTxnState(state types.TxnState) (newState types.TxnState) {
+func (t *Transaction) setTxnStateUnsafe(state types.TxnState) (newState types.TxnState) {
 	var terminateOnce bool
-	if _, newState, terminateOnce = t.AtomicTxnState.SetTxnState(state); terminateOnce {
+	if newState, terminateOnce = t.AtomicTxnState.SetTxnStateUnsafe(state); terminateOnce {
 		close(t.terminated)
 	}
 	return
