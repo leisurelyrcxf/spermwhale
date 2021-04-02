@@ -79,6 +79,35 @@ func (lm TxnLockManager) RUnlock(key types.TxnKeyUnion) {
 	lm.rwMutexes[key.Hash()&(defaultSlotNum-1)].RUnlock()
 }
 
+type TxnIdLockManager struct {
+	rwMutexes []sync.RWMutex
+}
+
+func NewTxnIdLockManager() *TxnIdLockManager {
+	return (&TxnIdLockManager{}).Initialize()
+}
+
+func (lm *TxnIdLockManager) Initialize() *TxnIdLockManager {
+	lm.rwMutexes = make([]sync.RWMutex, defaultSlotNum)
+	return lm
+}
+
+func (lm TxnIdLockManager) Lock(txnId types.TxnId) {
+	lm.rwMutexes[txnId&(defaultSlotNum-1)].Lock()
+}
+
+func (lm TxnIdLockManager) Unlock(txnId types.TxnId) {
+	lm.rwMutexes[txnId&(defaultSlotNum-1)].Unlock()
+}
+
+func (lm TxnIdLockManager) RLock(txnId types.TxnId) {
+	lm.rwMutexes[txnId&(defaultSlotNum-1)].RLock()
+}
+
+func (lm TxnIdLockManager) RUnlock(txnId types.TxnId) {
+	lm.rwMutexes[txnId&(defaultSlotNum-1)].RUnlock()
+}
+
 type TaskLockManager struct {
 	rwMutexes []sync.RWMutex
 }
