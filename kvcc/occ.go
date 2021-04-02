@@ -87,16 +87,16 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		}
 		//assert.Must(!opt.IsGetExactVersion())
 		if opt.ReaderVersion < kv.tsCache.GetMaxReaderVersion(key) {
-			return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.IsGetMaxReadVersion()), errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReaderVersion(key: '%s')", key)
+			return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReaderVersion(key: '%s')", key)
 		}
 		if opt.IsReadModifyWriteFirstReadOfKey() {
 			w, err := kv.txnManager.PushReadModifyWriteReaderOnKey(key, opt)
 			if err != nil {
-				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.IsGetMaxReadVersion()), err
+				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), err
 			}
 			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, consts.DefaultReadTimeout/10)); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
-				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.IsGetMaxReadVersion()), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
+				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}
 			if glog.V(60) {
 				glog.Infof("txn-%d key '%s' get enter, cost %s, time since notified: %s", opt.ReaderVersion, key, bench.Elapsed(), time.Duration(time.Now().UnixNano()-(w.NotifyTime)))
@@ -128,10 +128,10 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	w, writingWritersBefore, maxReadVersion, err := kv.tsCache.FindWriters(key, &opt)
 	if err != nil {
 		assert.Must(maxReadVersion == 0)
-		return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.IsGetMaxReadVersion()), err, false
+		return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), err, false
 	}
 	w.WaitWritten()
-	if !opt.IsSnapshotRead() || w != nil {
+	if !snapshotRead || w != nil {
 		//assert.Must(newReaderId == types.TxnId(opt.ReaderVersion))
 		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); (err == nil || errors.IsNotExistsErr(err)) && w != nil {
 			assert.Must(!errors.IsNotExistsErr(err) || val.Version == 0)
@@ -169,13 +169,15 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 			i, opt.ReaderVersion = i+1, readerVersion
 		}
 	}
-
 	if snapshotRead {
 		assert.Must(opt.ReaderVersion != 0)
-		val = val.WithSnapshotVersion(opt.ReaderVersion)
+		valCC = val.WithSnapshotVersion(opt.ReaderVersion)
+	} else {
+		valCC = val.WithSnapshotVersion(0)
 	}
-	assert.Must(err != nil || (exactVersion && val.Version == opt.ExactVersion) || (!exactVersion && val.Version <= opt.ReaderVersion))
-	assert.Must(!val.IsDirty() || err == nil)
+
+	assert.Must(err != nil || (exactVersion && valCC.Version == opt.ExactVersion) || (!exactVersion && valCC.Version <= opt.ReaderVersion))
+	assert.Must(!valCC.IsDirty() || err == nil)
 
 	//var maxReadVersion uint64
 	//if updateTimestampCache {
@@ -186,31 +188,32 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 		if snapshotRead && valCC.IsDirty() && !retry {
 			assert.Must(err == nil)
 			if minSnapshotVersionViolated {
-				assert.Must(val.Version-1 < opt.MinAllowedSnapshotVersion)
+				assert.Must(valCC.Version-1 < opt.MinAllowedSnapshotVersion)
 				valCC.V, err = nil, errors.ErrMinAllowedSnapshotVersionViolated //  errors.ReplaceErr(err,
 			} else if retriedTooManyTimes {
-				assert.Must(val.Version-1 >= opt.MinAllowedSnapshotVersion)
+				assert.Must(valCC.Version-1 >= opt.MinAllowedSnapshotVersion)
 				valCC.V, err = nil, errors.ErrSnapshotReadRetriedTooManyTimes // errors.ReplaceErr(err,
 			}
 			assert.Must(err != nil)
 		}
-		assert.Must(!snapshotRead || (val.Version <= val.SnapshotVersion && opt.MinAllowedSnapshotVersion <= val.SnapshotVersion))
+		assert.Must(!snapshotRead || (valCC.Version <= valCC.SnapshotVersion && opt.MinAllowedSnapshotVersion <= valCC.SnapshotVersion))
+		assert.Must(err != nil || valCC.Version != 0)
 	}()
 
-	if err != nil || !val.IsDirty() || !opt.IsWaitWhenReadDirty() {
+	if err != nil || !valCC.IsDirty() || !opt.IsWaitWhenReadDirty() {
 		if glog.V(60) {
 			if err != nil {
 				glog.Errorf("txn-%d get key '%s' failed: '%v', minAllowedSnapshotVersion: %d, cost: %s", opt.ReaderVersion, key, err, opt.MinAllowedSnapshotVersion, bench.Elapsed())
 			} else {
-				glog.Infof("txn-%d get key '%s' succeeded, dirty: %v, cost: %s", opt.ReaderVersion, key, val.IsDirty(), bench.Elapsed())
+				glog.Infof("txn-%d get key '%s' succeeded, dirty: %v, cost: %s", opt.ReaderVersion, key, valCC.IsDirty(), bench.Elapsed())
 			}
 		}
-		return kv.addMaxReadVersion(key, val, getMaxReadVersion, maxReadVersion), err, false
+		return kv.addMaxReadVersion(key, valCC, getMaxReadVersion, maxReadVersion), err, false
 	}
 	assert.Must(key != "") // must not be txn record
-	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(val.Version), key)
+	waiter, event, err := kv.txnManager.RegisterKeyEventWaiter(types.TxnId(valCC.Version), key)
 	if err != nil {
-		valCC := kv.addMaxReadVersion(key, val, getMaxReadVersion, maxReadVersion)
+		valCC := kv.addMaxReadVersion(key, valCC, getMaxReadVersion, maxReadVersion)
 		if code := errors.GetErrorCode(err); code != consts.ErrCodeWriteIntentQueueFull {
 			if glog.V(4) {
 				glog.Infof("txn-%d get register key event for key '%s' failed: '%v', cost: %s", opt.ReaderVersion, key, err, bench.Elapsed())
@@ -225,18 +228,18 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	if waiter != nil {
 		var waitErr error
 		event, waitErr = waiter.WaitWithTimeout(ctx, consts.DefaultReadTimeout/10)
-		valCC = kv.addMaxReadVersionForceFetchLatest(key, val, getMaxReadVersion)
+		valCC = kv.addMaxReadVersionForceFetchLatest(key, valCC, getMaxReadVersion)
 		if waitErr != nil {
-			glog.V(8).Infof("KVCC:get failed to wait event of dirty key '%s' @version-%d, err: %v", key, val.Version, waitErr)
+			glog.V(8).Infof("KVCC:get failed to wait event of dirty key '%s' @version-%d, err: %v", key, valCC.Version, waitErr)
 			return valCC, nil, false // Let upper layer handle this.
 		}
 		if glog.V(60) {
-			glog.Infof("txn-%d wait dirty key '%s' written by txn-%d waited event %s, cost: %s", opt.ReaderVersion, key, val.Version, event.Type, bench.Elapsed())
+			glog.Infof("txn-%d wait dirty key '%s' written by txn-%d waited event %s, cost: %s", opt.ReaderVersion, key, valCC.Version, event.Type, bench.Elapsed())
 		}
 	} else {
-		valCC = kv.addMaxReadVersion(key, val, getMaxReadVersion, maxReadVersion)
+		valCC = kv.addMaxReadVersion(key, valCC, getMaxReadVersion, maxReadVersion)
 		if glog.V(60) {
-			glog.Infof("txn-%d wait dirty key '%s' written by txn-%d get event %s immediately, cost: %s", opt.ReaderVersion, key, val.Version, event.Type, bench.Elapsed())
+			glog.Infof("txn-%d wait dirty key '%s' written by txn-%d get event %s immediately, cost: %s", opt.ReaderVersion, key, valCC.Version, event.Type, bench.Elapsed())
 		}
 	}
 
@@ -248,9 +251,9 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 		return valCC, nil, false // Let upper layer handle this.
 	case transaction.KeyEventTypeVersionRemoved:
 		// TODO remove this in product
-		vv, err := kv.db.Get(ctx, key, types.NewKVReadOption(val.Version).WithExactVersion())
+		vv, err := kv.db.Get(ctx, key, types.NewKVReadOption(valCC.Version).WithExactVersion())
 		if !errors.IsNotExistsErr(err) {
-			assert.Must(vv.Version == val.Version)
+			assert.Must(vv.Version == valCC.Version)
 			glog.Fatalf("txn-%d value of key '%s' still exists after rollbacked", vv.Version, key)
 		}
 		if try < consts.MaxRetryTxnGet {
@@ -373,7 +376,7 @@ func (kv *KVCC) Close() error {
 	return kv.db.Close()
 }
 
-func (kv *KVCC) addMaxReadVersion(key string, val types.Value, getMaxReadVersion bool, maxReadVersion uint64) types.ValueCC {
+func (kv *KVCC) addMaxReadVersion(key string, val types.ValueCC, getMaxReadVersion bool, maxReadVersion uint64) types.ValueCC {
 	if !getMaxReadVersion {
 		return val.WithMaxReadVersion(0)
 	}
@@ -383,7 +386,7 @@ func (kv *KVCC) addMaxReadVersion(key string, val types.Value, getMaxReadVersion
 	return val.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)) // TODO maybe return max reader version to user?
 }
 
-func (kv *KVCC) addMaxReadVersionForceFetchLatest(key string, val types.Value, getMaxReadVersion bool) types.ValueCC {
+func (kv *KVCC) addMaxReadVersionForceFetchLatest(key string, val types.ValueCC, getMaxReadVersion bool) types.ValueCC {
 	if !getMaxReadVersion {
 		return val.WithMaxReadVersion(0)
 	}

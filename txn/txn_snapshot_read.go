@@ -13,7 +13,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-func (txn *Txn) getSnapshot(ctx context.Context, key string) (types.Value, error) {
+func (txn *Txn) getSnapshot(ctx context.Context, key string) (types.TValue, error) {
 	txnSnapshotVersion := txn.SnapshotVersion
 	if txnSnapshotVersion == 0 {
 		txnSnapshotVersion = txn.ID.Version()
@@ -24,22 +24,22 @@ func (txn *Txn) getSnapshot(ctx context.Context, key string) (types.Value, error
 			txn.assertSnapshotReadResult(val, txnSnapshotVersion, true)
 			txn.SetSnapshotVersion(val.Version-1, false)
 		}
-		return types.EmptyValue, err
+		return types.EmptyTValue, err
 	}
 	txn.assertSnapshotReadResult(val, txnSnapshotVersion, false)
 	txn.SetSnapshotVersion(val.SnapshotVersion, false)
 	txn.MinAllowedSnapshotVersion = utils.MaxUint64(txn.MinAllowedSnapshotVersion, val.Version)
 	txn.assertSnapshot()
-	return val.Value, nil
+	return val.ToTValue(), nil
 }
 
-func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Value, err error) {
+func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.TValue, err error) {
 	if len(keys) == 1 {
 		val, err := txn.getSnapshot(ctx, keys[0])
 		if err != nil {
 			return nil, err
 		}
-		return []types.Value{val}, nil
+		return []types.TValue{val}, nil
 	}
 
 	var (
@@ -125,7 +125,7 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.Valu
 			txn.SetSnapshotVersion(snapshotReadOpt.SnapshotVersion, false)
 			assert.Must(txn.SnapshotVersion == snapshotReadOpt.SnapshotVersion)
 			txn.assertSnapshot()
-			return readResult.ToValues(keys, txn.SnapshotVersion), nil
+			return readResult.ToTValues(keys, txn.SnapshotVersion), nil
 		}
 	}
 	return nil, ctx.Err()
@@ -171,8 +171,7 @@ func (txn *Txn) GetSnapshotKVCCReadOption(snapshotVersion uint64) types.KVCCRead
 	if !txn.AllowsVersionBack() {
 		minAllowedSnapshotVersion = utils.MaxUint64(minAllowedSnapshotVersion, txn.SnapshotVersion)
 	}
-	return types.NewKVCCReadOption(0).WithSnapshotRead(snapshotVersion, minAllowedSnapshotVersion).
-		CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
+	return types.NewSnapshotKVCCReadOption(snapshotVersion, minAllowedSnapshotVersion).CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
 }
 
 func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion uint64, isDirty bool) {

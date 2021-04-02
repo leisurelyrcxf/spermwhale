@@ -129,7 +129,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 			for round := 0; round < rounds; round++ {
 				if goRoutineIndex == 0 {
 					var (
-						values  []types.Value
+						values  []types.TValue
 						readTxn types.Txn
 						err     error
 					)
@@ -701,10 +701,6 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 			start := time.Now()
 			for round := 0; round < ts.TxnNumPerGoRoutine; round++ {
 				if goRoutineIndex == 0 {
-					var (
-						readValues  = map[string]types.Value{}
-						writeValues = map[string]types.Value{}
-					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						// key1 += key1ExtraDelta
 						key1Val, err := txn.Get(ctx, key1)
@@ -715,21 +711,10 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						if !ts.NoError(err) {
 							return err
 						}
-						readValues[key1] = key1Val
-						v1 += key1ExtraDelta
-						writtenVal1 := types.NewIntValue(v1)
-						if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
-							return err
-						}
-						writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
-						return nil
+						return txn.Set(ctx, key1, types.NewIntValue(v1+key1ExtraDelta).V)
 					}))
 				} else if goRoutineIndex == 1 {
 					// key2 += key2ExtraDelta
-					var (
-						readValues  = map[string]types.Value{}
-						writeValues = map[string]types.Value{}
-					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						key2Val, err := txn.Get(ctx, key2)
 						if err != nil {
@@ -739,21 +724,10 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						if !ts.NoError(err) {
 							return err
 						}
-						readValues[key2] = key2Val
-						v2 += key2ExtraDelta
-						writtenVal2 := types.NewIntValue(v2)
-						if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
-							return err
-						}
-						writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
-						return nil
+						return txn.Set(ctx, key2, types.NewIntValue(v2+key2ExtraDelta).V)
 					}))
 				} else if goRoutineIndex == 2 {
 					// key3 += key3ExtraDelta
-					var (
-						readValues  = map[string]types.Value{}
-						writeValues = map[string]types.Value{}
-					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						key3Val, err := txn.Get(ctx, key3)
 						if err != nil {
@@ -763,42 +737,24 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 						if !ts.NoError(err) {
 							return err
 						}
-						readValues[key3] = key3Val
-						v3 += key3ExtraDelta
-						writtenVal3 := types.NewIntValue(v3)
-						if err := txn.Set(ctx, key3, writtenVal3.V); err != nil {
-							return err
-						}
-						writeValues[key3] = writtenVal3.WithVersion(txn.GetId().Version())
-						return nil
+						return txn.Set(ctx, key3, types.NewIntValue(v3+key3ExtraDelta).V)
 					}))
 				} else if goRoutineIndex == 3 {
 					// read key1 key2 key3
-					var readValues = map[string]types.Value{}
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
-						key1Val, err := txn.Get(ctx, key1)
-						if err != nil {
+						if _, err := txn.Get(ctx, key1); err != nil {
 							return err
 						}
-						readValues[key1] = key1Val
-						key2Val, err := txn.Get(ctx, key2)
-						if err != nil {
+						if _, err := txn.Get(ctx, key2); err != nil {
 							return err
 						}
-						readValues[key2] = key2Val
-						key3Val, err := txn.Get(ctx, key3)
-						if err != nil {
+						if _, err := txn.Get(ctx, key3); err != nil {
 							return err
 						}
-						readValues[key3] = key3Val
 						return nil
 					}))
 				} else {
 					// transfer delta from key1 to key2
-					var (
-						readValues  = map[string]types.Value{}
-						writeValues = map[string]types.Value{}
-					)
 					ts.True(ts.DoTransaction(ctx, goRoutineIndex, sc1, func(ctx context.Context, txn types.Txn) error {
 						{
 							key1Val, err := txn.Get(ctx, key1)
@@ -809,13 +765,9 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 							if !ts.NoError(err) {
 								return err
 							}
-							readValues[key1] = key1Val
-							v1 -= delta
-							writtenVal1 := types.NewIntValue(v1)
-							if err := txn.Set(ctx, key1, writtenVal1.V); err != nil {
+							if err := txn.Set(ctx, key1, types.NewIntValue(v1-delta).V); err != nil {
 								return err
 							}
-							writeValues[key1] = writtenVal1.WithVersion(txn.GetId().Version())
 						}
 
 						{
@@ -827,13 +779,9 @@ func testDistributedTxnExtraWriteComplex(ctx context.Context, ts *TestCase) (b b
 							if !ts.NoError(err) {
 								return err
 							}
-							readValues[key2] = key2Val
-							v2 += delta
-							writtenVal2 := types.NewIntValue(v2)
-							if err := txn.Set(ctx, key2, writtenVal2.V); err != nil {
+							if err := txn.Set(ctx, key2, types.NewIntValue(v2+delta).V); err != nil {
 								return err
 							}
-							writeValues[key2] = writtenVal2.WithVersion(txn.GetId().Version())
 						}
 						return nil
 					}))

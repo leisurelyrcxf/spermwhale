@@ -26,3 +26,13 @@ func (x *ValueMeta) SetFlag(flag uint8) *ValueMeta {
 func (x *Value) IsEmpty() bool {
 	return x == nil || x.Meta == nil || x.Meta.Version == 0
 }
+
+func (x *Value) Validate() error {
+	if x == nil {
+		return fmt.Errorf("[Value] x == nil")
+	}
+	if x.Meta == nil {
+		return fmt.Errorf("[Value] x.Meta == nil")
+	}
+	return nil
+}

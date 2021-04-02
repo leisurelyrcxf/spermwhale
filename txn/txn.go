@@ -152,16 +152,16 @@ func (txn *Txn) Encode() []byte {
 	return bytes
 }
 
-func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
+func (txn *Txn) Get(ctx context.Context, key string) (types.TValue, error) {
 	if key == "" {
-		return types.EmptyValue, errors.ErrEmptyKey
+		return types.EmptyTValue, errors.ErrEmptyKey
 	}
 
 	txn.Lock()
 	defer txn.Unlock()
 
 	if txn.TxnState != types.TxnStateUncommitted {
-		return types.EmptyValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+		return types.EmptyTValue, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
 	}
 
 	if txn.IsSnapshotRead() {
@@ -170,7 +170,7 @@ func (txn *Txn) Get(ctx context.Context, key string) (types.Value, error) {
 	return txn.getLatest(ctx, key)
 }
 
-func (txn *Txn) getLatest(ctx context.Context, key string) (_ types.Value, err error) {
+func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, err error) {
 	assert.Must(!txn.IsSnapshotRead())
 	defer func() {
 		if err != nil {
@@ -180,12 +180,13 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (_ types.Value, err e
 			txn.TxnState = types.TxnStateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Get: %v", err)
 		}
+		assert.Must(err != nil || tVal.Version != 0)
 	}()
 
 	for i := 0; ; i++ {
 		val, err := txn.getLatestOneRound(ctx, key)
 		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
-			return val.Value, err
+			return val.ToTValue().CondPreventedFutureWrite(txn.preventFutureWriteKeys.Contains(key)), err
 		}
 		if errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked {
 			rand.Seed(time.Now().UnixNano())
@@ -221,7 +222,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
-		txn.preventFutureWriteKeys.Insert(key) // TODO return to client instead
+		txn.preventFutureWriteKeys.Insert(key)
 	}
 	if txn.IsReadModifyWrite() {
 		txn.readModifyWriteReadKeys.Insert(key)
@@ -266,7 +267,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
 
-func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.Value, error) {
+func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.TValue, error) {
 	if err := types.ValidateMGetRequest(keys); err != nil {
 		return nil, err
 	}
@@ -282,7 +283,7 @@ func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.Value, error) 
 	}
 
 	if !txn.IsSnapshotRead() {
-		values := make([]types.Value, 0, len(keys))
+		values := make([]types.TValue, 0, len(keys))
 		for _, key := range keys {
 			val, err := txn.getLatest(ctx, key)
 			if err != nil {
@@ -801,12 +802,12 @@ func (txn *Txn) couldBeWounded() bool {
 	return utils.IsTooOld(txn.ID.Version(), txn.cfg.WoundUncommittedTxnThreshold)
 }
 
-func (txn *Txn) GetReadValues() map[string]types.Value {
-	return types.InvalidReadValues
+func (txn *Txn) GetReadValues() map[string]types.TValue {
+	panic(errors.ErrNotSupported)
 }
 
 func (txn *Txn) GetWriteValues() map[string]types.Value {
-	return types.InvalidWriteValues
+	panic(errors.ErrNotSupported)
 }
 
 func (txn *Txn) genAbortErr(reason error) error {

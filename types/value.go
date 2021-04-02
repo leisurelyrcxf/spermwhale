@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 )
@@ -12,7 +14,6 @@ type Meta struct {
 	Version         uint64
 	InternalVersion TxnInternalVersion
 	Flag            uint8
-	SnapshotVersion uint64 // used only for snapshot read
 }
 
 func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
@@ -20,7 +21,6 @@ func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
 		Version:         x.Version,
 		InternalVersion: TxnInternalVersion(x.InternalVersion),
 		Flag:            x.GetFlagSafe(),
-		SnapshotVersion: x.SnapshotVersion,
 	}
 }
 
@@ -28,12 +28,11 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 	return (&commonpb.ValueMeta{
 		Version:         m.Version,
 		InternalVersion: uint32(m.InternalVersion),
-		SnapshotVersion: m.SnapshotVersion,
 	}).SetFlag(m.Flag)
 }
 
-func (m Meta) isEmpty() bool {
-	return m.Version == 0
+func (m Meta) IsEmpty() bool {
+	return m.Version == 0 && m.Flag == 0 && m.InternalVersion == 0
 }
 
 func (m Meta) IsDirty() bool {
@@ -103,7 +102,7 @@ func (v Value) MustInt() int {
 }
 
 func (v Value) IsEmpty() bool {
-	return len(v.V) == 0 && v.Meta.isEmpty()
+	return len(v.V) == 0 && v.Meta.IsEmpty()
 }
 
 func (v Value) WithVersion(version uint64) Value {
@@ -128,21 +127,23 @@ func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
 	return v
 }
 
-func (v Value) WithSnapshotVersion(snapshotVersion uint64) Value {
-	v.SnapshotVersion = snapshotVersion
-	return v
-}
-
-type ReadResult map[string]Value
-
-func (r ReadResult) MustFirst() string {
-	for key := range r {
-		return key
+func (v Value) WithSnapshotVersion(snapshotVersion uint64) ValueCC {
+	return ValueCC{
+		Value:           v,
+		SnapshotVersion: snapshotVersion,
 	}
-	panic("empty ReadResult")
 }
 
-func (r ReadResult) Contains(key string) bool {
+type ReadValues map[string]TValue
+
+func (r ReadValues) Contains(key string) bool {
+	_, ok := r[key]
+	return ok
+}
+
+type WrittenValues map[string]Value
+
+func (r WrittenValues) Contains(key string) bool {
 	_, ok := r[key]
 	return ok
 }
@@ -150,7 +151,8 @@ func (r ReadResult) Contains(key string) bool {
 type ValueCC struct {
 	Value
 
-	MaxReadVersion uint64
+	MaxReadVersion  uint64
+	SnapshotVersion uint64
 }
 
 var EmptyValueCC = ValueCC{}
@@ -158,22 +160,22 @@ var EmptyValueCC = ValueCC{}
 func NewValueCCFromPB(x *commonpb.ValueCC) ValueCC {
 	if x.Value == nil {
 		return ValueCC{
-			MaxReadVersion: x.MaxReadVersion,
+			MaxReadVersion:  x.MaxReadVersion,
+			SnapshotVersion: x.SnapshotVersion,
 		}
 	}
 	return ValueCC{
-		Value:          NewValueFromPB(x.Value),
-		MaxReadVersion: x.MaxReadVersion,
+		Value:           NewValueFromPB(x.Value),
+		MaxReadVersion:  x.MaxReadVersion,
+		SnapshotVersion: x.SnapshotVersion,
 	}
 }
 
 func (v ValueCC) ToPB() *commonpb.ValueCC {
-	if v.IsEmpty() {
-		return nil
-	}
 	return &commonpb.ValueCC{
-		Value:          v.Value.ToPB(),
-		MaxReadVersion: v.MaxReadVersion,
+		Value:           v.Value.ToPB(),
+		MaxReadVersion:  v.MaxReadVersion,
+		SnapshotVersion: v.SnapshotVersion,
 	}
 }
 
@@ -190,6 +192,13 @@ func (v ValueCC) WithNoWriteIntent() ValueCC {
 	return ValueCC{
 		Value:          v.Value.WithNoWriteIntent(),
 		MaxReadVersion: v.MaxReadVersion,
+	}
+}
+
+func (v ValueCC) ToTValue() TValue {
+	return TValue{
+		Value:           v.Value,
+		SnapshotVersion: v.SnapshotVersion,
 	}
 }
 
@@ -217,12 +226,86 @@ func (r ReadResultCC) Contains(key string) bool {
 	return ok
 }
 
-func (r ReadResultCC) ToValues(keys []string, newSnapshotVersion uint64) []Value {
-	ret := make([]Value, 0, len(keys))
+func (r ReadResultCC) ToTValues(keys []string, newSnapshotVersion uint64) []TValue {
+	ret := make([]TValue, 0, len(keys))
 	for _, key := range keys {
-		val := r[key].Value
-		val.SnapshotVersion = newSnapshotVersion
-		ret = append(ret, val)
+		ret = append(ret, NewTValue(r[key].Value, newSnapshotVersion))
+	}
+	return ret
+}
+
+var EmptyTValue = TValue{}
+
+type TValue struct {
+	Value
+	SnapshotVersion uint64
+	tFlag           uint8
+}
+
+func NewTValue(value Value, snapshotVersion uint64) TValue {
+	return TValue{
+		Value:           value,
+		SnapshotVersion: snapshotVersion,
+	}
+}
+
+func NewTValueFromPB(x *txnpb.TValue) TValue {
+	if x.Value == nil {
+		return TValue{
+			SnapshotVersion: x.SnapshotVersion,
+			tFlag:           x.GetFlagAsUint8(),
+		}
+	}
+	return TValue{
+		Value:           NewValueFromPB(x.Value),
+		SnapshotVersion: x.SnapshotVersion,
+		tFlag:           x.GetFlagAsUint8(),
+	}
+}
+
+func (v TValue) ToPB() *txnpb.TValue {
+	return &txnpb.TValue{
+		Value:           v.Value.ToPB(),
+		SnapshotVersion: v.SnapshotVersion,
+		TxnFlag:         uint32(v.tFlag),
+	}
+}
+
+func (v TValue) IsEmpty() bool {
+	return v.Value.IsEmpty() && v.SnapshotVersion == 0 && v.tFlag == 0
+}
+
+func (v TValue) CondPreventedFutureWrite(b bool) TValue {
+	if b {
+		v.tFlag |= consts.TValueBitMaskPreventedFutureWrite
+	}
+	return v
+}
+
+func (v TValue) IsFutureWritePrevented() bool {
+	return v.tFlag&consts.TValueBitMaskPreventedFutureWrite == consts.TValueBitMaskPreventedFutureWrite
+}
+
+type TValues []TValue
+
+func (vs TValues) ToPB() []*txnpb.TValue {
+	if len(vs) == 0 {
+		return nil
+	}
+	pbValues := make([]*txnpb.TValue, len(vs))
+	for idx, v := range vs {
+		pbValues[idx] = v.ToPB()
+	}
+	return pbValues
+}
+
+func NewTValuesFromPB(pbValues []*txnpb.TValue) []TValue {
+	if len(pbValues) == 0 {
+		return nil
+	}
+	ret := make([]TValue, len(pbValues))
+	for idx, pbVal := range pbValues {
+		ret[idx] = NewTValueFromPB(pbVal)
 	}
 	return ret
 }

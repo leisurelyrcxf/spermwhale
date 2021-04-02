@@ -6,8 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
-
 	"github.com/leisurelyrcxf/spermwhale/topo"
 
 	"google.golang.org/grpc"
@@ -41,11 +39,11 @@ func (s *Stub) Get(ctx context.Context, req *txnpb.TxnGetRequest) (*txnpb.TxnGet
 	}
 	val, err := txn.Get(ctx, req.Key)
 	if err != nil {
-		return &txnpb.TxnGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
+		return &txnpb.TxnGetResponse{Txn: txn.ToPB(), TValue: val.ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.TxnGetResponse{
-		Txn: txn.ToPB(),
-		V:   val.ToPB(),
+		Txn:    txn.ToPB(),
+		TValue: val.ToPB(),
 	}, nil
 }
 
@@ -59,15 +57,11 @@ func (s *Stub) MGet(ctx context.Context, req *txnpb.TxnMGetRequest) (*txnpb.TxnM
 	}
 	values, err := txn.MGet(ctx, req.Keys)
 	if err != nil {
-		return &txnpb.TxnMGetResponse{Txn: txn.ToPB(), Err: errors.ToPBError(err)}, nil
-	}
-	pbValues := make([]*commonpb.Value, 0, len(values))
-	for _, v := range values {
-		pbValues = append(pbValues, v.ToPB())
+		return &txnpb.TxnMGetResponse{Txn: txn.ToPB(), TValues: types.TValues(values).ToPB(), Err: errors.ToPBError(err)}, nil
 	}
 	return &txnpb.TxnMGetResponse{
-		Txn:    txn.ToPB(),
-		Values: pbValues,
+		Txn:     txn.ToPB(),
+		TValues: types.TValues(values).ToPB(),
 	}, nil
 }
 

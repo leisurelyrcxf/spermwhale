@@ -58,6 +58,8 @@ const (
 const (
 	ValueMetaBitMaskHasWriteIntent   = 1
 	ValueMetaBitMaskClearWriteIntent = (^1) & 0xff
+
+	TValueBitMaskPreventedFutureWrite = 1
 )
 
 func IsWriteTxnRecord(flag uint8) bool {

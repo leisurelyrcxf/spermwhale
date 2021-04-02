@@ -2,7 +2,8 @@ package txn
 
 import (
 	"context"
-	"fmt"
+
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
@@ -46,35 +47,32 @@ func (c *Client) Begin(ctx context.Context, opt types.TxnOption) (TransactionInf
 	return NewTransactionInfoFromPB(resp.Txn), nil
 }
 
-func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.Value, TransactionInfo, error) {
+func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.TValue, TransactionInfo, error) {
 	resp, err := c.c.Get(ctx, &txnpb.TxnGetRequest{
 		Key:   key,
 		TxnId: uint64(txnID),
 	})
 	if err != nil {
-		return types.EmptyValue, InvalidTransactionInfo(txnID), err
+		return types.EmptyTValue, InvalidTransactionInfo(txnID), err
 	}
 	if resp == nil {
-		return types.EmptyValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
+		return types.EmptyTValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp == nil")
 	}
 	if resp.Txn == nil {
-		return types.EmptyValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "resp.Txn == nil")
+		return types.EmptyTValue, InvalidTransactionInfo(txnID), errors.Annotatef(errors.ErrNilResponse, "resp.Txn == nil")
 	}
 	txnInfo := NewTransactionInfoFromPB(resp.Txn)
 	assert.Must(txnInfo.ID == txnID)
 	if resp.Err != nil {
-		return types.EmptyValue, txnInfo, errors.NewErrorFromPB(resp.Err)
+		return types.NewTValueFromPB(resp.TValue), txnInfo, errors.NewErrorFromPB(resp.Err)
 	}
-	if resp.V == nil {
-		return types.EmptyValue, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V == nil")
+	if err := resp.TValue.Validate(); err != nil {
+		return types.EmptyTValue, txnInfo, errors.Annotatef(errors.ErrInvalidResponse, err.Error())
 	}
-	if resp.V.Meta == nil {
-		return types.EmptyValue, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::Get resp.V.Meta == nil")
-	}
-	return types.NewValueFromPB(resp.V), txnInfo, nil
+	return types.NewTValueFromPB(resp.TValue), txnInfo, nil
 }
 
-func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId) ([]types.Value, TransactionInfo, error) {
+func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId) ([]types.TValue, TransactionInfo, error) {
 	if err := types.ValidateMGetRequest(keys); err != nil {
 		return nil, InvalidTransactionInfo(txnID), err
 	}
@@ -95,22 +93,15 @@ func (c *Client) MGet(ctx context.Context, keys []string, txnID types.TxnId) ([]
 	txnInfo := NewTransactionInfoFromPB(resp.Txn)
 	assert.Must(txnInfo.ID == txnID)
 	if resp.Err != nil {
-		return nil, txnInfo, errors.NewErrorFromPB(resp.Err)
-	}
-	if resp.Values == nil {
-		return nil, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp.V == nil")
-	}
-	if len(resp.Values) != len(keys) {
-		return nil, txnInfo, errors.Annotatef(errors.ErrInvalidResponse, fmt.Sprintf("TxnClient::MGet resp length not match, expect %d, got %d", len(keys), len(resp.Values)))
-	}
-	values := make([]types.Value, 0, len(keys))
-	for _, v := range resp.Values {
-		if v.Meta == nil {
-			return nil, txnInfo, errors.Annotatef(errors.ErrNilResponse, "TxnClient::MGet resp.V.Meta == nil")
+		if err := txnpb.TValues(resp.TValues).Validate(len(keys)); err != nil {
+			return nil, txnInfo, errors.NewErrorFromPB(resp.Err)
 		}
-		values = append(values, types.NewValueFromPB(v))
+		return types.NewTValuesFromPB(resp.TValues), txnInfo, errors.NewErrorFromPB(resp.Err)
 	}
-	return values, txnInfo, nil
+	if err := txnpb.TValues(resp.TValues).Validate(len(keys)); err != nil {
+		return nil, txnInfo, errors.Annotatef(errors.ErrInvalidResponse, err.Error())
+	}
+	return types.NewTValuesFromPB(resp.TValues), txnInfo, nil
 }
 
 func (c *Client) Set(ctx context.Context, key string, val []byte, txnID types.TxnId) (TransactionInfo, error) {
@@ -226,7 +217,8 @@ func (m *ClientTxnManager) Close() error {
 type ClientTxn struct {
 	TransactionInfo
 
-	c *Client
+	preventedFutureWrite basic.Set
+	c                    *Client
 }
 
 func newClientTxn(txnInfo TransactionInfo, c *Client) *ClientTxn {
@@ -236,21 +228,33 @@ func newClientTxn(txnInfo TransactionInfo, c *Client) *ClientTxn {
 	}
 }
 
-func (txn *ClientTxn) Get(ctx context.Context, key string) (types.Value, error) {
+func (txn *ClientTxn) Get(ctx context.Context, key string) (types.TValue, error) {
 	val, txnInfo, err := txn.c.Get(ctx, key, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
+	if val.IsFutureWritePrevented() {
+		txn.preventedFutureWrite.Insert(key)
+	}
 	return val, err
 }
 
-func (txn *ClientTxn) MGet(ctx context.Context, keys []string) ([]types.Value, error) {
+func (txn *ClientTxn) MGet(ctx context.Context, keys []string) ([]types.TValue, error) {
 	values, txnInfo, err := txn.c.MGet(ctx, keys, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
+	assert.Must(len(values) == 0 || len(values) == len(keys))
+	for idx, val := range values {
+		if val.IsFutureWritePrevented() {
+			txn.preventedFutureWrite.Insert(keys[idx])
+		}
+	}
 	return values, err
 }
 
 func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
+	if txn.preventedFutureWrite.Contains(key) {
+		return errors.ErrWriteReadConflictFutureWritePrevented
+	}
 	txnInfo, err := txn.c.Set(ctx, key, val, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
@@ -258,6 +262,11 @@ func (txn *ClientTxn) Set(ctx context.Context, key string, val []byte) error {
 }
 
 func (txn *ClientTxn) MSet(ctx context.Context, keys []string, values [][]byte) error {
+	for _, key := range keys {
+		if txn.preventedFutureWrite.Contains(key) {
+			return errors.ErrWriteReadConflictFutureWritePrevented
+		}
+	}
 	txnInfo, err := txn.c.MSet(ctx, keys, values, txn.ID)
 	assert.Must(txn.ID == txnInfo.ID)
 	txn.TransactionInfo = txnInfo
@@ -278,10 +287,10 @@ func (txn *ClientTxn) Rollback(ctx context.Context) error {
 	return err
 }
 
-func (txn *ClientTxn) GetReadValues() map[string]types.Value {
-	return types.InvalidReadValues
+func (txn *ClientTxn) GetReadValues() map[string]types.TValue {
+	panic(errors.ErrNotSupported)
 }
 
 func (txn *ClientTxn) GetWriteValues() map[string]types.Value {
-	return types.InvalidWriteValues
+	panic(errors.ErrNotSupported)
 }

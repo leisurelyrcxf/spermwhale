@@ -21,6 +21,14 @@ func NewKVCCReadOption(readerVersion uint64) KVCCReadOption {
 	}
 }
 
+func NewSnapshotKVCCReadOption(snapshotVersion uint64, minAllowedSnapshotVersion uint64) KVCCReadOption {
+	opt := NewKVCCReadOption(snapshotVersion)
+	opt.flag |= KVCCReadOptBitMaskSnapshotRead
+	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
+	opt.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
+	return opt
+}
+
 func NewKVCCReadOptionFromPB(x *kvccpb.KVCCReadOption) KVCCReadOption {
 	return KVCCReadOption{
 		ReaderVersion:             x.ReaderVersion,
@@ -59,14 +67,6 @@ func (opt KVCCReadOption) CondReadModifyWriteFirstReadOfKey(b bool) KVCCReadOpti
 	if b {
 		opt.flag |= KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey
 	}
-	return opt
-}
-
-func (opt KVCCReadOption) WithSnapshotRead(snapshotVersion uint64, minAllowedSnapshotVersion uint64) KVCCReadOption {
-	opt.flag |= KVCCReadOptBitMaskSnapshotRead
-	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
-	opt.ReaderVersion = snapshotVersion
-	opt.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
 	return opt
 }
 

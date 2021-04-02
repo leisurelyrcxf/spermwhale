@@ -505,43 +505,45 @@ type Txn interface {
 	GetState() TxnState
 	GetType() TxnType
 	GetSnapshotReadOption() TxnSnapshotReadOption // only used when txn type is snapshot
-	Get(ctx context.Context, key string) (Value, error)
-	MGet(ctx context.Context, keys []string) (values []Value, err error)
+	Get(ctx context.Context, key string) (TValue, error)
+	MGet(ctx context.Context, keys []string) (values []TValue, err error)
 	Set(ctx context.Context, key string, val []byte) error // async func, doesn't guarantee see set result after call
 	MSet(ctx context.Context, keys []string, values [][]byte) error
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 
-	GetReadValues() map[string]Value
+	GetReadValues() map[string]TValue
 	GetWriteValues() map[string]Value
 }
 
 type RecordValuesTxn struct {
 	Txn
-	readValues, writeValues ReadResult
+	readValues  ReadValues
+	writeValues WrittenValues
 }
 
 func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
 	return &RecordValuesTxn{
 		Txn:         txn,
-		readValues:  make(map[string]Value),
-		writeValues: make(map[string]Value),
+		readValues:  make(ReadValues),
+		writeValues: make(WrittenValues),
 	}
 }
 
-func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (Value, error) {
+func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (TValue, error) {
 	val, err := txn.Txn.Get(ctx, key)
 	if err == nil {
 		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(key)))
 		if txn.GetType().IsSnapshotRead() {
 			assert.Must(val.SnapshotVersion == txn.GetSnapshotReadOption().SnapshotVersion && val.Version <= val.SnapshotVersion)
 		}
+		assert.Must(val.Version != 0)
 		txn.readValues[key] = val
 	}
 	return val, err
 }
 
-func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]Value, error) {
+func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]TValue, error) {
 	values, err := txn.Txn.MGet(ctx, keys)
 	if err == nil {
 		for idx, val := range values {
@@ -553,6 +555,7 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]Value, e
 			}
 		}
 		for idx, val := range values {
+			assert.Must(val.Version != 0)
 			txn.readValues[keys[idx]] = val
 		}
 	}
@@ -579,18 +582,10 @@ func (txn *RecordValuesTxn) MSet(ctx context.Context, keys []string, values [][]
 	return err
 }
 
-func (txn *RecordValuesTxn) GetReadValues() map[string]Value {
+func (txn *RecordValuesTxn) GetReadValues() map[string]TValue {
 	return txn.readValues
 }
 
 func (txn *RecordValuesTxn) GetWriteValues() map[string]Value {
 	return txn.writeValues
 }
-
-var (
-	InvalidReadValues   = map[string]Value{"haha": {Meta: Meta{Version: 1111}}}
-	IsInvalidReadValues = func(values map[string]Value) bool { return values["haha"].Version == 1111 }
-
-	InvalidWriteValues   = map[string]Value{"biubiu": {Meta: Meta{Version: 1111}}}
-	IsInvalidWriteValues = func(values map[string]Value) bool { return values["biubiu"].Version == 1111 }
-)

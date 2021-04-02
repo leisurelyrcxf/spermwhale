@@ -36,6 +36,11 @@ var (
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
 		Msg:     "write read conflict: unsafe read",
 	})
+	ErrWriteReadConflictFutureWritePrevented = registerErr(&Error{
+		Code:    consts.ErrCodeWriteReadConflict,
+		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
+		Msg:     "write read conflict: future write prevented",
+	})
 
 	ErrStaleWriteSubCodeGenerator = NewSubCodeGenerator()
 	ErrStaleWrite                 = registerErr(&Error{

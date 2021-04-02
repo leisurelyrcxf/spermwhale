@@ -33,6 +33,12 @@ message Txn {
     TxnSnapshotReadOption snapshot_read_option = 4;
 }
 
+message TValue {
+    Value value = 1;
+    uint64 snapshot_version = 2;
+    uint32 txn_flag = 3;
+}
+
 message BeginRequest {
     TxnOption opt = 1;
 }
@@ -49,7 +55,7 @@ message TxnGetRequest {
 
 message TxnGetResponse {
     Error err = 1;
-    Value v = 2;
+    TValue t_value = 2;
     Txn txn = 3;
 }
 
@@ -60,7 +66,7 @@ message TxnMGetRequest {
 
 message TxnMGetResponse {
     Error err = 1;
-    repeated Value values = 2;
+    repeated TValue t_values = 2;
     Txn txn = 3;
 }
 

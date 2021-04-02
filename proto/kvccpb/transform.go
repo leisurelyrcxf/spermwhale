@@ -65,9 +65,6 @@ func (x *KVCCSetRequest) Validate() error {
 	if x.Value.IsEmpty() {
 		return errors.Annotatef(errors.ErrInvalidRequest, "x.Value.IsEmpty()")
 	}
-	if x.Value.Meta.SnapshotVersion != 0 {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Value.Meta.SnapshotVersion != 0")
-	}
 	if x.Opt.IsClearWriteIntent() && x.Value.Meta.IsDirty() {
 		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsClearWriteIntent() && x.Value.Meta.IsDirty()")
 	}

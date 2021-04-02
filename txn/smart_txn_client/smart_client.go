@@ -127,17 +127,17 @@ func (c *SmartClient) Set(ctx context.Context, key string, val []byte) error {
 	})
 }
 
-func (c *SmartClient) Get(ctx context.Context, key string) (val types.Value, _ error) {
+func (c *SmartClient) Get(ctx context.Context, key string) (val types.TValue, _ error) {
 	if err := c.DoTransaction(ctx, func(ctx context.Context, txn types.Txn) (err error) {
 		val, err = txn.Get(ctx, key)
 		return
 	}); err != nil {
-		return types.EmptyValue, err
+		return types.EmptyTValue, err
 	}
 	return val, nil
 }
 
-func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.TxnType) (values []types.Value, _ error) {
+func (c *SmartClient) MGet(ctx context.Context, keys []string, txnType types.TxnType) (values []types.TValue, _ error) {
 	if _, _, err := c.DoTransactionOfTypeEx(ctx, txnType, func(ctx context.Context, txn types.Txn) (err error) {
 		values, err = txn.MGet(ctx, keys)
 		return

@@ -222,9 +222,10 @@ func (ess *ExecuteStatistics) ForEachTxnKind(f func(types.TxnKind, ExecuteStatis
 type ExecuteInfo struct {
 	types.Txn
 
-	ID                      uint64
-	Kind                    types.TxnKind
-	ReadValues, WriteValues map[string]types.Value
+	ID          uint64
+	Kind        types.TxnKind
+	ReadValues  map[string]types.TValue
+	WriteValues map[string]types.Value
 
 	RetryTimes   int
 	RetryDetails RetryDetails
@@ -293,15 +294,18 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 
 	lastWriteTxns := make(map[string]int)
 	for i := 0; i < len(txns); i++ {
-		if opt := txns[i].GetSnapshotReadOption(); txns[i].GetType().IsSnapshotRead() {
-			var ssVersion = txns[i].GetSnapshotReadOption().SnapshotVersion
+		var (
+			txn = txns[i]
+		)
+		if opt := txn.GetSnapshotReadOption(); txn.GetType().IsSnapshotRead() {
+			var ssVersion = txn.GetSnapshotReadOption().SnapshotVersion
 			if !assert.NotEmpty(ssVersion) {
 				return false
 			}
 			if !assert.GreaterOrEqual(ssVersion, opt.MinAllowedSnapshotVersion) {
 				return false
 			}
-			for _, readVal := range txns[i].ReadValues {
+			for _, readVal := range txn.ReadValues {
 				if !opt.AllowsVersionBack() {
 					if !assert.Equal(readVal.SnapshotVersion, ssVersion) {
 						return false
@@ -316,13 +320,14 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 				}
 			}
 		}
-		for key, readVal := range txns[i].ReadValues {
-			if readVal.Version == txns[i].ID {
-				if !assert.Contains(txns[i].WriteValues, key) {
+		for key, readVal := range txn.ReadValues {
+			if readVal.Version == txn.ID {
+				if !assert.Contains(txn.WriteValues, key) {
 					return false
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
-				if !assert.EqualValue(readVal, txns[lastWriteTxnIndex].WriteValues[key]) {
+				lastWriteTxn := txns[lastWriteTxnIndex]
+				if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value) {
 					return false
 				}
 			}
@@ -537,8 +542,6 @@ func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, ret
 	txn := NewExecuteInfo(tx, retryTimes, retryDetails, cost)
 	ts.False(txn.ID == 0)
 	ts.True(txn.GetState() == types.TxnStateCommitted)
-	ts.False(types.IsInvalidReadValues(txn.ReadValues))
-	ts.False(types.IsInvalidWriteValues(txn.WriteValues))
 	ts.executedTxnsPerGoRoutine[goRoutineIndex] = append(ts.executedTxnsPerGoRoutine[goRoutineIndex], txn)
 }
 
@@ -579,7 +582,7 @@ func (ts *TestCase) CheckReadModifyWriteOnly(keys ...string) bool {
 	for i := 1; i < len(ts.allExecutedTxns); i++ {
 		prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
 		for _, key := range keys {
-			if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualIntValue(prevWrite, curRead) {
+			if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualIntValue(prevWrite, curRead.Value) {
 				return false
 			}
 		}
