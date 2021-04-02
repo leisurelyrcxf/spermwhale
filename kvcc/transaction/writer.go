@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
@@ -15,7 +14,6 @@ import (
 type Writer struct {
 	*Transaction
 
-	Next       *Writer
 	OnUnlocked func()
 
 	writing basic.AtomicBool
@@ -49,14 +47,22 @@ func (w *Writer) WaitKeyDone() {
 	}
 }
 
-func (w *Writer) CheckRead(ctx context.Context, valVersion uint64, waitTimeout time.Duration) error {
+// HasMoreWritingWriters is a dummy writer used to indicate that has
+// more pending writers afterwards, the Next list is not complete
+var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
+
+type WritingWriters []*Writer
+
+func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, waitTimeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
 	defer cancel()
 
 	valTxnId := types.TxnId(valVersion)
-	assert.Must(w.IsAborted())
 
-	for writer := w.Next; writer != nil; writer = writer.Next {
+	for _, writer := range writers {
+		if writer == HasMoreWritingWriters {
+			return errors.ErrWriteReadConflictUnsafeRead
+		}
 		if valTxnId >= writer.ID {
 			return nil
 		}
@@ -67,11 +73,15 @@ func (w *Writer) CheckRead(ctx context.Context, valVersion uint64, waitTimeout t
 		switch {
 		case state.IsCommitted():
 			return errors.ErrWriteReadConflictReaderSkippedCommittedData // Since we didn't wait the writer, this is possible
-		case state.IsAborted():
+		case state.IsAborted(): // TODO check this
 			break
 		default:
 			panic(fmt.Sprintf("impossible txn state: %s", state))
 		}
 	}
-	return errors.ErrWriteReadConflictUnsafeRead
+	return nil
+}
+
+func init() {
+	HasMoreWritingWriters.SetTxnStateUnsafe(types.TxnStateCommitted)
 }

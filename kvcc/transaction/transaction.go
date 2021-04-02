@@ -57,21 +57,22 @@ func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
 
 func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) (err error) {
 	var (
-		txnId         = types.TxnId(val.Version)
-		isRollbackKey = opt.IsRollbackKey()
-		isWrittenKey  = !opt.IsReadModifyWriteRollbackOrClearReadKey() // clear or rollbacked written key
-		doneOnce      bool
+		txnId              = types.TxnId(val.Version)
+		isClearWriteIntent = opt.IsClearWriteIntent()
+		isRollbackKey      = opt.IsRollbackKey()
+		isWrittenKey       = !opt.IsReadModifyWriteRollbackOrClearReadKey() // clear or rollbacked written key
+		doneOnce           bool
 	)
 
 	t.Lock()
-	if opt.IsClearWriteIntent() {
+	if isClearWriteIntent {
 		// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed
 		// TODO needs test against kv.db.Set() failed.
 		t.signalKeyEventUnsafe(NewKeyEvent(key, KeyEventTypeClearWriteIntent))
 	} else {
 		assert.Must(isRollbackKey)
 		if !t.IsAborted() {
-			t.setTxnStateUnsafe(types.TxnStateRollbacking)
+			t.SetTxnStateUnsafe(types.TxnStateRollbacking)
 		}
 	}
 
@@ -82,7 +83,7 @@ func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, 
 		}
 		t.Lock()
 	}
-	if opt.IsClearWriteIntent() {
+	if isClearWriteIntent {
 		if err == nil && glog.V(60) {
 			glog.Infof("txn-%d cleared write intent of key '%s', cost: %s", txnId, key, bench.Elapsed())
 		}
@@ -169,12 +170,16 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 
 func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {
 	assert.Must(opt.IsRemoveVersion())
+	var (
+		isRollback = opt.IsRollbackVersion()
+	)
+
 	t.Lock()
-	if !opt.IsRollbackVersion() {
-		t.setTxnStateUnsafe(types.TxnStateCommitted)
+	if !isRollback {
+		t.SetTxnStateUnsafe(types.TxnStateCommitted)
 	} else {
 		if !t.IsAborted() {
-			t.setTxnStateUnsafe(types.TxnStateRollbacking)
+			t.SetTxnStateUnsafe(types.TxnStateRollbacking)
 		}
 	}
 	t.Unlock()
@@ -186,7 +191,7 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt 
 	var doneOnce bool
 	if err == nil && !opt.IsWriteByDifferentTransaction() {
 		t.Lock()
-		doneOnce = t.doneOnceUnsafe(types.TxnId(val.Version).String(), opt.IsRollbackVersion(), "RemoveTxnRecord")
+		doneOnce = t.doneOnceUnsafe(types.TxnId(val.Version).String(), isRollback, "RemoveTxnRecord")
 		t.Unlock()
 	}
 
@@ -211,7 +216,7 @@ func (t *Transaction) IsDoneUnsafe() bool {
 func (t *Transaction) doneOnceUnsafe(key string, isRollback bool, caller string) (doneOnce bool) {
 	if doneOnce = t.writtenKeys.DoneOnceUnsafe(key); doneOnce {
 		if isRollback {
-			t.setTxnStateUnsafe(types.TxnStateRollbacked)
+			t.SetTxnStateUnsafe(types.TxnStateRollbacked)
 		} else {
 			assert.Must(t.IsCommitted())
 		}
@@ -272,7 +277,7 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 	assert.Must(!t.writtenKeys.IsDoneUnsafe())
 	switch event.Type {
 	case KeyEventTypeClearWriteIntent:
-		state = t.setTxnStateUnsafe(types.TxnStateCommitted)
+		state = t.SetTxnStateUnsafe(types.TxnStateCommitted)
 	case KeyEventTypeRemoveVersionFailed:
 		assert.Must(state == types.TxnStateRollbacking)
 		if t.rollbackedKey2Success == nil {
@@ -319,7 +324,7 @@ func (t *Transaction) signalKeyEventUnsafe(event KeyEvent) {
 	return
 }
 
-func (t *Transaction) setTxnStateUnsafe(state types.TxnState) (newState types.TxnState) {
+func (t *Transaction) SetTxnStateUnsafe(state types.TxnState) (newState types.TxnState) {
 	var terminateOnce bool
 	if newState, terminateOnce = t.AtomicTxnState.SetTxnStateUnsafe(state); terminateOnce {
 		close(t.terminated)

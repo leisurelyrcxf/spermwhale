@@ -72,6 +72,8 @@ type TabletTxnConfig struct {
 	MaxClockDrift       time.Duration
 }
 
+var DefaultTableTxnCfg = NewTabletTxnConfig(time.Second * 10)
+
 func NewTabletTxnConfig(staleWriteThreshold time.Duration) TabletTxnConfig {
 	return TabletTxnConfig{
 		StaleWriteThreshold: staleWriteThreshold,
