@@ -130,13 +130,14 @@ func (t *Transaction) updateMaxTxnRecordReadVersion(readerVersion uint64) uint64
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
+	// NOTE: the lock is must though seems no needed
 	t.RLock()
-	defer t.RUnlock()
-
 	var maxReadVersion uint64
 	if opt.IsUpdateTimestampCache() {
 		maxReadVersion = t.updateMaxTxnRecordReadVersion(opt.ReaderVersion)
 	}
+	t.RUnlock()
+
 	val, err := t.db.Get(ctx, "", opt.ToKVReadOption())
 	if !opt.IsGetMaxReadVersion() {
 		return val.WithMaxReadVersion(0), err
