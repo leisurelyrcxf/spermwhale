@@ -25,7 +25,7 @@ func main() {
 	flagRedisPort := flag.Int("redis-port", 6379, "redis port")
 	flagRedisAuth := flag.String("redis-auth", "", "redis auth")
 	flagTestMode := flag.Bool("test", false, "test mode, won't sleep at start")
-	flagTxnConfigStaleWriteThreshold := flag.Duration("txn-stale-write-threshold", consts.DefaultTooStaleWriteThreshold, "transaction stale write threshold")
+	flagTxnConfigStaleWriteThreshold := flag.Duration("txn-stale-write-threshold", consts.DefaultStaleWriteThreshold, "transaction stale write threshold")
 	flagTxnConfigMaxClockDrift := flag.Duration("max-clock-drift", consts.DefaultMaxClockDrift, "max clock drift")
 	cmd.RegisterStoreFlags()
 	cmd.ParseFlags()

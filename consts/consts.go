@@ -12,9 +12,9 @@ const (
 )
 
 const (
-	DefaultTooStaleWriteThreshold       = 5 * time.Second
+	DefaultStaleWriteThreshold          = 10 * time.Second
 	DefaultMaxClockDrift                = time.Second
-	DefaultWoundUncommittedTxnThreshold = 5 * time.Second
+	DefaultWoundUncommittedTxnThreshold = 10 * time.Second
 
 	DefaultTxnManagerClearerNumber              = 32
 	DefaultTxnManagerClearJobTimeout            = time.Second * 10
@@ -101,12 +101,12 @@ const (
 
 const (
 	DefaultReadTimeout = time.Second * 10
+	MinTxnLifeSpan     = time.Second * 2
 )
 
 const (
 	MaxReadModifyWriteQueueCapacityPerKey = 500
 	ReadModifyWriteQueueMaxReadersRatio   = 0.3333
-	ReadModifyWriteMinMaxAge              = 2 * time.Second
 
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )

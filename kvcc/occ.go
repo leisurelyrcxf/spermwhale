@@ -52,7 +52,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		db:              db,
 		txnManager: transaction.NewManager(types.NewTabletTxnManagerConfig(
 			cfg,
-			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(utils.MaxDuration(consts.ReadModifyWriteMinMaxAge, cfg.StaleWriteThreshold)),
+			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(utils.MaxDuration(consts.MinTxnLifeSpan, cfg.StaleWriteThreshold)),
 		)),
 		tsCache: NewTimestampCache(),
 	}

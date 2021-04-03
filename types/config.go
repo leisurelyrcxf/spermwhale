@@ -72,7 +72,7 @@ type TabletTxnConfig struct {
 	MaxClockDrift       time.Duration
 }
 
-var DefaultTableTxnCfg = NewTabletTxnConfig(time.Second * 10)
+var DefaultTableTxnCfg = NewTabletTxnConfig(consts.DefaultStaleWriteThreshold)
 
 func NewTabletTxnConfig(staleWriteThreshold time.Duration) TabletTxnConfig {
 	return TabletTxnConfig{
@@ -103,7 +103,7 @@ func (cfg TabletTxnConfig) Validate() error {
 }
 
 func (cfg TabletTxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
-	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10 + time.Second
+	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10 + consts.MinTxnLifeSpan
 }
 
 func (cfg TabletTxnConfig) WithStaleWriteThreshold(val time.Duration) TabletTxnConfig {
@@ -123,7 +123,7 @@ func (cfg TabletTxnConfig) SupportReadModifyWriteTxn() bool {
 var DefaultReadModifyWriteQueueCfg = NewReadModifyWriteQueueCfg(
 	consts.MaxReadModifyWriteQueueCapacityPerKey,
 	consts.ReadModifyWriteQueueMaxReadersRatio,
-	consts.ReadModifyWriteMinMaxAge)
+	consts.DefaultStaleWriteThreshold)
 
 type ReadModifyWriteQueueCfg struct {
 	CapacityPerKey  int
