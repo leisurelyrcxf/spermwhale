@@ -518,26 +518,31 @@ type Txn interface {
 
 type RecordValuesTxn struct {
 	Txn
-	readValues  ReadValues
-	writeValues WrittenValues
+	readValues  map[string]TValue
+	writeValues map[string]Value
 }
 
 func NewRecordValuesTxn(txn Txn) *RecordValuesTxn {
 	return &RecordValuesTxn{
 		Txn:         txn,
-		readValues:  make(ReadValues),
-		writeValues: make(WrittenValues),
+		readValues:  make(map[string]TValue),
+		writeValues: make(map[string]Value),
 	}
+}
+
+func (txn *RecordValuesTxn) HasWritten(key string) bool {
+	_, ok := txn.writeValues[key]
+	return ok
 }
 
 func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (TValue, error) {
 	val, err := txn.Txn.Get(ctx, key)
 	if err == nil {
-		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(key)))
+		assert.Must(val.Version != 0)
+		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.HasWritten(key)))
 		if txn.GetType().IsSnapshotRead() {
 			assert.Must(val.SnapshotVersion == txn.GetSnapshotReadOption().SnapshotVersion && val.Version <= val.SnapshotVersion)
 		}
-		assert.Must(val.Version != 0)
 		txn.readValues[key] = val
 	}
 	return val, err
@@ -547,7 +552,8 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]TValue, 
 	values, err := txn.Txn.MGet(ctx, keys)
 	if err == nil {
 		for idx, val := range values {
-			assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.writeValues.Contains(keys[idx])))
+			assert.Must(val.Version != 0)
+			assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.HasWritten(keys[idx])))
 		}
 		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotReadOption().SnapshotVersion; txnType.IsSnapshotRead() {
 			for _, val := range values {
@@ -555,7 +561,6 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]TValue, 
 			}
 		}
 		for idx, val := range values {
-			assert.Must(val.Version != 0)
 			txn.readValues[keys[idx]] = val
 		}
 	}

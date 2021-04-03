@@ -21,3 +21,11 @@ func TestValue(t *testing.T) {
 	v = v.WithNoWriteIntent()
 	assert.False(v.IsDirty())
 }
+
+func TestEmpty(t *testing.T) {
+	assert := testifyassert.New(t)
+
+	assert.True(EmptyValue.IsEmpty())
+	assert.True(EmptyValueCC.IsEmpty())
+	assert.True(EmptyTValue.IsEmpty())
+}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
@@ -32,7 +34,7 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 }
 
 func (m Meta) IsEmpty() bool {
-	return m.Version == 0 && m.Flag == 0 && m.InternalVersion == 0
+	return m.Version == 0
 }
 
 func (m Meta) IsDirty() bool {
@@ -115,6 +117,11 @@ func (v Value) WithNoWriteIntent() Value {
 	return v
 }
 
+func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
+	v.Meta.InternalVersion = version
+	return v
+}
+
 func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	return ValueCC{
 		Value:          v,
@@ -122,30 +129,11 @@ func (v Value) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	}
 }
 
-func (v Value) WithInternalVersion(version TxnInternalVersion) Value {
-	v.Meta.InternalVersion = version
-	return v
-}
-
 func (v Value) WithSnapshotVersion(snapshotVersion uint64) ValueCC {
 	return ValueCC{
 		Value:           v,
 		SnapshotVersion: snapshotVersion,
 	}
-}
-
-type ReadValues map[string]TValue
-
-func (r ReadValues) Contains(key string) bool {
-	_, ok := r[key]
-	return ok
-}
-
-type WrittenValues map[string]Value
-
-func (r WrittenValues) Contains(key string) bool {
-	_, ok := r[key]
-	return ok
 }
 
 type ValueCC struct {
@@ -227,9 +215,10 @@ func (r ReadResultCC) Contains(key string) bool {
 }
 
 func (r ReadResultCC) ToTValues(keys []string, newSnapshotVersion uint64) []TValue {
-	ret := make([]TValue, 0, len(keys))
-	for _, key := range keys {
-		ret = append(ret, NewTValue(r[key].Value, newSnapshotVersion))
+	ret := make([]TValue, len(keys))
+	for idx, key := range keys {
+		assert.Must(r.Contains(key))
+		ret[idx] = NewTValue(r[key].Value, newSnapshotVersion)
 	}
 	return ret
 }
