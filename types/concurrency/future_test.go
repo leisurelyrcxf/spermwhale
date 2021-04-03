@@ -42,7 +42,7 @@ func (txn *TestTxn) Add(key string) error {
 	if txn.IsTerminated() {
 		return errTerminated
 	}
-	assert.Must(!txn.Future.Done)
+	assert.Must(!txn.Future.IsDoneUnsafe())
 	added, done := txn.Future.AddUnsafe(key)
 	if added {
 		glog.V(120).Infof("[TestTxn::Add] inserted key '%s'", key)

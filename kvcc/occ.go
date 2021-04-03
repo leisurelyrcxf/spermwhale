@@ -27,7 +27,7 @@ type KVCC struct {
 	db types.KV
 
 	txnManager *transaction.Manager
-	lm         concurrency.TxnIdLockManager
+	lm         concurrency.AdvancedTxnLockManager
 	tsCache    *TimestampCache
 }
 
@@ -56,7 +56,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		)),
 		tsCache: NewTimestampCache(),
 	}
-	cc.lm.Initialize()
+	cc.lm.Initialize(128)
 	return cc
 }
 

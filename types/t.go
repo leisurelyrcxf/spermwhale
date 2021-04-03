@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"runtime/debug"
 	"strings"
 
@@ -24,6 +25,7 @@ func (t myT) Errorf(format string, args ...interface{}) {
 		t.T.Errorf(format, args...)
 		return
 	}
+	println(fmt.Sprintf(format, args...))
 	glog.Fatalf(format, args...)
 }
 

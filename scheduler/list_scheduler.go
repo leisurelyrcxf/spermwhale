@@ -89,7 +89,7 @@ type DynamicListScheduler struct {
 	taskListMap  TaskMap
 	workerNumber int
 
-	lm concurrency.TaskLockManager
+	lm concurrency.BasicTaskLockManager
 	wg sync.WaitGroup
 }
 

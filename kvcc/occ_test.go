@@ -23,7 +23,7 @@ func TestTxnRecordCC(t *testing.T) {
 func testTxnRecordCC(_ *testing.T) (b bool) {
 
 	var (
-		lm    = concurrency.NewTxnIdLockManager()
+		lm    = concurrency.NewBasicTxnLockManager()
 		txnId = types.TxnId(111)
 		stop  basic.AtomicBool
 		m     = make(map[string]string)
