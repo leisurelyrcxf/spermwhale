@@ -104,8 +104,10 @@ const (
 )
 
 const (
-	MaxReadModifyWriteQueueCapacityPerKey     = 500
-	ReadModifyWriteQueueMaxReadersRatio       = 0.3333
+	MaxReadModifyWriteQueueCapacityPerKey = 500
+	ReadModifyWriteQueueMaxReadersRatio   = 0.3333
+	ReadModifyWriteMinMaxAge              = 2 * time.Second
+
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
 )
 

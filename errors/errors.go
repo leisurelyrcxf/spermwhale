@@ -53,6 +53,11 @@ var (
 		SubCode: ErrStaleWriteSubCodeGenerator.Next(),
 		Msg:     "stale write: writer version smaller than max removed",
 	})
+	ErrStaleWriteInsertTooOldTxn = registerErr(&Error{
+		Code:    consts.ErrCodeStaleWrite,
+		SubCode: ErrStaleWriteSubCodeGenerator.Next(),
+		Msg:     "stale write: insert too old txn",
+	})
 
 	ErrReadUncommittedDataPrevTxnStatusUndetermined = registerErr(&Error{
 		Code: consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined,

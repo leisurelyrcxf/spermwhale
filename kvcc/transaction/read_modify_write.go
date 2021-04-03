@@ -117,12 +117,12 @@ type readModifyWriteQueue struct {
 	notified                               int64
 }
 
-func newReadModifyWriteQueue(key string, capacity int, maxQueuedAge time.Duration, maxReadersRatio float64) *readModifyWriteQueue {
+func newReadModifyWriteQueue(key string, cfg types.ReadModifyWriteQueueCfg) *readModifyWriteQueue {
 	return &readModifyWriteQueue{
 		key:             key,
-		maxQueuedAge:    maxQueuedAge,
-		capacity:        capacity,
-		maxReadersCount: int(float64(capacity) * maxReadersRatio),
+		maxQueuedAge:    cfg.MaxQueuedAge,
+		capacity:        cfg.CapacityPerKey,
+		maxReadersCount: int(float64(cfg.CapacityPerKey) * cfg.MaxReadersRatio),
 	}
 }
 

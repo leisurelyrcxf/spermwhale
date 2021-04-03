@@ -103,7 +103,7 @@ func (cfg TabletTxnConfig) Validate() error {
 }
 
 func (cfg TabletTxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
-	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10
+	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10 + time.Second
 }
 
 func (cfg TabletTxnConfig) WithStaleWriteThreshold(val time.Duration) TabletTxnConfig {
@@ -118,4 +118,55 @@ func (cfg TabletTxnConfig) WithMaxClockDrift(val time.Duration) TabletTxnConfig 
 
 func (cfg TabletTxnConfig) SupportReadModifyWriteTxn() bool {
 	return cfg.StaleWriteThreshold >= time.Millisecond*500
+}
+
+var DefaultReadModifyWriteQueueCfg = NewReadModifyWriteQueueCfg(
+	consts.MaxReadModifyWriteQueueCapacityPerKey,
+	consts.ReadModifyWriteQueueMaxReadersRatio,
+	consts.ReadModifyWriteMinMaxAge)
+
+type ReadModifyWriteQueueCfg struct {
+	CapacityPerKey  int
+	MaxReadersRatio float64
+	MaxQueuedAge    time.Duration
+}
+
+func NewReadModifyWriteQueueCfg(
+	capacityPerKey int,
+	maxReadersRatio float64,
+	maxQueuedAge time.Duration) ReadModifyWriteQueueCfg {
+	return ReadModifyWriteQueueCfg{
+		CapacityPerKey:  capacityPerKey,
+		MaxReadersRatio: maxReadersRatio,
+		MaxQueuedAge:    maxQueuedAge,
+	}
+}
+
+func (cfg ReadModifyWriteQueueCfg) WithMaxQueuedAge(maxQueuedAge time.Duration) ReadModifyWriteQueueCfg {
+	cfg.MaxQueuedAge = maxQueuedAge
+	return cfg
+}
+
+var DefaultTableTxnManagerCfg = NewTabletTxnManagerConfig(DefaultTableTxnCfg, DefaultReadModifyWriteQueueCfg)
+
+type TabletTxnManagerConfig struct {
+	TabletTxnConfig
+	ReadModifyWriteQueueCfg
+
+	// outputs
+	TxnLifeSpan time.Duration
+}
+
+func NewTabletTxnManagerConfig(
+	tabletCfg TabletTxnConfig,
+	readModifyWriteQueueCfg ReadModifyWriteQueueCfg) TabletTxnManagerConfig {
+	return TabletTxnManagerConfig{
+		TabletTxnConfig:         tabletCfg,
+		ReadModifyWriteQueueCfg: readModifyWriteQueueCfg,
+	}.Sanitize()
+}
+
+func (c TabletTxnManagerConfig) Sanitize() TabletTxnManagerConfig {
+	c.TxnLifeSpan = c.TabletTxnConfig.GetWaitTimestampCacheInvalidTimeout()
+	return c
 }

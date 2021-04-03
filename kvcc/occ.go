@@ -50,11 +50,10 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	cc := &KVCC{
 		TabletTxnConfig: cfg,
 		db:              db,
-		txnManager: transaction.NewManager(
+		txnManager: transaction.NewManager(types.NewTabletTxnManagerConfig(
 			cfg,
-			consts.MaxReadModifyWriteQueueCapacityPerKey,
-			consts.ReadModifyWriteQueueMaxReadersRatio,
-			utils.MaxDuration(2*time.Second, cfg.StaleWriteThreshold)),
+			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(utils.MaxDuration(consts.ReadModifyWriteMinMaxAge, cfg.StaleWriteThreshold)),
+		)),
 		tsCache: NewTimestampCache(),
 	}
 	cc.lm.Initialize()
@@ -71,21 +70,22 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 
 	if opt.IsTxnRecord() {
-		if utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold) {
-			txnId := types.TxnId(opt.ExactVersion)
-			kv.lm.RLock(txnId)
-			defer kv.lm.RUnlock(txnId)
+		if !utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold) {
+			if inserted, txn, err := kv.txnManager.InsertTxnIfNotExists(types.TxnId(opt.ExactVersion), kv.db); err == nil {
+				if inserted {
+					glog.V(70).Infof("[KVCC::Get::GetTxnRecord] created new txn-%d", txn.ID)
+				}
+				return txn.GetTxnRecord(ctx, opt)
+			}
+		}
+		txnId := types.TxnId(opt.ExactVersion)
+		kv.lm.RLock(txnId)
+		defer kv.lm.RUnlock(txnId)
 
-			val, err := kv.db.Get(ctx, "", opt.ToKVReadOption())
-			assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
-			assert.Must(opt.IsGetMaxReadVersion())
-			return val.WithMaxReadVersion(opt.ReaderVersion), err
-		}
-		inserted, txn := kv.txnManager.InsertTxnIfNotExists(types.TxnId(opt.ExactVersion), kv.db) // TODO add gc for this
-		if inserted {
-			glog.V(70).Infof("[KVCC::Get::GetTxnRecord] created new txn-%d", txn.ID)
-		}
-		return txn.GetTxnRecord(ctx, opt)
+		val, err := kv.db.Get(ctx, "", opt.ToKVReadOption())
+		assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
+		assert.Must(opt.IsGetMaxReadVersion())
+		return val.WithMaxReadVersion(opt.ReaderVersion), err
 	}
 
 	if opt.IsReadModifyWrite() {
@@ -281,7 +281,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	)
 	assert.Must((!isTxnRecord && key != "") || (isTxnRecord && key == ""))
 	if !val.IsDirty() {
-		inserted, txn := kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
+		inserted, txn := kv.txnManager.MustInsertTxnIfNotExists(txnId, kv.db)
 		if inserted {
 			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::ClearOrRemoveVersion] created new txn-%d", txn.ID)
 		}
@@ -313,30 +313,36 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	assert.Must(!val.IsWriteOfKey() || !isTxnRecord)
 	assert.Must(val.IsWriteOfKey() || isTxnRecord)
 
+	// cache may lost after restarted, so ignore too stale write
+	if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
+		return err
+	}
+
 	if isTxnRecord {
 		kv.lm.Lock(txnId)
 		defer kv.lm.Unlock(txnId)
 
-		if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
+		inserted, txn, err := kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
+		if err != nil {
 			return err
 		}
-
-		inserted, txn := kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
 		if inserted {
 			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setTxnRecord] created new txn-%d", txnId)
 		}
 		return txn.SetTxnRecord(ctx, val, opt)
 	}
 
-	// cache may lost after restarted, so ignore too stale write
-	if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
-		return err
-	}
-
 	var txn *transaction.Transaction
 	if val.IsFirstWriteOfKey() {
-		var inserted bool
-		if inserted, txn = kv.txnManager.InsertTxnIfNotExists(txnId, kv.db); inserted {
+		var (
+			inserted bool
+			err      error
+		)
+		inserted, txn, err = kv.txnManager.InsertTxnIfNotExists(txnId, kv.db)
+		if err != nil {
+			return err
+		}
+		if inserted {
 			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setKey] created new txn-%d", txnId)
 		}
 	} else {

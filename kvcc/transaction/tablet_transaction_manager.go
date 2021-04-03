@@ -11,30 +11,21 @@ import (
 )
 
 const (
-	EstimatedMaxQPS                = 1000000
-	TxnPartitionNum                = 64
-	AdditionalRemoveTxnDelayPeriod = time.Second * 3
+	EstimatedMaxQPS = 1000000
+	TxnPartitionNum = 64
 )
 
 type Manager struct {
-	removeTxnDelay time.Duration
-	writeTxns      concurrency.ConcurrentTxnMap
+	writeTxns             concurrency.ConcurrentTxnMap
+	readModifyWriteQueues concurrency.ConcurrentMap
 
-	readModifyWriteQueues                 concurrency.ConcurrentMap
-	maxReadModifyWriteQueueCapacityPerKey int
-	readModifyWriteQueueMaxReadersRatio   float64
-	readModifyWriteReaderMaxQueuedAge     time.Duration
+	cfg types.TabletTxnManagerConfig
 }
 
-func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
-	tm := &Manager{
-		removeTxnDelay:                        cfg.GetWaitTimestampCacheInvalidTimeout(),
-		maxReadModifyWriteQueueCapacityPerKey: maxReadModifyWriteQueueCapacityPerKey,
-		readModifyWriteQueueMaxReadersRatio:   readModifyWriteQueueMaxReadersRatio,
-		readModifyWriteReaderMaxQueuedAge:     readModifyWriteReaderMaxQueuedAge,
-	}
+func NewManager(cfg types.TabletTxnManagerConfig) *Manager {
+	tm := &Manager{cfg: cfg}
 
-	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.removeTxnDelay) / float64(time.Second)))
+	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.cfg.TxnLifeSpan) / float64(time.Second)))
 	tm.writeTxns.InitializeWithGCThreads(TxnPartitionNum, utils.MaxInt(estimateMaxBufferedTxn/TxnPartitionNum, 100))
 	tm.readModifyWriteQueues.Initialize(64)
 	return tm
@@ -42,7 +33,7 @@ func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey
 
 func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
 	return tm.readModifyWriteQueues.GetLazy(key, func() interface{} {
-		return newReadModifyWriteQueue(key, tm.maxReadModifyWriteQueueCapacityPerKey, tm.readModifyWriteReaderMaxQueuedAge, tm.readModifyWriteQueueMaxReadersRatio)
+		return newReadModifyWriteQueue(key, tm.cfg.ReadModifyWriteQueueCfg)
 	}).(*readModifyWriteQueue).pushReader(readOpt)
 }
 
@@ -54,13 +45,28 @@ func (tm *Manager) SignalReadModifyWriteKeyEvent(readModifyWriteTxnId types.TxnI
 	pq.(*readModifyWriteQueue).notifyKeyEvent(readModifyWriteTxnId, event.Type)
 }
 
-func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted bool, txn *Transaction) {
+func (tm *Manager) MustInsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted bool, txn *Transaction) {
 	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
 		return newTransaction(id, db, func(transaction *Transaction) {
 			tm.removeTxn(transaction)
 		})
 	})
 	return inserted, obj.(*Transaction)
+}
+
+func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted bool, txn *Transaction, err error) {
+	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
+		if utils.IsTooOld(id.Version(), tm.cfg.StaleWriteThreshold) {
+			return nil
+		}
+		return newTransaction(id, db, func(transaction *Transaction) {
+			tm.removeTxn(transaction)
+		})
+	})
+	if obj == nil {
+		return false, nil, errors.ErrStaleWriteInsertTooOldTxn
+	}
+	return inserted, obj.(*Transaction), nil
 }
 
 func (tm *Manager) RegisterKeyEventWaiter(waitForWriteTxnId types.TxnId, key string) (*KeyEventWaiter, KeyEvent, error) {
@@ -82,7 +88,6 @@ func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 
 func (tm *Manager) removeTxn(txn *Transaction) {
 	// TODO remove this in product
-
 	txn.Lock()
 	assert.Must(txn.IsTerminated())
 	waiterCount, waiterKeyCount := txn.getWaiterCounts()
@@ -90,7 +95,7 @@ func (tm *Manager) removeTxn(txn *Transaction) {
 	assert.Must(waiterKeyCount <= txn.writtenKeys.GetKeyCountUnsafe())
 	txn.Unlock()
 
-	tm.writeTxns.GCWhen(txn.ID, time.Now().Add(tm.removeTxnDelay))
+	tm.writeTxns.GCWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
 }
 
 func (tm *Manager) Close() {

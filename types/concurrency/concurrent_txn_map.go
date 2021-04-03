@@ -80,6 +80,9 @@ func (cmp *concurrentTxnMapPartition) insertIfNotExists(key types.TxnId, constru
 	}
 
 	val := constructor()
+	if val == nil {
+		return false, nil
+	}
 	cmp.m[key] = val
 	return true, val
 }

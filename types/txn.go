@@ -47,6 +47,14 @@ func (i TxnId) Max(another TxnId) TxnId {
 	return another
 }
 
+func (i TxnId) Time() time.Time {
+	return time.Unix(0, int64(i))
+}
+
+func (i TxnId) After(duration time.Duration) time.Time {
+	return time.Unix(0, int64(i)).Add(duration)
+}
+
 func (i TxnId) String() string {
 	return fmt.Sprintf("txn-%d", i)
 }

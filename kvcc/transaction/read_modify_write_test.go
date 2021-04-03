@@ -93,7 +93,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 	ctx := context.Background()
 	o := physical.NewOracle()
-	tm := NewManager(types.DefaultTableTxnCfg, queueCapacity, readModifyWriteQueueMaxReadersRatio, time.Minute)
+	tm := NewManager(types.DefaultTableTxnManagerCfg)
 	defer tm.Close()
 
 	var (
@@ -158,7 +158,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(types.DefaultTableTxnCfg, queueCapacity, consts.ReadModifyWriteQueueMaxReadersRatio, time.Minute)
+	tm := NewManager(types.DefaultTableTxnManagerCfg)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -226,7 +226,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(types.DefaultTableTxnCfg, queueCapacity, consts.ReadModifyWriteQueueMaxReadersRatio, timeout)
+	tm := NewManager(types.DefaultTableTxnManagerCfg)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
