@@ -135,8 +135,8 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 
 	w, writingWritersBefore, maxReadVersion, err := kv.tsCache.FindWriters(key, &opt)
 	if err != nil {
-		assert.Must(maxReadVersion == 0)
-		return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), err, false
+		assert.Must(maxReadVersion == 0 && err == errors.ErrMinAllowedSnapshotVersionViolated && w != nil && snapshotRead)
+		return kv.addMaxReadVersionForceFetchLatest(key, types.NewValue(nil, w.ID.Version()).WithSnapshotVersion(opt.ReaderVersion), opt.IsGetMaxReadVersion()), err, false
 	}
 	w.WaitWritten()
 	if !snapshotRead || w != nil {
@@ -149,7 +149,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 			} else {
 				assert.Must(val.Version <= writerVersion)
 				if val.Version < writerVersion {
-					assert.Must(!w.Succeeded() || w.IsAborted()) // Rollbacking was set before remove version in KV::Set()
+					assert.Must(!w.Succeeded() || w.IsAborted()) // Rollbacking was set before remove version in KV::Set() // TODO what if !w.Succeeded?
 					if chkErr := writingWritersBefore.CheckRead(ctx, val.Version, consts.DefaultReadTimeout/10); chkErr != nil {
 						val, err = types.EmptyValue, chkErr
 					}

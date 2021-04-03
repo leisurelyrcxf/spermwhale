@@ -177,10 +177,8 @@ func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 }
 
 func (v ValueCC) WithNoWriteIntent() ValueCC {
-	return ValueCC{
-		Value:          v.Value.WithNoWriteIntent(),
-		MaxReadVersion: v.MaxReadVersion,
-	}
+	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
+	return v
 }
 
 func (v ValueCC) ToTValue() TValue {
