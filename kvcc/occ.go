@@ -149,7 +149,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 			} else {
 				assert.Must(val.Version <= writerVersion)
 				if val.Version < writerVersion {
-					assert.Must(w.IsAborted()) // Rollbacking was set before remove version in KV::Set()
+					assert.Must(!w.Succeeded() || w.IsAborted()) // Rollbacking was set before remove version in KV::Set()
 					if chkErr := writingWritersBefore.CheckRead(ctx, val.Version, consts.DefaultReadTimeout/2); chkErr != nil {
 						val, err = types.EmptyValue, chkErr
 					}
@@ -373,6 +373,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		return err
 	}
 	err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
+	w.SetResult(err)
 	w.Unlock()
 
 	if err != nil {

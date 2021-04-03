@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
@@ -16,8 +18,9 @@ type Writer struct {
 
 	OnUnlocked func()
 
-	writing basic.AtomicBool
-	rw      sync.RWMutex
+	writing   basic.AtomicBool
+	succeeded basic.AtomicBool
+	rw        sync.RWMutex
 }
 
 func NewWriter(txn *Transaction) *Writer {
@@ -34,6 +37,10 @@ func (w *Writer) Unlock() {
 	w.rw.Unlock()
 
 	w.OnUnlocked()
+}
+
+func (w *Writer) SetResult(err error) {
+	w.succeeded.Set(err == nil)
 }
 
 func (w *Writer) IsWriting() bool {
@@ -67,6 +74,10 @@ func (w *Writer) WaitKeyRemoved(ctx context.Context, key string) error {
 	}
 }
 
+func (w *Writer) Succeeded() bool {
+	return w.succeeded.Get()
+}
+
 // HasMoreWritingWriters is a dummy writer used to indicate that has
 // more pending writers afterwards, the Next list is not complete
 var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
@@ -93,6 +104,7 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 		state := writer.GetTxnState()
 		switch {
 		case state.IsCommitted():
+			assert.Must(writer.Succeeded())
 			return errors.ErrWriteReadConflictReaderSkippedCommittedData // Since we didn't wait the writer, this is possible
 		case state.IsAborted(): // TODO check this
 			break

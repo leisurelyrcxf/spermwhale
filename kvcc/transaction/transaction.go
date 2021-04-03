@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/bench"
 
@@ -341,6 +342,12 @@ func (t *Transaction) SetTxnStateUnsafe(state types.TxnState) (newState types.Tx
 		close(t.terminated)
 	}
 	return
+}
+
+func (t *Transaction) WaitTerminateWithTimeout(ctx context.Context, timeout time.Duration) error {
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return t.waitTerminate(cctx)
 }
 
 func (t *Transaction) waitTerminate(ctx context.Context) error {
