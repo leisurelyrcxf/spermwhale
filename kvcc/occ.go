@@ -102,7 +102,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if err != nil {
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), err
 			}
-			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, consts.DefaultReadTimeout/10)); waitErr != nil {
+			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, kv.StaleWriteThreshold/2)); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValueCC, opt.IsGetMaxReadVersion()), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}

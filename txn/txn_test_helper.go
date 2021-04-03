@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 5
+	rounds             = 1
 )
 
 var (
@@ -118,40 +118,6 @@ func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types
 	return nil
 }
 
-type RetryDetailItem struct {
-	errors.ErrorKey
-	Count int
-}
-
-func (i RetryDetailItem) String() string {
-	return fmt.Sprintf("\"%s\": %d,", errors.AllErrors[i.ErrorKey].Msg, i.Count)
-}
-
-type RetryDetailItems []RetryDetailItem
-
-func (r RetryDetailItems) Len() int           { return len(r) }
-func (r RetryDetailItems) Less(i, j int) bool { return r[i].Count > r[j].Count }
-func (r RetryDetailItems) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
-
-type RetryDetails map[errors.ErrorKey]int
-
-func (d RetryDetails) collect(another RetryDetails) {
-	for errType, count := range another {
-		d[errType] += count
-	}
-}
-
-func (d RetryDetails) GetSortedRetryDetails() (items RetryDetailItems) {
-	for errKey, count := range d {
-		items = append(items, RetryDetailItem{
-			ErrorKey: errKey,
-			Count:    count,
-		})
-	}
-	sort.Sort(items)
-	return items
-}
-
 type ExecuteStatistic struct {
 	SumRetryTimes int
 	SumCost       time.Duration
@@ -159,18 +125,18 @@ type ExecuteStatistic struct {
 
 	AverageRetryTimes float64
 	AverageCost       time.Duration
-	RetryDetails      RetryDetails
+	RetryDetails      types.RetryDetails
 }
 
 func NewExecuteStatistic() *ExecuteStatistic {
-	return &ExecuteStatistic{RetryDetails: make(RetryDetails)}
+	return &ExecuteStatistic{RetryDetails: make(types.RetryDetails)}
 }
 
 func (es *ExecuteStatistic) collect(info ExecuteInfo) {
 	es.SumRetryTimes += info.RetryTimes
 	es.SumCost += info.Cost
 	es.Count++
-	es.RetryDetails.collect(info.RetryDetails)
+	es.RetryDetails.Collect(info.RetryDetails)
 }
 
 func (es *ExecuteStatistic) calc() {
@@ -228,13 +194,13 @@ type ExecuteInfo struct {
 	WriteValues map[string]types.Value
 
 	RetryTimes   int
-	RetryDetails RetryDetails
+	RetryDetails types.RetryDetails
 	Cost         time.Duration
 
 	AdditionalInfo interface{}
 }
 
-func NewExecuteInfo(tx types.Txn, retryTimes int, retryDetails RetryDetails, cost time.Duration) ExecuteInfo {
+func NewExecuteInfo(tx types.Txn, retryTimes int, retryDetails types.RetryDetails, cost time.Duration) ExecuteInfo {
 	txn := ExecuteInfo{
 		Txn:          tx,
 		ID:           tx.GetId().Version(),
@@ -484,11 +450,7 @@ func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex in
 func (ts *TestCase) DoTransactionOfOption(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
 	f func(ctx context.Context, txn types.Txn) error) bool {
 	start := time.Now()
-	retryDetails := make(RetryDetails)
-	if tx, retryTimes, err := sc.DoTransactionOfOption(ctx, opt, f, func(err error) {
-		assert.Must(err != nil)
-		retryDetails[errors.GetErrorKey(err)]++
-	}); ts.NoError(err) {
+	if tx, retryTimes, retryDetails, err := sc.DoTransactionOfOption(ctx, opt, f); ts.NoError(err) {
 		var totalCount int
 		for _, count := range retryDetails {
 			totalCount += count
@@ -538,7 +500,7 @@ func (ts *TestCase) GenTestEnv() bool {
 	return true
 }
 
-func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, retryTimes int, retryDetails RetryDetails, cost time.Duration) {
+func (ts *TestCase) CollectExecutedTxnInfo(goRoutineIndex int, tx types.Txn, retryTimes int, retryDetails types.RetryDetails, cost time.Duration) {
 	txn := NewExecuteInfo(tx, retryTimes, retryDetails, cost)
 	ts.False(txn.ID == 0)
 	ts.True(txn.GetState() == types.TxnStateCommitted)

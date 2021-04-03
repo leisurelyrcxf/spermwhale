@@ -125,7 +125,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 	if !ts.NoError(err) {
 		return
 	}
-	ts.t.Logf("key value '%s': %d", key, val)
+	ts.t.Logf("ret, '%s': %d", key, val)
 	if !ts.Equal((ts.GoRoutineNum/2)*delta*writeTimesPerTxn+initialValue, val) {
 		return
 	}

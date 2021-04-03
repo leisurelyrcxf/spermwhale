@@ -20,9 +20,13 @@ func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
 		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
 }
+func TestTxnLostUpdateWriteAfterWriteSnapshotReadReadModifyWrite(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetTxnType(types.TxnTypeReadModifyWrite).Run()
+}
 func TestTxnLostUpdateWriteAfterWriteSnapshotReadWithLatency(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
-		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetSimulatedLatency(time.Millisecond * 10).Run()
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetTxnType(types.TxnTypeReadModifyWrite).SetSimulatedLatency(time.Microsecond).Run()
 }
 
 func TestTxnRead(t *testing.T) {

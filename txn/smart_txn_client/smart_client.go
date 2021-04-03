@@ -5,6 +5,10 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/utils"
 
 	"github.com/golang/glog"
@@ -55,10 +59,19 @@ func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnTy
 	}, nil, nil, VoidOnRetry)
 }
 
-func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error, onRetry func(err error)) (_ types.Txn, retryTimes int, _ error) {
-	return c.DoTransactionRaw(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error) (
+	txn types.Txn, retryTimes int, retryDetails types.RetryDetails, err error) {
+	retryDetails = make(types.RetryDetails)
+	txn, retryTimes, err = c.DoTransactionRaw(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
-	}, nil, nil, onRetry)
+	}, nil, nil, func(err error) {
+		assert.Must(err != nil)
+		retryDetails[errors.GetErrorKey(err)]++
+	})
+	if errors.GetErrorCode(err) == consts.ErrCodeTxnRetriedTooManyTimes {
+		err = errors.Annotatef(err, "retry_details: {%s}", retryDetails)
+	}
+	return
 }
 
 func VoidOnRetry(err error) {}
