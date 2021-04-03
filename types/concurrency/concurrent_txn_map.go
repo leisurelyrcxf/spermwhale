@@ -4,50 +4,32 @@ import (
 	"sync"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
+	"github.com/leisurelyrcxf/spermwhale/timer"
 	"github.com/leisurelyrcxf/spermwhale/types"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type concurrentTxnMapPartition struct {
 	mutex sync.RWMutex
 	m     map[types.TxnId]interface{}
 
-	toClearTxns    chan types.TxnId
-	minClearTxnAge time.Duration
-	closed         chan struct{}
-	wg             *sync.WaitGroup
+	gcThread *timer.AggrTimer
 }
 
-func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, closed chan struct{}, wg *sync.WaitGroup, minClearTxnAge time.Duration) {
-	cmp.toClearTxns = make(chan types.TxnId, channelSize)
-	cmp.minClearTxnAge = minClearTxnAge
-	cmp.closed = closed
-	cmp.wg = wg
-
-	go func() {
-		defer cmp.wg.Done()
-
-		for {
-			select {
-			case toClearTxn := <-cmp.toClearTxns:
-				if age := toClearTxn.Age(); age < cmp.minClearTxnAge {
-					select {
-					case <-time.After(cmp.minClearTxnAge - age):
-						break
-					case <-cmp.closed:
-						return
-					}
-				}
-				assert.Must(toClearTxn.Age() >= cmp.minClearTxnAge)
-				cmp.del(toClearTxn)
-			case <-cmp.closed:
-				return
-			}
+func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, quit chan struct{}, wg *sync.WaitGroup) {
+	cmp.gcThread = timer.NewAggrTimer(channelSize, 64, func(objs []interface{}) {
+		cmp.mutex.Lock()
+		for _, obj := range objs {
+			delete(cmp.m, obj.(types.TxnId))
 		}
-	}()
+		cmp.mutex.Unlock()
+	}, quit, wg)
+	cmp.gcThread.Start()
+}
+
+func (cmp *concurrentTxnMapPartition) gcWhen(txn types.TxnId, scheduleTime time.Time) {
+	cmp.gcThread.Schedule(timer.NewAggrTimerTask(scheduleTime, txn))
 }
 
 func (cmp *concurrentTxnMapPartition) get(key types.TxnId) (interface{}, bool) {
@@ -135,8 +117,8 @@ func (cmp *concurrentTxnMapPartition) forEachLocked(cb func(types.TxnId, interfa
 type ConcurrentTxnMap struct {
 	partitions []*concurrentTxnMapPartition
 
-	gcClosed chan struct{}
-	gcDone   sync.WaitGroup
+	quit chan struct{}
+	wg   sync.WaitGroup
 }
 
 func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
@@ -148,13 +130,12 @@ func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
 	}
 }
 
-func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, estimatedMaxQPS int, minClearTxnAge time.Duration) {
+func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, chSizePerPartition int) {
 	cmp.Initialize(partitionNum)
 
-	cmp.gcClosed = make(chan struct{})
-	cmp.gcDone.Add(len(cmp.partitions))
+	cmp.quit = make(chan struct{})
 	for _, p := range cmp.partitions {
-		p.startGCThread(estimatedMaxQPS*(int(minClearTxnAge/time.Second)+2)/partitionNum, cmp.gcClosed, &cmp.gcDone, minClearTxnAge)
+		p.startGCThread(chSizePerPartition, cmp.quit, &cmp.wg)
 	}
 }
 
@@ -218,8 +199,8 @@ func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {
 	cmp.partitions[cmp.hash(key)].del(key)
 }
 
-func (cmp *ConcurrentTxnMap) GCLater(txn types.TxnId) {
-	cmp.partitions[cmp.hash(txn)].toClearTxns <- txn
+func (cmp *ConcurrentTxnMap) GCWhen(txn types.TxnId, scheduleTime time.Time) {
+	cmp.partitions[cmp.hash(txn)].gcWhen(txn, scheduleTime)
 }
 
 func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {
@@ -248,13 +229,13 @@ func (cmp *ConcurrentTxnMap) Close() {
 		partition.m = nil
 	}
 
-	if cmp.gcClosed != nil {
-		close(cmp.gcClosed)
-		cmp.gcClosed = nil
+	if cmp.quit != nil {
+		close(cmp.quit)
+		cmp.quit = nil
 	}
 	cmp.Unlock()
 
-	cmp.gcDone.Wait()
+	cmp.wg.Wait()
 }
 
 func (cmp *ConcurrentTxnMap) Size() (sz int) {

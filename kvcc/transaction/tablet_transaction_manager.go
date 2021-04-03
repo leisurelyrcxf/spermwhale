@@ -5,7 +5,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/scheduler"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -13,18 +12,18 @@ import (
 
 const (
 	EstimatedMaxQPS                = 1000000
-	TimerPartitionNum              = 8
+	TxnPartitionNum                = 64
 	AdditionalRemoveTxnDelayPeriod = time.Second * 3
 )
 
 type Manager struct {
-	removeTxnDelay                        time.Duration
-	writeTxns                             concurrency.ConcurrentTxnMap
+	removeTxnDelay time.Duration
+	writeTxns      concurrency.ConcurrentTxnMap
+
 	readModifyWriteQueues                 concurrency.ConcurrentMap
 	maxReadModifyWriteQueueCapacityPerKey int
 	readModifyWriteQueueMaxReadersRatio   float64
 	readModifyWriteReaderMaxQueuedAge     time.Duration
-	timer                                 scheduler.ConcurrentBasicTimer
 }
 
 func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey int, readModifyWriteQueueMaxReadersRatio float64, readModifyWriteReaderMaxQueuedAge time.Duration) *Manager {
@@ -35,17 +34,10 @@ func NewManager(cfg types.TabletTxnConfig, maxReadModifyWriteQueueCapacityPerKey
 		readModifyWriteReaderMaxQueuedAge:     readModifyWriteReaderMaxQueuedAge,
 	}
 
-	tm.writeTxns.Initialize(64)
-	tm.readModifyWriteQueues.Initialize(64)
-	tm.timer.Initialize(TimerPartitionNum, utils.MaxInt(tm.estimatedTimerPartitionChSize(), 100))
-
-	tm.timer.Start()
-	return tm
-}
-
-func (tm *Manager) estimatedTimerPartitionChSize() int {
 	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.removeTxnDelay) / float64(time.Second)))
-	return estimateMaxBufferedTxn / TimerPartitionNum
+	tm.writeTxns.InitializeWithGCThreads(TxnPartitionNum, utils.MaxInt(estimateMaxBufferedTxn/TxnPartitionNum, 100))
+	tm.readModifyWriteQueues.Initialize(64)
+	return tm
 }
 
 func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
@@ -98,17 +90,10 @@ func (tm *Manager) removeTxn(txn *Transaction) {
 	assert.Must(waiterKeyCount <= txn.writtenKeys.GetKeyCountUnsafe())
 	txn.Unlock()
 
-	tm.timer.Schedule(
-		scheduler.NewTimerTask(
-			time.Now().Add(tm.removeTxnDelay), func() {
-				tm.writeTxns.Del(txn.ID)
-			},
-		),
-	)
+	tm.writeTxns.GCWhen(txn.ID, time.Now().Add(tm.removeTxnDelay))
 }
 
 func (tm *Manager) Close() {
-	tm.writeTxns.Close()
 	tm.readModifyWriteQueues.Clear()
-	tm.timer.Close()
+	tm.writeTxns.Close()
 }

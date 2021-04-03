@@ -35,8 +35,8 @@ const (
 )
 
 var (
-	defaultTxnManagerConfig = types.NewTxnManagerConfig(time.Millisecond * 1000)
-	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 1000).WithMaxClockDrift(0)
+	defaultTxnManagerConfig = types.NewTxnManagerConfig(time.Millisecond * 10000)
+	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 10000).WithMaxClockDrift(0)
 )
 
 type FailurePattern int

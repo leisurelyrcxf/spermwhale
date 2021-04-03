@@ -236,13 +236,11 @@ func (i *KeyInfo) updateMaxReaderVersion(readerVersion uint64) (currentMaxReader
 
 type TimestampCache struct {
 	m concurrency.ConcurrentMap
-	t concurrency.ConcurrentTxnMap
 }
 
 func NewTimestampCache() *TimestampCache {
 	tc := &TimestampCache{}
 	tc.m.Initialize(64)
-	tc.t.Initialize(64)
 	return tc
 }
 

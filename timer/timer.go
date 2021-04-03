@@ -1,4 +1,4 @@
-package scheduler
+package timer
 
 import (
 	"container/heap"
@@ -8,42 +8,38 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-type TimerTask struct {
+// MININT is the minimal interval for delete to run. In most cases, it is better to be set as 0
+const MININT = time.Second
+
+type Task struct {
 	ScheduleTime time.Time
 	f            func()
 }
 
-func NewTimerTask(scheduleTime time.Time, f func()) *TimerTask {
-	return &TimerTask{
+func NewTask(scheduleTime time.Time, f func()) *Task {
+	return &Task{
 		ScheduleTime: scheduleTime,
 		f:            f,
 	}
 }
 
 type BasicTimer struct {
-	input chan *TimerTask
+	input chan *Task
 
-	quit     chan struct{}
-	quitOnce sync.Once
-	wg       *sync.WaitGroup
+	quit chan struct{}
+	wg   *sync.WaitGroup
 }
 
-func NewBasicTimer(chSize int, wg *sync.WaitGroup) *BasicTimer {
+func NewBasicTimer(chSize int, quit chan struct{}, wg *sync.WaitGroup) *BasicTimer {
 	return &BasicTimer{
-		input: make(chan *TimerTask, chSize),
-		quit:  make(chan struct{}),
+		input: make(chan *Task, chSize),
+		quit:  quit,
 		wg:    wg,
 	}
 }
 
-func (timer *BasicTimer) Schedule(t *TimerTask) {
+func (timer *BasicTimer) Schedule(t *Task) {
 	timer.input <- t
-}
-
-func (timer *BasicTimer) Close() {
-	timer.quitOnce.Do(func() {
-		close(timer.quit)
-	})
 }
 
 func (timer *BasicTimer) Start() {
@@ -72,11 +68,14 @@ func (timer *BasicTimer) Start() {
 
 type ConcurrentBasicTimer struct {
 	timers []*BasicTimer
-	wg     sync.WaitGroup
+
+	quit     chan struct{}
+	quitOnce sync.Once
+	wg       sync.WaitGroup
 }
 
 func NewConcurrentBasicTimer(partitionNumber int, chSizePerPartition int) *ConcurrentBasicTimer {
-	c := &ConcurrentBasicTimer{}
+	c := &ConcurrentBasicTimer{quit: make(chan struct{})}
 	c.Initialize(partitionNumber, chSizePerPartition)
 	return c
 }
@@ -84,18 +83,18 @@ func NewConcurrentBasicTimer(partitionNumber int, chSizePerPartition int) *Concu
 func (c *ConcurrentBasicTimer) Initialize(partitionNumber int, chSizePerPartition int) {
 	c.timers = make([]*BasicTimer, partitionNumber)
 	for i := range c.timers {
-		c.timers[i] = NewBasicTimer(chSizePerPartition, &c.wg)
+		c.timers[i] = NewBasicTimer(chSizePerPartition, c.quit, &c.wg)
 	}
 }
 
-func (c *ConcurrentBasicTimer) Schedule(t *TimerTask) {
+func (c *ConcurrentBasicTimer) Schedule(t *Task) {
 	c.timers[t.ScheduleTime.UnixNano()%int64(len(c.timers))].Schedule(t)
 }
 
 func (c *ConcurrentBasicTimer) Close() {
-	for _, t := range c.timers {
-		t.Close()
-	}
+	c.quitOnce.Do(func() {
+		close(c.quit)
+	})
 	c.wg.Wait()
 }
 
@@ -105,49 +104,46 @@ func (c *ConcurrentBasicTimer) Start() {
 	}
 }
 
-type TimerTaskQueue []*TimerTask
+type TaskQueue []*Task
 
-func (h TimerTaskQueue) Len() int {
+func (h TaskQueue) Len() int {
 	return len(h)
 }
 
-func (h TimerTaskQueue) Swap(i, j int) {
+func (h TaskQueue) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
 
-func (h TimerTaskQueue) Less(i, j int) bool {
+func (h TaskQueue) Less(i, j int) bool {
 	return h[i].ScheduleTime.Before(h[j].ScheduleTime)
 }
 
-func (h *TimerTaskQueue) Push(x interface{}) {
-	item := x.(*TimerTask)
+func (h *TaskQueue) Push(x interface{}) {
+	item := x.(*Task)
 	*h = append(*h, item)
 }
 
-func (h *TimerTaskQueue) Pop() interface{} {
+func (h *TaskQueue) Pop() interface{} {
 	old, n := *h, len(*h)
 	item := old[n-1]
 	*h = old[:n-1]
 	return item
 }
 
-// MININT is the minimal interval for delete to run. In most cases, it is better to be set as 0
-const MININT = 0
-
 type Timer struct {
-	input    chan *TimerTask
+	input    chan *Task
 	quit     chan struct{}
 	quitOnce sync.Once
 }
 
 func NewTimer() *Timer {
 	return &Timer{
-		input: make(chan *TimerTask),
+		input: make(chan *Task),
 		quit:  make(chan struct{}),
 	}
 }
 
-func (timer *Timer) Schedule(t *TimerTask) {
+func (timer *Timer) Schedule(t *Task) {
 	timer.input <- t
 }
 
@@ -159,7 +155,7 @@ func (timer *Timer) Close() {
 
 func (timer *Timer) Start() {
 	go func() {
-		h := make(TimerTaskQueue, 0)
+		h := make(TaskQueue, 0)
 
 		item := <-timer.input
 		heap.Push(&h, &item)
@@ -191,7 +187,7 @@ func (timer *Timer) Start() {
 				//Wait until next item to be deleted
 			case <-t.C:
 				for !h[0].ScheduleTime.After(time.Now()) {
-					heap.Pop(&h).(*TimerTask).f()
+					heap.Pop(&h).(*Task).f()
 				}
 				t.Reset(utils.MaxDuration(time.Until(h[0].ScheduleTime), MININT))
 			}
