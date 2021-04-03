@@ -150,7 +150,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 				assert.Must(val.Version <= writerVersion)
 				if val.Version < writerVersion {
 					assert.Must(!w.Succeeded() || w.IsAborted()) // Rollbacking was set before remove version in KV::Set()
-					if chkErr := writingWritersBefore.CheckRead(ctx, val.Version, consts.DefaultReadTimeout/2); chkErr != nil {
+					if chkErr := writingWritersBefore.CheckRead(ctx, val.Version, consts.DefaultReadTimeout/10); chkErr != nil {
 						val, err = types.EmptyValue, chkErr
 					}
 				}

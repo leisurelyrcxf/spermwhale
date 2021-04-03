@@ -36,6 +36,11 @@ var (
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
 		Msg:     "write read conflict: unsafe read",
 	})
+	ErrWriteReadConflictUnsafeReadWaitTxnTerminateFailed = registerErr(&Error{
+		Code:    consts.ErrCodeWriteReadConflict,
+		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
+		Msg:     "write read conflict: unsafe read wait txn terminate failed",
+	})
 	ErrWriteReadConflictFutureWritePrevented = registerErr(&Error{
 		Code:    consts.ErrCodeWriteReadConflict,
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
@@ -211,6 +216,10 @@ var (
 	ErrWriteIntentQueueFull = registerErr(&Error{
 		Code: consts.ErrCodeWriteIntentQueueFull,
 		Msg:  "write intent queue full, retry later",
+	})
+	ErrWaitKeyEventFailed = registerErr(&Error{
+		Code: consts.ErrCodeWaitKeyEventFailed,
+		Msg:  "wait key event failed",
 	})
 	ErrTabletWriteTransactionNotFound = registerErr(&Error{
 		Code: consts.ErrCodeTabletWriteTransactionNotFound,

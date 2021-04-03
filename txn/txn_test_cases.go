@@ -810,7 +810,7 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 	for _, txn := range abortedTxnPerGoRoutine {
 		if txn != nil {
 			if _, err := kv.Get(ctx, "k1", types.NewKVCCReadOption(txn.GetId().Version()).WithExactVersion(txn.GetId().Version()).
-				WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
+				WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()); !ts.Equal(int32(consts.ErrCodeKeyOrVersionNotExists), errors.GetErrorCode(err)) {
 				return
 			}
 		}

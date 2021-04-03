@@ -395,6 +395,10 @@ func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *
 	return NewTestCase(t, rounds, testFunc).SetGoRoutineNum(10000).SetTxnNumPerGoRoutine(1).SetEmbeddedTablet()
 }
 
+func NewMaliciousEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
+	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(time.Millisecond * 500)
+}
+
 func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
 	return NewEmbeddedTestCase(t, rounds, testFunc).SetReadOnlyTxnType(types.TxnTypeSnapshotRead)
 }

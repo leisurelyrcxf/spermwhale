@@ -99,7 +99,7 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 			return nil
 		}
 		if err := writer.waitTerminate(ctx); err != nil {
-			return err
+			return errors.Annotatef(errors.ErrWriteReadConflictUnsafeReadWaitTxnTerminateFailed, err.Error())
 		}
 		state := writer.GetTxnState()
 		switch {

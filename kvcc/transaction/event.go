@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 )
 
@@ -73,7 +75,7 @@ func (w *KeyEventWaiter) WaitWithTimeout(ctx context.Context, timeout time.Durat
 func (w *KeyEventWaiter) Wait(ctx context.Context) (KeyEvent, error) {
 	select {
 	case <-ctx.Done():
-		return InvalidKeyEvent, ctx.Err()
+		return InvalidKeyEvent, errors.Annotatef(errors.ErrWaitKeyEventFailed, ctx.Err().Error())
 	case event := <-w.waitress:
 		return event, nil
 	}

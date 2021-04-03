@@ -109,47 +109,47 @@ func TestTxnReadWriteAfterWriteReadModifyWriteWaitWhenReadDirtyMSet(t *testing.T
 }
 
 func TestTxnLostUpdateWithSomeAbortedCommitFailed(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 100)
 	}).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedCommitFailedReadModifyWrite(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 1000)
 	}).SetTxnType(types.TxnTypeReadModifyWrite).
 		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedCommitFailedWaitWhenReadDirty(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 1000)
 	}).SetTxnType(types.TxnTypeWaitWhenReadDirty).
 		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedCommitFailedReadModifyWriteWaitWhenReadDirty(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 1000)
 	}).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetMaxRetryPerTxn(10000).Run()
 }
 
 func TestTxnLostUpdateWithSomeAbortedRollbackFailed(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 100)
 	}).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedReadModifyWrite(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1)
 	}).SetTxnType(types.TxnTypeReadModifyWrite).
 		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedWaitWhenReadDirty(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 100)
 	}).SetTxnType(types.TxnTypeWaitWhenReadDirty).
 		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedReadModifyWriteWaitWhenReadDirty(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
+	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1)
 	}).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).
 		SetLogLevel(10).Run()
