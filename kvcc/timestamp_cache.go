@@ -121,12 +121,19 @@ func (i *KeyInfo) FindWriters(ctx context.Context, opt *types.KVCCReadOption) (w
 }
 
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
+	assert.Must(opt.IsUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
+
 	i.mu.RLock()
 	defer func() {
-		assert.Must(opt.IsUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
-		if opt.IsUpdateTimestampCache() && err == nil {
+		if err != nil {
+			i.mu.RUnlock()
+			return
+		}
+
+		if opt.IsUpdateTimestampCache() {
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		}
+
 		if opt.IsGetExactVersion() || w == nil {
 			i.mu.RUnlock()
 			return
