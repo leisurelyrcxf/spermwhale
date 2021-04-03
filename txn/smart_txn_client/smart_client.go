@@ -68,7 +68,7 @@ func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOp
 		assert.Must(err != nil)
 		retryDetails[errors.GetErrorKey(err)]++
 	})
-	if errors.GetErrorCode(err) == consts.ErrCodeTxnRetriedTooManyTimes {
+	if errors.GetErrorCode(err) == consts.ErrCodeTxnRetriedTooManyTimes || err == ctx.Err() {
 		err = errors.Annotatef(err, "retry_details: {%s}", retryDetails)
 	}
 	return

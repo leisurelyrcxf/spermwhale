@@ -117,7 +117,7 @@ func (cfg TabletTxnConfig) WithMaxClockDrift(val time.Duration) TabletTxnConfig 
 }
 
 func (cfg TabletTxnConfig) SupportReadModifyWriteTxn() bool {
-	return cfg.StaleWriteThreshold >= time.Millisecond*500
+	return cfg.StaleWriteThreshold >= consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold
 }
 
 var DefaultReadModifyWriteQueueCfg = NewReadModifyWriteQueueCfg(

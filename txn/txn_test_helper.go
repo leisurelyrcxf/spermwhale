@@ -396,7 +396,7 @@ func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *
 }
 
 func NewMaliciousEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
-	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(time.Millisecond * 500)
+	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold)
 }
 
 func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
@@ -590,6 +590,10 @@ func (ts *TestCase) SetSkipRoundCheck(goRoutineIndex int) *TestCase {
 func (ts *TestCase) SetStaleWriteThreshold(thr time.Duration) *TestCase {
 	ts.TxnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(thr)
 	ts.TableTxnCfg = defaultTabletTxnConfig.WithStaleWriteThreshold(thr)
+	return ts
+}
+func (ts *TestCase) SetWoundUncommittedTxnThreshold(thr time.Duration) *TestCase {
+	ts.TxnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(thr)
 	return ts
 }
 func (ts *TestCase) SetSmartClients(scs ...*smart_txn_client.SmartClient) *TestCase {

@@ -117,13 +117,13 @@ func TestTxnLostUpdateWithSomeAbortedCommitFailedReadModifyWrite(t *testing.T) {
 	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 1000)
 	}).SetTxnType(types.TxnTypeReadModifyWrite).
-		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
+		SetTimeoutPerRound(time.Minute * 1).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedCommitFailedWaitWhenReadDirty(t *testing.T) {
 	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedCommitFailed(ctx, testCase, 1000)
 	}).SetTxnType(types.TxnTypeWaitWhenReadDirty).
-		SetTimeoutPerRound(time.Minute * 10).SetMaxRetryPerTxn(10000).Run()
+		SetTimeoutPerRound(time.Minute * 1).SetMaxRetryPerTxn(10000).Run()
 }
 func TestTxnLostUpdateWithSomeAbortedCommitFailedReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
