@@ -47,7 +47,7 @@ func (opt KVReadOption) IsTxnRecord() bool {
 	return opt.Flag&KVReadOptBitMaskTxnRecord == KVReadOptBitMaskTxnRecord
 }
 
-func (opt KVReadOption) IsGetExactVersion() bool {
+func (opt KVReadOption) IsReadExactVersion() bool {
 	return opt.Flag&KVReadOptBitMaskExactVersion == KVReadOptBitMaskExactVersion
 }
 

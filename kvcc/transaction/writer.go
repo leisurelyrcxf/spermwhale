@@ -54,7 +54,8 @@ func (w *Writer) WaitWritten() {
 	}
 }
 
-func (w *Writer) WaitKeyRemoved(ctx context.Context, key string) error {
+// Deprecated
+func (w *Writer) waitKeyRemoved(ctx context.Context, key string) error {
 	waiter, keyEvent, err := w.registerKeyEventWaiter(key)
 	if err != nil {
 		return err

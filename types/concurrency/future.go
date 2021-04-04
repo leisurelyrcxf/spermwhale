@@ -78,3 +78,7 @@ func (s *Future) contains(key string) bool {
 func (s *Future) length() int {
 	return len(s.keys)
 }
+
+func (s *Future) IsKeyDoneUnsafe(key string) bool {
+	return s.keys[key]
+}

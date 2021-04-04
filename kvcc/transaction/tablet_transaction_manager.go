@@ -69,15 +69,6 @@ func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted b
 	return inserted, obj.(*Transaction), nil
 }
 
-func (tm *Manager) RegisterKeyEventWaiter(waitForWriteTxnId types.TxnId, key string) (*KeyEventWaiter, KeyEvent, error) {
-	waitFor, err := tm.GetTxn(waitForWriteTxnId)
-	if err != nil {
-		assert.Must(false) // TODO remove in product
-		return nil, InvalidKeyEvent, errors.Annotatef(err, "key: %s", key)
-	}
-	return waitFor.registerKeyEventWaiter(key)
-}
-
 func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 	i, ok := tm.writeTxns.Get(txnId)
 	if !ok {
@@ -87,14 +78,7 @@ func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 }
 
 func (tm *Manager) removeTxn(txn *Transaction) {
-	// TODO remove this in product
-	txn.Lock()
 	assert.Must(txn.IsTerminated())
-	waiterCount, waiterKeyCount := txn.getWaiterCounts()
-	assert.Must(waiterCount == 0)
-	assert.Must(waiterKeyCount <= txn.writtenKeys.GetKeyCountUnsafe())
-	txn.Unlock()
-
 	tm.writeTxns.GCWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
 }
 

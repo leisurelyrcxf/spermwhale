@@ -3,6 +3,8 @@ package types
 import (
 	"context"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
+
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvccpb"
@@ -92,7 +94,7 @@ func (opt KVCCReadOption) CondWaitWhenReadDirty(b bool) KVCCReadOption {
 	return opt
 }
 
-func (opt KVCCReadOption) IsGetExactVersion() bool {
+func (opt KVCCReadOption) IsReadExactVersion() bool {
 	return opt.ExactVersion != 0
 }
 
@@ -124,14 +126,32 @@ func (opt KVCCReadOption) IsWaitWhenReadDirty() bool {
 	return opt.flag&KVCCReadOptBitMaskWaitWhenReadDirty == KVCCReadOptBitMaskWaitWhenReadDirty
 }
 
+func (opt KVCCReadOption) GetKVReadVersion() uint64 {
+	if opt.IsReadExactVersion() {
+		return opt.ExactVersion
+	}
+	return opt.ReaderVersion
+}
+
 func (opt KVCCReadOption) ToKVReadOption() (kvOpt KVReadOption) {
-	if opt.IsGetExactVersion() {
+	if opt.IsReadExactVersion() {
 		kvOpt = NewKVReadOption(opt.ExactVersion).WithExactVersion()
 	} else {
 		kvOpt = NewKVReadOption(opt.ReaderVersion)
 	}
 	if opt.IsTxnRecord() {
 		kvOpt.Flag |= KVReadOptBitMaskTxnRecord
+	}
+	return kvOpt
+}
+
+func (opt KVCCReadOption) WithKVReadVersion(kvReadVersion uint64) (kvOpt KVReadOption) {
+	assert.Must(kvReadVersion != 0)
+
+	if kvOpt = opt.ToKVReadOption(); kvOpt.IsReadExactVersion() {
+		assert.Must(kvReadVersion == kvOpt.Version)
+	} else if kvReadVersion < kvOpt.Version {
+		kvOpt.Version = kvReadVersion
 	}
 	return kvOpt
 }

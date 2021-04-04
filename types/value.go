@@ -5,11 +5,10 @@ import (
 	"strconv"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
-	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 )
 
 type Meta struct {
@@ -171,9 +170,15 @@ func (v ValueCC) IsEmpty() bool {
 	return v.Value.IsEmpty() && v.MaxReadVersion == 0 && v.SnapshotVersion == 0
 }
 
+// Hide Value::WithMaxReadVersion
 func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
 	v.MaxReadVersion = maxReadVersion
 	return v
+}
+
+// Hide Value::WithMaxReadVersion
+func (v ValueCC) WithSnapshotVersion(_ uint64) ValueCC {
+	panic(errors.ErrNotSupported)
 }
 
 func (v ValueCC) WithNoWriteIntent() ValueCC {

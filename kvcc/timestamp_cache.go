@@ -1,7 +1,6 @@
 package kvcc
 
 import (
-	"context"
 	"sync"
 	"sync/atomic"
 
@@ -105,23 +104,8 @@ func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Wri
 	return w, nil
 }
 
-// Deprecated
-func (i *KeyInfo) FindWriters(ctx context.Context, opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
-	cctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout/2)
-	defer cancel()
-
-	for {
-		if w, writingWritersBefore, maxReadVersion, err = i.findWriters(opt); w == nil || !w.IsAborted() {
-			return
-		}
-		if err := w.WaitKeyRemoved(cctx, i.key); err != nil {
-			return nil, nil, 0, err
-		}
-	}
-}
-
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
-	assert.Must(opt.IsUpdateTimestampCache() || (opt.IsGetExactVersion() && !opt.IsSnapshotRead()))
+	assert.Must(opt.IsUpdateTimestampCache() || (opt.IsReadExactVersion() && !opt.IsSnapshotRead()))
 
 	i.mu.RLock()
 	defer func() {
@@ -134,7 +118,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		}
 
-		if opt.IsGetExactVersion() || w == nil {
+		if opt.IsReadExactVersion() || w == nil {
 			i.mu.RUnlock()
 			return
 		}
@@ -150,7 +134,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 		i.mu.RUnlock()
 	}()
 
-	if opt.IsGetExactVersion() {
+	if opt.IsReadExactVersion() {
 		exactNode, found := i.writers.Get(opt.ExactVersion) // max <=
 		if !found {                                         //  all writer id > opt.ReaderVersion or empty
 			return nil, nil, 0, nil

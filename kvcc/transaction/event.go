@@ -10,12 +10,17 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/assert"
 )
 
+// Deprecated
 type KeyEventType int
 
 const (
-	KeyEventTypeInvalid          KeyEventType = iota
-	KeyEventTypeClearWriteIntent              // cleared or clearing
+	// Deprecated
+	KeyEventTypeInvalid KeyEventType = iota
+	// Deprecated
+	KeyEventTypeClearWriteIntent // cleared or clearing
+	// Deprecated
 	KeyEventTypeVersionRemoved
+	// Deprecated
 	KeyEventTypeRemoveVersionFailed
 )
 
@@ -34,6 +39,7 @@ func (t KeyEventType) String() string {
 	}
 }
 
+// Deprecated
 type KeyEvent struct {
 	Key  string
 	Type KeyEventType
@@ -53,6 +59,7 @@ func (e KeyEvent) String() string {
 	return fmt.Sprintf("key: %s, type: %s", e.Key, e.Type.String())
 }
 
+// Deprecated
 type KeyEventWaiter struct {
 	key      string
 	waitress chan KeyEvent

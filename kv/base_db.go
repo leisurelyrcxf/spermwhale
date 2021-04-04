@@ -109,8 +109,8 @@ func (db *DB) Get(ctx context.Context, key string, opt types.KVReadOption) (type
 		version     = opt.Version
 		err         error
 	)
-	assert.Must((isTxnRecord && key == "" && opt.IsGetExactVersion()) || (!isTxnRecord && key != ""))
-	if opt.IsGetExactVersion() {
+	assert.Must((isTxnRecord && key == "" && opt.IsReadExactVersion()) || (!isTxnRecord && key != ""))
+	if opt.IsReadExactVersion() {
 		if isTxnRecord {
 			val, err = db.ts.GetTxnRecord(ctx, version)
 		} else {
