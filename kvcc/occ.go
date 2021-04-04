@@ -80,7 +80,8 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		}
 		txnId := types.TxnId(opt.ExactVersion)
 		kv.lm.RLock(txnId)
-		defer kv.lm.RUnlock(txnId)
+		assert.Must(utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold))
+		kv.lm.RUnlock(txnId) // NOTE: this is enough, no need defer kv.lm.RUnlock(txnId)
 
 		val, err := kv.db.Get(ctx, "", opt.ToKVReadOption())
 		assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
@@ -140,7 +141,6 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 	}
 	w.WaitWritten()
 	if !snapshotRead || w != nil {
-		//assert.Must(newReaderId == types.TxnId(opt.ReaderVersion))
 		if val, err = kv.db.Get(ctx, key, opt.ToKVReadOption()); (err == nil || errors.IsNotExistsErr(err)) && w != nil {
 			assert.Must(!errors.IsNotExistsErr(err) || val.Version == 0)
 			if writerVersion := w.ID.Version(); w.IsCommitted() {
@@ -186,11 +186,6 @@ func (kv *KVCC) get(ctx context.Context, key string, opt types.KVCCReadOption, t
 
 	assert.Must(err != nil || (exactVersion && valCC.Version == opt.ExactVersion) || (!exactVersion && valCC.Version <= opt.ReaderVersion))
 	assert.Must(!valCC.IsDirty() || err == nil)
-
-	//var maxReadVersion uint64
-	//if updateTimestampCache {
-	//	_, maxReadVersion = kv.tsCache.UpdateMaxReadVersion(txnKey, opt.ReaderVersion)
-	//}
 
 	defer func() {
 		if snapshotRead && valCC.IsDirty() && !retry {

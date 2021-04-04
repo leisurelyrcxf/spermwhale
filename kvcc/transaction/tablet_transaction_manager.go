@@ -56,7 +56,7 @@ func (tm *Manager) MustInsertTxnIfNotExists(id types.TxnId, db types.KV) (insert
 
 func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted bool, txn *Transaction, err error) {
 	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-		if utils.IsTooOld(id.Version(), tm.cfg.StaleWriteThreshold) {
+		if utils.IsTooOld(id.Version(), tm.cfg.StaleWriteThreshold) { // guarantee no txn inserted after Manager::removeTxn() was called
 			return nil
 		}
 		return newTransaction(id, db, func(transaction *Transaction) {
