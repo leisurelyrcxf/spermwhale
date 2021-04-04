@@ -56,7 +56,7 @@ func (i *KeyInfo) GetMaxReaderVersion() uint64 {
 	return atomic.LoadUint64(&i.maxReaderVersion)
 }
 
-func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Writer, err error) {
+func (i *KeyInfo) TryLock(dbMeta types.DBMeta, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
@@ -73,7 +73,19 @@ func (i *KeyInfo) TryLock(txn *transaction.Transaction) (writer *transaction.Wri
 		return nil, errors.ErrStaleWriteWriterVersionSmallerThanMaxRemovedWriterVersion
 	}
 
-	w := transaction.NewWriter(txn)
+	if prevWriterObj, found := i.writers.Get(writerVersion); found {
+		prevWriter := prevWriterObj.(*transaction.Writer)
+		if prevWriter.IsWriting() {
+			assert.MustNoError(errors.ErrPrevWriterNotFinishedYet) // TODO remove this in product
+			return nil, errors.ErrPrevWriterNotFinishedYet
+		}
+		if dbMeta.InternalVersion <= prevWriter.InternalVersion {
+			assert.MustNoError(errors.ErrInternalVersionSmallerThanPrevWriter) // TODO remove this in product
+			return nil, errors.ErrInternalVersionSmallerThanPrevWriter
+		}
+	}
+
+	w := transaction.NewWriter(dbMeta, txn)
 	w.OnUnlocked = func() {
 		i.mu.Lock()
 		defer i.mu.Unlock()
@@ -236,8 +248,8 @@ func (cache *TimestampCache) GetMaxReaderVersion(key string) uint64 {
 	return keyInfo.GetMaxReaderVersion()
 }
 
-func (cache *TimestampCache) TryLock(key string, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
-	return cache.getLazy(key).TryLock(txn)
+func (cache *TimestampCache) TryLock(key string, meta types.DBMeta, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
+	return cache.getLazy(key).TryLock(meta, txn)
 }
 
 func (cache *TimestampCache) FindWriters(key string, opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {

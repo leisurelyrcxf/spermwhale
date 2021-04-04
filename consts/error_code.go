@@ -40,6 +40,8 @@ const (
 	ErrCodeCantRemoveCommittedValue                  int32 = 90
 	ErrCodeTabletWriteTransactionNotFound                  = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten       = 92
+	ErrCodePrevWriterNotFinishedYet                        = 93
+	ErrCodeInternalVersionSmallerThanPrevWriter            = 94
 
 	ErrCodeNilResponse                                       int32 = 99
 	ErrCodeInvalidResponse                                         = 100

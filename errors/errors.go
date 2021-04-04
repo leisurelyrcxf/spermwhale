@@ -229,6 +229,14 @@ var (
 		Code: consts.ErrCodeTransactionRecordNotFoundAndWontBeWritten,
 		Msg:  "transaction record not found and prevented from being written", // help rollback if original txn coordinator was gone
 	})
+	ErrPrevWriterNotFinishedYet = registerErr(&Error{
+		Code: consts.ErrCodePrevWriterNotFinishedYet,
+		Msg:  "prev writer not finished yet",
+	})
+	ErrInternalVersionSmallerThanPrevWriter = registerErr(&Error{
+		Code: consts.ErrCodeInternalVersionSmallerThanPrevWriter,
+		Msg:  "internal version smaller than previous writer",
+	})
 	ErrSnapshotReadRetriedTooManyTimes = registerErr(&Error{
 		Code: consts.ErrCodeSnapshotReadRetriedTooManyTimes,
 		Msg:  "snapshot read retried too many times",

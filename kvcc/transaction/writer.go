@@ -16,6 +16,7 @@ import (
 type Writer struct {
 	*Transaction
 
+	types.DBMeta
 	OnUnlocked func()
 
 	writing   basic.AtomicBool
@@ -23,8 +24,8 @@ type Writer struct {
 	rw        sync.RWMutex
 }
 
-func NewWriter(txn *Transaction) *Writer {
-	return &Writer{Transaction: txn}
+func NewWriter(dbMeta types.DBMeta, txn *Transaction) *Writer {
+	return &Writer{DBMeta: dbMeta, Transaction: txn}
 }
 
 func (w *Writer) Lock() {
@@ -81,7 +82,7 @@ func (w *Writer) Succeeded() bool {
 
 // HasMoreWritingWriters is a dummy writer used to indicate that has
 // more pending writers afterwards, the Next list is not complete
-var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
+var HasMoreWritingWriters = NewWriter(types.DBMeta{}, newTransaction(types.MaxTxnId, nil, nil))
 
 type WritingWriters []*Writer
 
