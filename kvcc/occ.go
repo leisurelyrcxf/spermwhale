@@ -134,6 +134,10 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 
 	w, writingWritersBefore, maxReadVersion, err := kv.tsCache.FindWriters(key, opt)
 	if err != nil {
+		if errors.IsNotExistsErr(err) {
+			assert.Must(w == nil && exactVersion)
+			return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue.WithSnapshotVersion(opt.ReaderVersion), getMaxReadVersion), err, false
+		}
 		assert.Must(maxReadVersion == 0 && err == errors.ErrMinAllowedSnapshotVersionViolated && w != nil && snapshotRead)
 		return kv.addMaxReadVersionForceFetchLatest(key, types.NewValue(nil, w.ID.Version()).WithSnapshotVersion(opt.ReaderVersion), opt.IsGetMaxReadVersion()), err, false
 	}
@@ -329,14 +333,14 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	}
 
 	txn.Lock()
-	defer txn.Unlock()
-
 	if txn.GetTxnState() != types.TxnStateUncommitted {
 		if txn.IsCommitted() {
 			glog.Fatalf("txn-%d write key '%s' after committed", txnId, key)
 		}
 		assert.Must(txn.IsAborted())
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
+		txn.Unlock()
+
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
 	if txn.AddUnsafe(key) {
@@ -345,11 +349,13 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 	w, err := kv.tsCache.TryLock(key, val.Meta.ToDB(), txn)
 	if err != nil {
+		txn.Unlock()
 		return err
 	}
 	err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 	w.SetResult(err)
 	w.Unlock()
+	txn.Unlock()
 
 	if err != nil {
 		if glog.V(10) {

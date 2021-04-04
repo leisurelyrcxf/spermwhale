@@ -121,7 +121,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 
 	i.mu.RLock()
 	defer func() {
-		if err != nil {
+		if err != nil && !errors.IsNotExistsErr(err) {
 			i.mu.RUnlock()
 			return
 		}
@@ -130,7 +130,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 			maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		}
 
-		if opt.IsReadExactVersion() || w == nil {
+		if w == nil || opt.IsReadExactVersion() {
 			i.mu.RUnlock()
 			return
 		}
@@ -147,8 +147,11 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 	}()
 
 	if opt.IsReadExactVersion() {
-		exactNode, found := i.writers.Get(opt.ExactVersion) // max <=
-		if !found {                                         //  all writer id > opt.ReaderVersion or empty
+		exactNode, found := i.writers.Get(opt.ExactVersion)
+		if !found {
+			if opt.ExactVersion > i.maxRemovedWriterVersion {
+				return nil, nil, 0, errors.ErrKeyOrVersionNotExist
+			}
 			return nil, nil, 0, nil
 		}
 		assert.Must(!opt.IsSnapshotRead())

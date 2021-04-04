@@ -39,7 +39,7 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 		readOpt = readOpt.WithNotGetMaxReadVersion()
 	}
 	for i := 0; ; {
-		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
+		if val, err = s.kv.Get(ctx, key, readOpt.WithMetaOnly()); err == nil || errors.IsNotExistsErr(err) {
 			return val, err == nil, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
@@ -55,7 +55,7 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 	for i := 0; ; {
 		for key := range keys {
 			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithExactVersion(txnId.Version()).
-				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
+				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion().WithMetaOnly())
 			if err == nil || errors.IsNotExistsErr(err) {
 				return key, val, err == nil, nil
 			}
