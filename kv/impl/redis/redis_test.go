@@ -3,12 +3,14 @@ package redis
 import (
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/leisurelyrcxf/spermwhale/kv"
 )
 
 const rounds = 1000
 
-func newRedis() (*kv.DB, error) {
+func newRedis() (*types.DB, error) {
 	return newDB("127.0.0.1:6379", "", 0)
 }
 

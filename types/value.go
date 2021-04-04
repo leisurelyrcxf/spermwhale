@@ -48,6 +48,13 @@ func (m Meta) IsWriteOfKey() bool {
 	return m.InternalVersion >= TxnInternalVersionMin // For txn record, InternalVersion is always 0
 }
 
+func (m Meta) ToDB() DBMeta {
+	return DBMeta{
+		InternalVersion: m.InternalVersion,
+		Flag:            m.Flag,
+	}
+}
+
 type Value struct {
 	Meta
 
@@ -82,6 +89,12 @@ func (v Value) ToPB() *commonpb.Value {
 	return &commonpb.Value{
 		Meta: v.Meta.ToPB(),
 		V:    v.V,
+	}
+}
+func (v Value) ToDB() DBValue {
+	return DBValue{
+		DBMeta: v.Meta.ToDB(),
+		V:      v.V,
 	}
 }
 

@@ -174,7 +174,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
+		if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
@@ -187,7 +187,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
+			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
 				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
@@ -197,7 +197,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
+		if err := db.updateFlagOfKey(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
 			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
@@ -207,7 +207,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value Value) Value {
+			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
 				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
@@ -494,7 +494,7 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 	return errors.AssertIsErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist)
 }
 
-func (db *DB) updateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8, modifyFlag func(Value) Value) error {
+func (db *DB) updateFlagOfKey(ctx context.Context, key string, version uint64, newFlag uint8, modifyFlag func(types.DBValue) types.DBValue) error {
 	return db.updateFlagOfKeyRaw(ctx, key, version, newFlag, modifyFlag, func(err error) error {
 		if glog.V(1) {
 			glog.Errorf("failed to modify flag for version %d of key %s: version not exist", version, key)

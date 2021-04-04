@@ -3,12 +3,14 @@ package memory
 import (
 	"testing"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/leisurelyrcxf/spermwhale/kv"
 )
 
 const rounds = 10000
 
-func newDB() (*kv.DB, error) {
+func newDB() (*types.DB, error) {
 	return NewMemoryDB(), nil
 }
 

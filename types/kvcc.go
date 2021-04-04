@@ -94,6 +94,11 @@ func (opt KVCCReadOption) CondWaitWhenReadDirty(b bool) KVCCReadOption {
 	return opt
 }
 
+func (opt KVCCReadOption) WithMetaOnly() KVCCReadOption {
+	opt.flag |= consts.KVCCReadOptBitMaskMetaOnly
+	return opt
+}
+
 func (opt KVCCReadOption) IsReadExactVersion() bool {
 	return opt.ExactVersion != 0
 }

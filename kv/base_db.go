@@ -2,12 +2,10 @@ package kv
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -17,78 +15,23 @@ var (
 	test = false
 )
 
-type Meta struct {
-	Flag            uint8                    `json:"F"`
-	InternalVersion types.TxnInternalVersion `json:"I"`
-}
-
-func (m Meta) HasWriteIntent() bool {
-	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
-}
-
-type Value struct {
-	Meta
-
-	V []byte `json:"V"`
-}
-
-var EmptyValue = Value{}
-
-func NewValue(v types.Value) Value {
-	return Value{
-		Meta: Meta{
-			InternalVersion: v.Meta.InternalVersion,
-			Flag:            v.Meta.Flag,
-		},
-		V: v.V,
-	}
-}
-
-func (v Value) WithNoWriteIntent() Value {
-	v.Meta.Flag &= consts.ValueMetaBitMaskClearWriteIntent
-	return v
-}
-
-func (v Value) Encode() []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		glog.Fatalf("encode to json failed: '%v'", err)
-	}
-	return b
-}
-
-func (v *Value) Decode(data []byte) error {
-	return json.Unmarshal(data, v)
-}
-
-func (v Value) WithVersion(version uint64) types.Value {
-	return types.Value{
-		Meta: types.Meta{
-			Version:         version,
-			InternalVersion: v.InternalVersion,
-			Flag:            v.Meta.Flag,
-		},
-		V: v.V,
-	}
-}
-
 type KeyStore interface {
-	Get(ctx context.Context, key string, version uint64) (Value, error)
-	Upsert(ctx context.Context, key string, version uint64, val Value) error
+	Get(ctx context.Context, key string, version uint64) (types.DBValue, error)
+	Upsert(ctx context.Context, key string, version uint64, val types.DBValue) error
 	Remove(ctx context.Context, key string, version uint64) error
-	RemoveIf(ctx context.Context, key string, version uint64, pred func(prev Value) error) error
+	RemoveIf(ctx context.Context, key string, version uint64, pred func(prev types.DBValue) error) error
 	UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error
-	Floor(ctx context.Context, key string, upperVersion uint64) (Value, uint64, error)
+	Floor(ctx context.Context, key string, upperVersion uint64) (types.DBValue, uint64, error)
 	Close() error
 }
 
 type KeyStoreEx interface {
-	ReadModifyWriteKey(ctx context.Context, key string, version uint64, modifyFlag func(val Value) Value, onNotExists func(err error) error) error
+	ReadModifyWriteKey(ctx context.Context, key string, version uint64, modifyFlag func(val types.DBValue) types.DBValue, onNotExists func(err error) error) error
 }
 
 type TxnRecordStore interface {
-	GetTxnRecord(ctx context.Context, version uint64) (Value, error)
-	UpsertTxnRecord(ctx context.Context, version uint64, val Value) error
+	GetTxnRecord(ctx context.Context, version uint64) (types.DBValue, error)
+	UpsertTxnRecord(ctx context.Context, version uint64, val types.DBValue) error
 	RemoveTxnRecord(ctx context.Context, version uint64) error
 	Close() error
 }
@@ -105,7 +48,7 @@ func NewDB(getVersionedValues KeyStore, txnRecordStore TxnRecordStore) *DB {
 func (db *DB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
 	var (
 		isTxnRecord = opt.IsTxnRecord()
-		val         Value
+		val         types.DBValue
 		version     = opt.Version
 		err         error
 	)
@@ -134,7 +77,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 	if opt.IsClearWriteIntent() {
 		assert.Must(!isTxnRecord)
 		if utils.IsDebug() {
-			return db.updateFlagOfKeyRaw(ctx, key, val.Version, 0 /* TODO if there are multi bits, this is dangerous */, func(value Value) Value {
+			return db.updateFlagOfKeyRaw(ctx, key, val.Version, 0 /* TODO if there are multi bits, this is dangerous */, func(value types.DBValue) types.DBValue {
 				return value.WithNoWriteIntent()
 			}, func(err error) error {
 				if !test {
@@ -159,7 +102,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		assert.Must(!val.IsDirty())
 		// TODO can remove the check in the future if stable enough
 		if !isTxnRecord && utils.IsDebug() {
-			return db.vvs.RemoveIf(ctx, key, val.Version, func(prev Value) error {
+			return db.vvs.RemoveIf(ctx, key, val.Version, func(prev types.DBValue) error {
 				if !prev.HasWriteIntent() {
 					if !test {
 						glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, val.Version)
@@ -176,16 +119,16 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		}
 	}
 	if isTxnRecord {
-		return errors.Annotatef(db.ts.UpsertTxnRecord(ctx, val.Version, NewValue(val)), "txn-record: %d", val.Version)
+		return errors.Annotatef(db.ts.UpsertTxnRecord(ctx, val.Version, val.ToDB()), "txn-record: %d", val.Version)
 	}
-	return errors.Annotatef(db.vvs.Upsert(ctx, key, val.Version, NewValue(val)), "key: '%s'", key)
+	return errors.Annotatef(db.vvs.Upsert(ctx, key, val.Version, val.ToDB()), "key: '%s'", key)
 }
 
 func (db *DB) Close() error {
 	return errors.Wrap(db.vvs.Close(), db.ts.Close())
 }
 
-func (db *DB) updateFlagOfKeyRaw(ctx context.Context, key string, version uint64, newFlag uint8, modifyFlag func(Value) Value, onNotExists func(err error) error) error {
+func (db *DB) updateFlagOfKeyRaw(ctx context.Context, key string, version uint64, newFlag uint8, modifyFlag func(types.DBValue) types.DBValue, onNotExists func(err error) error) error {
 	var err error
 	if vvsEx, ok := db.vvs.(KeyStoreEx); ok {
 		err = vvsEx.ReadModifyWriteKey(ctx, key, version, modifyFlag, onNotExists)

@@ -2,12 +2,63 @@ package types
 
 import (
 	"context"
+	"encoding/json"
+
+	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
-
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 )
+
+type DBMeta struct {
+	Flag            uint8              `json:"F"`
+	InternalVersion TxnInternalVersion `json:"I"`
+}
+
+func (m DBMeta) HasWriteIntent() bool {
+	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+}
+
+func (m DBMeta) WithVersion(version uint64) Meta {
+	return Meta{
+		Version:         version,
+		InternalVersion: m.InternalVersion,
+		Flag:            m.Flag,
+	}
+}
+
+type DBValue struct {
+	DBMeta
+
+	V []byte `json:"V"`
+}
+
+var EmptyDBValue = DBValue{}
+
+func (v DBValue) WithNoWriteIntent() DBValue {
+	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
+	return v
+}
+
+func (v DBValue) Encode() []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		glog.Fatalf("encode to json failed: '%v'", err)
+	}
+	return b
+}
+
+func (v *DBValue) Decode(data []byte) error {
+	return json.Unmarshal(data, v)
+}
+
+func (v DBValue) WithVersion(version uint64) Value {
+	return Value{
+		Meta: v.DBMeta.WithVersion(version),
+		V:    v.V,
+	}
+}
 
 type KVReadOption struct {
 	Version uint64

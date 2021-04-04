@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/types"
+
 	"github.com/golang/glog"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/kv"
 )
 
 const (
@@ -35,7 +36,7 @@ func pkEqualOfTxnRecord(version uint64) bson.D {
 		}}
 }
 
-func encodeTxnRecord(val kv.Value) bson.D {
+func encodeTxnRecord(val types.DBValue) bson.D {
 	assert.Must(val.InternalVersion == 0)
 	return bson.D{
 		{Key: attrFlag, Value: val.Flag},
@@ -43,18 +44,18 @@ func encodeTxnRecord(val kv.Value) bson.D {
 	}
 }
 
-func (m MTxnStore) GetTxnRecord(ctx context.Context, version uint64) (value kv.Value, err error) {
+func (m MTxnStore) GetTxnRecord(ctx context.Context, version uint64) (value types.DBValue, err error) {
 	res := m.cli.Database(defaultDatabase).Collection(txnRecordCollection).FindOne(ctx, pkEqualOfTxnRecord(version))
 	if err := res.Err(); err != nil {
-		return kv.EmptyValue, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
+		return types.EmptyDBValue, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 	}
 	raw, err := res.DecodeBytes()
 	if err != nil {
-		return kv.EmptyValue, err
+		return types.EmptyDBValue, err
 	}
 	elements, err := raw.Elements()
 	if err != nil {
-		return kv.EmptyValue, err
+		return types.EmptyDBValue, err
 	}
 
 	var (
@@ -93,12 +94,12 @@ func (m MTxnStore) GetTxnRecord(ctx context.Context, version uint64) (value kv.V
 	}
 
 	if gotAttrs != 3 {
-		return kv.EmptyValue, fmt.Errorf("expect got 2 fields but got only %d", gotAttrs) // TODO change error
+		return types.EmptyDBValue, fmt.Errorf("expect got 2 fields but got only %d", gotAttrs) // TODO change error
 	}
 	return value, nil
 }
 
-func (m MTxnStore) UpsertTxnRecord(ctx context.Context, version uint64, val kv.Value) error {
+func (m MTxnStore) UpsertTxnRecord(ctx context.Context, version uint64, val types.DBValue) error {
 	updateResult, err := m.cli.Database(defaultDatabase).Collection(txnRecordCollection).ReplaceOne(ctx, pkEqualOfTxnRecord(version),
 		encodeTxnRecord(val), options.Replace().SetUpsert(true))
 	if err != nil {

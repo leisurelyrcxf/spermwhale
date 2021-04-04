@@ -14,7 +14,6 @@ import (
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
@@ -43,7 +42,7 @@ func pkEqualOfKey(key string, version uint64) bson.D {
 	}}
 }
 
-func encodeValueOfKey(val kv.Value) bson.D {
+func encodeValueOfKey(val types.DBValue) bson.D {
 	return bson.D{
 		{Key: attrFlag, Value: val.Flag},
 		{Key: keyAttrInternalVersion, Value: val.InternalVersion},
@@ -51,16 +50,16 @@ func encodeValueOfKey(val kv.Value) bson.D {
 	}
 }
 
-func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (kv.Value, error) {
+func (m MongoVVS) Get(ctx context.Context, key string, version uint64) (types.DBValue, error) {
 	gotKey, val, _, err := m.getOne(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOne(ctx, pkEqualOfKey(key, version)))
 	if err != nil {
-		return kv.EmptyValue, err
+		return types.EmptyDBValue, err
 	}
 	assert.Must(gotKey == key)
 	return val, nil
 }
 
-func (m MongoVVS) Floor(ctx context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+func (m MongoVVS) Floor(ctx context.Context, key string, upperVersion uint64) (types.DBValue, uint64, error) {
 	gotKey, value, version, err := m.getOne(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOne(ctx, bson.D{
 		{Key: attrId, Value: bson.D{
 			{Key: "$lte", Value: bson.D{
@@ -69,16 +68,16 @@ func (m MongoVVS) Floor(ctx context.Context, key string, upperVersion uint64) (k
 			}},
 		}}, options.FindOne().SetSort(bson.D{{Key: attrId, Value: -1}})))
 	if err != nil {
-		return kv.EmptyValue, 0, err
+		return types.EmptyDBValue, 0, err
 	}
 	if gotKey != key {
 		assert.Must(gotKey < key)
-		return kv.EmptyValue, 0, errors.ErrKeyOrVersionNotExist
+		return types.EmptyDBValue, 0, errors.ErrKeyOrVersionNotExist
 	}
 	return value, version, nil
 }
 
-func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val kv.Value) error {
+func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val types.DBValue) error {
 	single, err := m.cli.Database(defaultDatabase).Collection(keyCollection).ReplaceOne(ctx, pkEqualOfKey(key, version),
 		encodeValueOfKey(val), options.Replace().SetUpsert(true))
 	if err != nil {
@@ -106,7 +105,7 @@ func (m MongoVVS) Remove(ctx context.Context, key string, version uint64) error 
 	return nil
 }
 
-func (m MongoVVS) RemoveIf(ctx context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+func (m MongoVVS) RemoveIf(ctx context.Context, key string, version uint64, pred func(prev types.DBValue) error) error {
 	val, err := m.Get(ctx, key, version)
 	if err != nil {
 		return err
@@ -123,17 +122,17 @@ func (m MongoVVS) Close() error {
 	return m.cli.Disconnect(ctx)
 }
 
-func (m MongoVVS) getOne(res *mongo.SingleResult) (gotKey string, value kv.Value, version uint64, _ error) {
+func (m MongoVVS) getOne(res *mongo.SingleResult) (gotKey string, value types.DBValue, version uint64, _ error) {
 	if err := res.Err(); err != nil {
-		return "", kv.EmptyValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
+		return "", types.EmptyDBValue, 0, errors.CASError2(err, mongo.ErrNoDocuments, errors.ErrKeyOrVersionNotExist)
 	}
 	raw, err := res.DecodeBytes()
 	if err != nil {
-		return "", kv.EmptyValue, 0, err
+		return "", types.EmptyDBValue, 0, err
 	}
 	elements, err := raw.Elements()
 	if err != nil {
-		return "", kv.EmptyValue, 0, err
+		return "", types.EmptyDBValue, 0, err
 	}
 
 	var (
@@ -146,7 +145,7 @@ func (m MongoVVS) getOne(res *mongo.SingleResult) (gotKey string, value kv.Value
 			assert.Must(ok)
 			idElements, err := idDoc.Elements()
 			if err != nil {
-				return "", kv.EmptyValue, 0, err
+				return "", types.EmptyDBValue, 0, err
 			}
 			for _, idEle := range idElements {
 				switch idAttr, idVal := idEle.Key(), idEle.Value(); idAttr {
@@ -193,7 +192,7 @@ func (m MongoVVS) getOne(res *mongo.SingleResult) (gotKey string, value kv.Value
 	}
 
 	if gotAttrs != 5 {
-		return "", kv.EmptyValue, 0, fmt.Errorf("expect 5 fields but got '%v'", gotAttrs)
+		return "", types.EmptyDBValue, 0, fmt.Errorf("expect 5 fields but got '%v'", gotAttrs)
 	}
 	return gotKey, value, version, nil
 }

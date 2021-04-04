@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+
 	"github.com/leisurelyrcxf/spermwhale/types"
 
 	"github.com/golang/glog"
@@ -17,7 +19,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
-	"github.com/leisurelyrcxf/spermwhale/kv"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
@@ -34,17 +35,17 @@ func NewVersionedValues(cli *redis.Client, discardedTimestampBits int) *RVVS {
 	return &RVVS{cli: cli, discardedTimestampBits: discardedTimestampBits, once: &sync.Once{}}
 }
 
-func (vvs RVVS) encodeRedis(version uint64, val kv.Value) redis.Z {
+func (vvs RVVS) encodeRedis(version uint64, val types.DBValue) redis.Z {
 	return redis.Z{
 		Score:  float64(version >> vvs.discardedTimestampBits),
 		Member: val.Encode(),
 	}
 }
 
-func (vvs RVVS) decodeRedis(z redis.Z) (_ kv.Value, version uint64, err error) {
-	var v kv.Value
+func (vvs RVVS) decodeRedis(z redis.Z) (_ types.DBValue, version uint64, err error) {
+	var v types.DBValue
 	if err = v.Decode([]byte(z.Member.(string))); err != nil {
-		return kv.EmptyValue, 0, err
+		return types.EmptyDBValue, 0, err
 	}
 	return v, uint64(math.Round(z.Score)) << vvs.discardedTimestampBits, nil
 }
@@ -54,11 +55,11 @@ func (vvs RVVS) versionToScore(version uint64) string {
 	return strconv.FormatUint(version>>vvs.discardedTimestampBits, 10)
 }
 
-func (vvs RVVS) GetTxnRecord(ctx context.Context, version uint64) (kv.Value, error) {
+func (vvs RVVS) GetTxnRecord(ctx context.Context, version uint64) (types.DBValue, error) {
 	return vvs.Get(ctx, types.TxnId(version).String(), version)
 }
 
-func (vvs RVVS) UpsertTxnRecord(ctx context.Context, version uint64, val kv.Value) error {
+func (vvs RVVS) UpsertTxnRecord(ctx context.Context, version uint64, val types.DBValue) error {
 	return vvs.Upsert(ctx, types.TxnId(version).String(), version, val)
 }
 
@@ -66,7 +67,7 @@ func (vvs RVVS) RemoveTxnRecord(ctx context.Context, version uint64) error {
 	return vvs.Remove(ctx, types.TxnId(version).String(), version)
 }
 
-func (vvs RVVS) Get(_ context.Context, key string, version uint64) (kv.Value, error) {
+func (vvs RVVS) Get(_ context.Context, key string, version uint64) (types.DBValue, error) {
 	versionDesc := vvs.versionToScore(version)
 	cmd := vvs.cli.ZRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   versionDesc,
@@ -82,7 +83,7 @@ func (vvs RVVS) Get(_ context.Context, key string, version uint64) (kv.Value, er
 	return val, err
 }
 
-func (vvs RVVS) Upsert(_ context.Context, key string, version uint64, val kv.Value) error {
+func (vvs RVVS) Upsert(_ context.Context, key string, version uint64, val types.DBValue) error {
 	versionDesc := vvs.versionToScore(version)
 	_, err := vvs.cli.Pipelined(func(pipe redis.Pipeliner) error {
 		pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
@@ -97,7 +98,7 @@ func (vvs RVVS) UpdateFlag(_ context.Context, key string, version uint64, newFla
 	return errors.ErrNotSupported
 }
 
-func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64, modifyFlag func(val kv.Value) kv.Value, onNotExists func(err error) error) error {
+func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64, modifyFlag func(val types.DBValue) types.DBValue, onNotExists func(err error) error) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(_ context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
@@ -127,7 +128,7 @@ func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64
 				pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
 				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] removed version %d of key '%s'", version, key)
 				pipe.ZAdd(key, vvs.encodeRedis(version, cur))
-				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] modified version %d of key '%s', new value: '%s'(flag: %d)", version, key, string(cur.V), cur.Meta.Flag)
+				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] modified version %d of key '%s', new value: '%s'(flag: %d)", version, key, string(cur.V), cur.DBMeta.Flag)
 				return nil
 			})
 			return err
@@ -137,19 +138,19 @@ func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64
 	})
 }
 
-func (vvs RVVS) Max(_ context.Context, key string) (kv.Value, uint64, error) {
+func (vvs RVVS) Max(_ context.Context, key string) (types.DBValue, uint64, error) {
 	cmd := vvs.cli.ZRevRangeWithScores(key, 0, 0)
 	ret, err := cmd.Result()
 	return vvs.getOne(ret, err)
 }
 
-func (vvs RVVS) Min(_ context.Context, key string) (kv.Value, uint64, error) {
+func (vvs RVVS) Min(_ context.Context, key string) (types.DBValue, uint64, error) {
 	cmd := vvs.cli.ZRangeWithScores(key, 0, 0)
 	ret, err := cmd.Result()
 	return vvs.getOne(ret, err)
 }
 
-func (vvs RVVS) Floor(_ context.Context, key string, upperVersion uint64) (kv.Value, uint64, error) {
+func (vvs RVVS) Floor(_ context.Context, key string, upperVersion uint64) (types.DBValue, uint64, error) {
 	cmd := vvs.cli.ZRevRangeByScoreWithScores(key, redis.ZRangeBy{
 		Min:   "-inf",
 		Max:   vvs.versionToScore(upperVersion),
@@ -169,7 +170,7 @@ func (vvs RVVS) Remove(_ context.Context, key string, version uint64) error {
 	return nil
 }
 
-func (vvs RVVS) RemoveIf(_ context.Context, key string, version uint64, pred func(prev kv.Value) error) error {
+func (vvs RVVS) RemoveIf(_ context.Context, key string, version uint64, pred func(prev types.DBValue) error) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(_ context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {
@@ -203,12 +204,12 @@ func (vvs RVVS) RemoveIf(_ context.Context, key string, version uint64, pred fun
 	})
 }
 
-func (vvs RVVS) getOne(zs []redis.Z, err error) (kv.Value, uint64, error) {
+func (vvs RVVS) getOne(zs []redis.Z, err error) (types.DBValue, uint64, error) {
 	if err != nil {
-		return kv.EmptyValue, 0, err
+		return types.EmptyDBValue, 0, err
 	}
 	if len(zs) == 0 {
-		return kv.EmptyValue, 0, errors.ErrKeyOrVersionNotExist
+		return types.EmptyDBValue, 0, errors.ErrKeyOrVersionNotExist
 	}
 	if len(zs) > 1 {
 		panic(fmt.Sprintf("RVVS::getOne() len(ret%v) > 1", zs))
@@ -250,7 +251,7 @@ func newDB(sourceAddr string, auth string, discardedTimestampBits int) (*kv.DB, 
 	return kv.NewDB(s, s), nil
 }
 
-func (vvs RVVS) Insert(key string, version uint64, val kv.Value) error {
+func (vvs RVVS) Insert(key string, version uint64, val types.DBValue) error {
 	versionDesc := vvs.versionToScore(version)
 	return utils.WithContextRetryEx(context.Background(), time.Millisecond*100, time.Second, func(_ context.Context) error {
 		return vvs.cli.Watch(func(tx *redis.Tx) error {

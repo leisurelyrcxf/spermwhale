@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kv"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
-
-	"github.com/leisurelyrcxf/spermwhale/kv"
 )
 
 const (
