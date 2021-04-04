@@ -32,12 +32,24 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 	}).SetFlag(m.Flag)
 }
 
+func (m *Meta) SetCommitted() {
+	m.Flag |= consts.ValueMetaBitMaskCommitted
+}
+
+func (m *Meta) SetAborted() {
+	m.Flag |= consts.ValueMetaBitMaskAborted
+}
+
+func (m *Meta) SetClearAborted() {
+	m.Flag &= consts.ClearValueMetaBitMaskAborted
+}
+
 func (m Meta) IsEmpty() bool {
 	return m.Version == 0
 }
 
 func (m Meta) IsDirty() bool {
-	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+	return m.Flag&consts.ValueMetaBitMaskCommitted == 0
 }
 
 func (m Meta) IsFirstWriteOfKey() bool {
@@ -55,6 +67,34 @@ func (m Meta) ToDB() DBMeta {
 	}
 }
 
+func (m Meta) IsAborted() bool {
+	return m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
+}
+
+func (m Meta) WithAborted() Meta {
+	m.SetAborted()
+	return m
+}
+
+func (m Meta) CondAborted(b bool) Meta {
+	if b {
+		m.Flag |= consts.ValueMetaBitMaskAborted
+	}
+	return m
+}
+
+func (m Meta) WithTxnState(state TxnState) Meta {
+	if state.IsCommitted() {
+		assert.Must(!m.IsAborted())
+		m.SetCommitted()
+	}
+	if state.IsAborted() {
+		assert.Must(m.IsDirty())
+		m.SetAborted()
+	}
+	return m
+}
+
 type Value struct {
 	Meta
 
@@ -68,7 +108,7 @@ func NewValue(val []byte, version uint64) Value {
 	return Value{
 		Meta: Meta{
 			Version: version,
-			Flag:    consts.ValueMetaBitMaskHasWriteIntent, // default has write intent
+			Flag:    0,
 		},
 		V: val,
 	}
@@ -125,7 +165,12 @@ func (v Value) WithVersion(version uint64) Value {
 }
 
 func (v Value) WithNoWriteIntent() Value {
-	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
+	v.SetCommitted()
+	return v
+}
+
+func (v Value) WithClearAborted() Value {
+	v.SetClearAborted()
 	return v
 }
 
@@ -195,7 +240,7 @@ func (v ValueCC) WithSnapshotVersion(_ uint64) ValueCC {
 }
 
 func (v ValueCC) WithNoWriteIntent() ValueCC {
-	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
+	v.SetCommitted()
 	return v
 }
 

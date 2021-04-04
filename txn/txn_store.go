@@ -159,7 +159,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 			return txn, nil
 		}
 		// Must haven't committed.
-		if !preventedFutureTxnRecordWrite {
+		if !vv.IsAborted() && !preventedFutureTxnRecordWrite {
 			return nil, errors.Annotatef(errors.ErrKeyOrVersionNotExist, "txn record of %d not exists", txnId)
 		}
 	}
@@ -171,7 +171,9 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	if txn = s.partialTxnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion); !keyExists {
 		txn.MarkWrittenKeyRollbacked(key)
 	}
-	if preventedFutureTxnRecordWrite {
+	if vv.IsAborted() {
+		txn.err = errors.ErrTransactionRecordNotFoundAndFoundAbortedValue
+	} else if preventedFutureTxnRecordWrite {
 		txn.err = errors.ErrTransactionRecordNotFoundAndWontBeWritten
 	} else {
 		assert.Must(!keyExists && len(allWrittenKey2LastVersion) == 1 && len(keysWithWriteIntent) == 1)

@@ -25,6 +25,7 @@ type Writer struct {
 }
 
 func NewWriter(dbMeta types.DBMeta, txn *Transaction) *Writer {
+	assert.Must(dbMeta.IsDirty())
 	return &Writer{DBMeta: dbMeta, Transaction: txn}
 }
 
@@ -55,6 +56,24 @@ func (w *Writer) WaitWritten() {
 	}
 }
 
+func (w *Writer) Succeeded() bool {
+	return w.succeeded.Get()
+}
+
+//func (w *Writer) ToValue() types.Value {
+//	return types.Value{
+//		Meta: w.DBMeta.WithVersion(w.ID.Version()).WithTxnState(w.GetTxnState()),
+//		V:    nil,
+//	}
+//}
+
+func (w *Writer) ToValueIncomplete() types.Value {
+	return types.Value{
+		Meta: w.DBMeta.WithVersion(w.ID.Version()),
+		V:    nil,
+	}
+}
+
 // Deprecated
 func (w *Writer) waitKeyRemoved(ctx context.Context, key string) error {
 	waiter, keyEvent, err := w.registerKeyEventWaiter(key)
@@ -74,10 +93,6 @@ func (w *Writer) waitKeyRemoved(ctx context.Context, key string) error {
 	default:
 		panic(fmt.Sprintf("impossible type: '%s'", keyEvent.Type))
 	}
-}
-
-func (w *Writer) Succeeded() bool {
-	return w.succeeded.Get()
 }
 
 // HasMoreWritingWriters is a dummy writer used to indicate that has

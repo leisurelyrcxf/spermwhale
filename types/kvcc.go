@@ -131,6 +131,10 @@ func (opt KVCCReadOption) IsWaitWhenReadDirty() bool {
 	return opt.flag&KVCCReadOptBitMaskWaitWhenReadDirty == KVCCReadOptBitMaskWaitWhenReadDirty
 }
 
+func (opt KVCCReadOption) IsMetaOnly() bool {
+	return opt.flag&KVCCReadOptBitMaskMetaOnly == KVCCReadOptBitMaskMetaOnly
+}
+
 func (opt KVCCReadOption) GetKVReadVersion() uint64 {
 	if opt.IsReadExactVersion() {
 		return opt.ExactVersion

@@ -72,7 +72,7 @@ func (tm *Manager) InsertTxnIfNotExists(id types.TxnId, db types.KV) (inserted b
 func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 	i, ok := tm.writeTxns.Get(txnId)
 	if !ok {
-		return nil, errors.Annotatef(errors.ErrTabletWriteTransactionNotFound, "txn-%d", txnId)
+		return nil, errors.ErrTabletWriteTransactionNotFound
 	}
 	return i.(*Transaction), nil
 }

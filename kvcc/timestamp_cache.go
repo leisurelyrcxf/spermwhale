@@ -182,11 +182,10 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer,
 			}
 			return node.Value.(*transaction.Writer), nil, 0, nil
 		}
-		opt.ReaderVersion = newReaderVersion
-		if node = i.prev(node); node == nil {
+		opt.ReaderVersion, node = newReaderVersion, i.prev(node) // hold invariant (node.Version <= opt.ReaderVersion && node is the largest one)
+		if node == nil {
 			return nil, nil, 0, nil
 		}
-		// hold invariant (node.Version <= opt.ReaderVersion && node is the largest one)
 	}
 }
 

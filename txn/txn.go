@@ -330,6 +330,14 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			if err != nil {
 				return
 			}
+			if vv.IsAborted() {
+				if !exists {
+					txn.MarkWrittenKeyRollbacked(key)
+				}
+				txn.TxnState = types.TxnStateRollbacking
+				_ = txn.rollback(ctx, callerTxn.ID, true, "Txn::CheckCommitState found aborted key '%s' of txn %d", key, txn.ID) // help rollback since original txn coordinator may have gone
+				return
+			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version() && vv.InternalVersion > 0)
 				if !vv.IsDirty() {
@@ -507,6 +515,8 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			return nil
 		}
 		if txn.IsAborted() {
+			assert.Must(txn.TxnState == types.TxnStateRollbacking)
+			_ = txn.rollback(ctx, txn.ID, true, "%s", txn.err)
 			return txn.genAbortErr(lastNonRollbackableIOErr)
 		}
 	}
@@ -665,7 +675,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 				assert.Must(root.AllChildrenSuccess())
 				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
 					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
-					if !(err == nil && (exists && !val.IsDirty())) {
+					if !(err == nil && (exists && !val.IsDirty() && !val.IsAborted())) {
 						glog.Fatalf("txn-%d cleared write key '%s' not exists", txn.ID, key)
 					}
 				})

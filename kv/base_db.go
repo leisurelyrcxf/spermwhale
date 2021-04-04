@@ -93,7 +93,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 			}
 			return errors.Annotatef(err, "key: %s", key)
 		}
-		if !oldVal.HasWriteIntent() {
+		if !oldVal.IsDirty() {
 			return nil
 		}
 		return db.vvs.Upsert(ctx, key, val.Version, oldVal.WithNoWriteIntent())
@@ -103,7 +103,7 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		// TODO can remove the check in the future if stable enough
 		if !isTxnRecord && utils.IsDebug() {
 			return db.vvs.RemoveIf(ctx, key, val.Version, func(prev types.DBValue) error {
-				if !prev.HasWriteIntent() {
+				if !prev.IsDirty() {
 					if !test {
 						glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, val.Version)
 					}

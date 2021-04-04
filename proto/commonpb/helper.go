@@ -11,7 +11,7 @@ func (x *Error) Error() string {
 }
 
 func (x *ValueMeta) IsDirty() bool {
-	return x.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+	return x.Flag&consts.ValueMetaBitMaskCommitted == 0
 }
 
 func (x *ValueMeta) GetFlagSafe() uint8 {

@@ -37,11 +37,12 @@ const (
 	ErrCodeReadModifyWriteWaitFailed int32 = 80
 	ErrCodeReadModifyWriteQueueFull        = 81
 
-	ErrCodeCantRemoveCommittedValue                  int32 = 90
-	ErrCodeTabletWriteTransactionNotFound                  = 91
-	ErrCodeTransactionRecordNotFoundAndWontBeWritten       = 92
-	ErrCodePrevWriterNotFinishedYet                        = 93
-	ErrCodeInternalVersionSmallerThanPrevWriter            = 94
+	ErrCodeCantRemoveCommittedValue                         int32 = 90
+	ErrCodeTabletWriteTransactionNotFound                         = 91
+	ErrCodeTransactionRecordNotFoundAndWontBeWritten              = 92
+	ErrCodeTransactionRecordNotFoundAndFoundRollbackedValue       = 93
+	ErrCodePrevWriterNotFinishedYet                               = 94
+	ErrCodeInternalVersionSmallerThanPrevWriter                   = 95
 
 	ErrCodeNilResponse                                       int32 = 99
 	ErrCodeInvalidResponse                                         = 100

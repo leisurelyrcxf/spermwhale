@@ -16,8 +16,8 @@ type DBMeta struct {
 	InternalVersion TxnInternalVersion `json:"I"`
 }
 
-func (m DBMeta) HasWriteIntent() bool {
-	return m.Flag&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+func (m DBMeta) IsDirty() bool {
+	return m.Flag&consts.ValueMetaBitMaskCommitted == 0
 }
 
 func (m DBMeta) WithVersion(version uint64) Meta {
@@ -37,7 +37,7 @@ type DBValue struct {
 var EmptyDBValue = DBValue{}
 
 func (v DBValue) WithNoWriteIntent() DBValue {
-	v.Flag &= consts.ValueMetaBitMaskClearWriteIntent
+	v.Flag |= ValueMetaBitMaskCommitted
 	return v
 }
 

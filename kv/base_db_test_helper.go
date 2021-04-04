@@ -174,8 +174,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+		if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
+			value.Flag &= consts.ClearValueMetaBitMaskCommitted
 			return value
 		}); !assert.NoError(err) {
 			return
@@ -187,8 +187,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+			if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
+				value.Flag &= consts.ClearValueMetaBitMaskCommitted
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return
@@ -197,8 +197,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+		if err := db.updateFlagOfKey(ctx, key, 1, 0, func(value types.DBValue) types.DBValue {
+			value.Flag &= consts.ClearValueMetaBitMaskCommitted
 			return value
 		}); !assert.NoError(err) {
 			return
@@ -207,8 +207,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+			if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
+				value.Flag &= consts.ClearValueMetaBitMaskCommitted
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return

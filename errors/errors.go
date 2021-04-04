@@ -229,6 +229,10 @@ var (
 		Code: consts.ErrCodeTransactionRecordNotFoundAndWontBeWritten,
 		Msg:  "transaction record not found and prevented from being written", // help rollback if original txn coordinator was gone
 	})
+	ErrTransactionRecordNotFoundAndFoundAbortedValue = registerErr(&Error{
+		Code: consts.ErrCodeTransactionRecordNotFoundAndFoundRollbackedValue,
+		Msg:  "transaction record not found and found aborted value", // help rollback if original txn coordinator was gone
+	})
 	ErrPrevWriterNotFinishedYet = registerErr(&Error{
 		Code: consts.ErrCodePrevWriterNotFinishedYet,
 		Msg:  "prev writer not finished yet",
