@@ -177,7 +177,7 @@ func (s *DynamicListScheduler) start() {
 				}
 				if task, ok := taskObj.(*basic.Task); ok {
 					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
+						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled && err != errors.ErrInject {
 							if glog.V(1) {
 								glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
 							}
@@ -201,7 +201,7 @@ func (s *DynamicListScheduler) start() {
 				assert.Must(firstTask != nil)
 				for task := firstTask; ; {
 					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled {
+						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled && err != errors.ErrInject {
 							glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
 						}
 					}

@@ -341,7 +341,8 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				assert.Must(vv.Version == txn.ID.Version() && vv.InternalVersion > 0)
 				if vv.IsCommitted() {
 					txn.TxnState = types.TxnStateCommitted
-					txn.MarkCommittedCleared(key, vv.Value)
+					txn.MarkCommitted(key, vv.Value)
+					//txn.MarkCommittedCleared(key, vv.Value) // TODO this is unsafe
 					txn.onCommitted(callerTxn.ID, "[CheckCommitState] key '%s' write intent cleared", key) // help commit since original txn coordinator may have gone
 					return
 				}
@@ -651,6 +652,9 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			glog.Infof(fmt.Sprintf("clearing committed status for stale txn %d..., callerTxn: %d, reason: '%v'", txn.ID, callerTxn, reason), args...)
 		}
 	} else {
+		if glog.V(350) {
+			glog.Infof(fmt.Sprintf("clearing committed status for stale txn %d..., reason: '%v'", txn.ID, reason), args...)
+		}
 		assert.Must(txn.txnRecordTask != nil)
 	}
 
@@ -663,6 +667,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
 					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
 					if !(err == nil && (exists && val.IsCommitted() && !val.IsAborted())) {
+						_ = root
 						glog.Fatalf("txn-%d cleared write key '%s' not exists", txn.ID, key)
 					}
 				})
@@ -686,9 +691,10 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			basic.NewTaskId(txn.ID.Version(), key), "clear-key-write-intent", txn.cfg.ClearTimeout, root, func(ctx context.Context, _ []interface{}) error {
 				if clearErr := txn.kv.UpdateMeta(ctx, key, txn.ID.Version(), opt); clearErr != nil {
 					if errors.IsNotExistsErr(clearErr) {
-						glog.Fatalf("Status corrupted: clear transaction key '%s' write intent failed: '%v'", key, clearErr)
+						_ = txn
+						glog.Fatalf("Status corrupted: txn-%d clear transaction key '%s' write intent failed: '%v'", txn.ID, key, clearErr)
 					} else {
-						glog.Warningf("clear transaction key '%s' write intent failed: '%v'", key, clearErr)
+						glog.Warningf("txn-%d clear transaction key '%s' write intent failed: '%v'", txn.ID, key, clearErr)
 					}
 					return clearErr
 				}
@@ -708,7 +714,7 @@ func (txn *Txn) getToClearKeys(rollback bool) map[string]bool /* key->isWrittenK
 		}
 	}
 	txn.ForEachWrittenKey(func(writtenKey string, info ttypes.WriteKeyInfo) {
-		assert.Must(!info.IsEmpty())
+		assert.Must(!info.IsEmpty() && !info.CommittedCleared) // TODO should support this after bug fixed
 		if (rollback && !info.Rollbacked) || (!rollback && !info.CommittedCleared) {
 			assert.Must((rollback && !info.CommittedCleared && !info.Committed) || (!rollback && !info.Rollbacked))
 			m[writtenKey] = true
