@@ -293,6 +293,7 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
 				lastWriteTxn := txns[lastWriteTxnIndex]
+				readVal.Value.Flag &= ^consts.ValueMetaBitMaskPreventedFutureWrite & 0xff
 				if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value) {
 					return false
 				}

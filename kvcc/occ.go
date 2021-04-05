@@ -439,7 +439,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] added key '%s' to txn-%d", key, txnId)
 	}
 
-	w, err := kv.tsCache.TryLock(key, val.Meta.ToDB(), txn)
+	w, err := kv.tsCache.AddWriter(key, val.Meta.ToDB(), txn)
 	if err != nil {
 		txn.Unlock()
 
@@ -447,7 +447,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	}
 	err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())
 	w.SetResult(err)
-	w.Unlock()
+	w.Done()
 	txn.Unlock()
 
 	if err != nil {

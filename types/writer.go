@@ -10,8 +10,7 @@ import (
 
 // Deprecated
 type Writer struct {
-	Version    uint64
-	OnUnlocked func()
+	Version uint64
 
 	writing, clean, rollbacked basic.AtomicBool
 	rw                         sync.RWMutex
@@ -31,8 +30,6 @@ func (w *Writer) Lock() {
 func (w *Writer) Unlock() {
 	w.writing.Set(false)
 	w.rw.Unlock()
-
-	w.OnUnlocked()
 }
 
 func (w *Writer) WaitFinish() {

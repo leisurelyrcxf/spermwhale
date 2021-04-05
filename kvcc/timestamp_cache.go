@@ -17,6 +17,16 @@ import (
 
 const TimestampCacheVerboseLevel = 260
 
+type Writer struct {
+	*transaction.Writer
+	*KeyInfo
+}
+
+func (l Writer) Done() {
+	l.Writer.Unlock()
+	l.KeyInfo.done(l.ID.Version())
+}
+
 type KeyInfo struct {
 	mu sync.RWMutex
 
@@ -56,40 +66,16 @@ func (i *KeyInfo) GetMaxReaderVersion() uint64 {
 	return atomic.LoadUint64(&i.maxReaderVersion)
 }
 
-func (i *KeyInfo) TryLock(dbMeta types.DBMeta, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
+func (i *KeyInfo) AddWriter(dbMeta types.DBMeta, txn *transaction.Transaction) (writer Writer, err error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	writerVersion := txn.ID.Version()
 	if writerVersion < i.GetMaxReaderVersion() { // TODO no need atomic no need to atomic load here
-		return nil, errors.ErrWriteReadConflict
+		return Writer{}, errors.ErrWriteReadConflict
 	}
 
 	if i.writers.Size()+1 > i.maxBuffered {
-		return nil, errors.ErrTimestampCacheWriteQueueFull // TODO changed to wait.
-	}
-
-	if writerVersion <= i.maxRemovedWriterVersion {
-		return nil, errors.ErrStaleWriteWriterVersionSmallerThanMaxRemovedWriterVersion
-	}
-
-	if prevWriterObj, found := i.writers.Get(writerVersion); found {
-		prevWriter := prevWriterObj.(*transaction.Writer)
-		if prevWriter.IsWriting() {
-			assert.MustNoError(errors.ErrPrevWriterNotFinishedYet) // TODO remove this in product
-			return nil, errors.ErrPrevWriterNotFinishedYet
-		}
-		if dbMeta.InternalVersion <= prevWriter.Meta.InternalVersion {
-			assert.MustNoError(errors.ErrInternalVersionSmallerThanPrevWriter) // TODO remove this in product
-			return nil, errors.ErrInternalVersionSmallerThanPrevWriter
-		}
-	}
-
-	w := transaction.NewWriter(dbMeta, txn)
-	w.OnUnlocked = func() {
-		i.mu.Lock()
-		defer i.mu.Unlock()
-
 		iterator := i.writers.Iterator()
 		var (
 			toRemoveKeys []interface{}
@@ -107,13 +93,35 @@ func (i *KeyInfo) TryLock(dbMeta types.DBMeta, txn *transaction.Transaction) (wr
 		for _, k := range toRemoveKeys {
 			i.writers.Remove(k)
 		}
-		i.writingWriters.Remove(writerVersion)
+		if i.writers.Size()+1 > i.maxBuffered {
+			return Writer{}, errors.ErrTimestampCacheWriteQueueFull
+		}
 	}
+
+	if writerVersion <= i.maxRemovedWriterVersion {
+		return Writer{}, errors.ErrStaleWriteWriterVersionSmallerThanMaxRemovedWriterVersion
+	}
+
+	if prevWriterObj, found := i.writers.Get(writerVersion); found {
+		prevWriter := prevWriterObj.(*transaction.Writer)
+		if prevWriter.IsWriting() {
+			assert.MustNoError(errors.ErrPrevWriterNotFinishedYet) // TODO remove this in product
+			return Writer{}, errors.ErrPrevWriterNotFinishedYet
+		}
+		if dbMeta.InternalVersion <= prevWriter.Meta.InternalVersion {
+			assert.MustNoError(errors.ErrInternalVersionSmallerThanPrevWriter) // TODO remove this in product
+			return Writer{}, errors.ErrInternalVersionSmallerThanPrevWriter
+		}
+	}
+
+	w := transaction.NewWriter(dbMeta, txn)
 	i.writers.Put(writerVersion, w)
-	glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][TryLock] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
 	i.writingWriters.Put(writerVersion, w)
+	if glog.V(TimestampCacheVerboseLevel) {
+		glog.Infof("[TimestampCache][KeyInfo '%s'][addWriterUnsafe] add writer-%d, max reader version: %d", i.key, writerVersion, i.maxReaderVersion)
+	}
 	w.Lock()
-	return w, nil
+	return Writer{Writer: w, KeyInfo: i}, nil
 }
 
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {
@@ -195,6 +203,13 @@ func (i *KeyInfo) RemoveVersion(version uint64) {
 	i.mu.Unlock()
 }
 
+// done marks writer done
+func (i *KeyInfo) done(writerVersion uint64) {
+	i.mu.Lock()
+	i.writingWriters.Remove(writerVersion)
+	i.mu.Unlock()
+}
+
 func (i *KeyInfo) prev(node *redblacktree.Node) *redblacktree.Node {
 	if node.Left != nil {
 		node = node.Left
@@ -250,8 +265,8 @@ func (cache *TimestampCache) GetMaxReaderVersion(key string) uint64 {
 	return keyInfo.GetMaxReaderVersion()
 }
 
-func (cache *TimestampCache) TryLock(key string, meta types.DBMeta, txn *transaction.Transaction) (writer *transaction.Writer, err error) {
-	return cache.getLazy(key).TryLock(meta, txn)
+func (cache *TimestampCache) AddWriter(key string, meta types.DBMeta, txn *transaction.Transaction) (writer Writer, err error) {
+	return cache.getLazy(key).AddWriter(meta, txn)
 }
 
 func (cache *TimestampCache) FindWriters(key string, opt *types.KVCCReadOption) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, maxReadVersion uint64, err error) {

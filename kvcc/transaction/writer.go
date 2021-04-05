@@ -18,8 +18,7 @@ import (
 type Writer struct {
 	*Transaction
 
-	Meta       types.DBMeta // NOTE: be cautious not inherit the type, otherwise will cause method conflict problem
-	OnUnlocked func()
+	Meta types.DBMeta // NOTE: be cautious not inherit the type, otherwise will cause method conflict problem
 
 	writing   basic.AtomicBool
 	succeeded basic.AtomicBool
@@ -39,8 +38,6 @@ func (w *Writer) Lock() {
 func (w *Writer) Unlock() {
 	w.writing.Set(false)
 	w.rw.Unlock()
-
-	w.OnUnlocked()
 }
 
 func (w *Writer) SetResult(err error) {
