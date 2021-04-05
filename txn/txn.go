@@ -82,11 +82,11 @@ type Txn struct {
 
 	allWriteTasksFinished bool
 
-	cfg     types.TxnManagerConfig
-	kv      types.KVCC
-	store   *TransactionStore
-	s       *Scheduler
-	destroy func(*Txn)
+	cfg   types.TxnManagerConfig
+	kv    types.KVCC
+	store *TransactionStore
+	s     *Scheduler
+	gc    func(_ *Txn, force bool)
 
 	err error
 }
@@ -96,7 +96,7 @@ func NewTxn(
 	kv types.KVCC, cfg types.TxnManagerConfig,
 	store *TransactionStore,
 	s *Scheduler,
-	destroy func(*Txn)) *Txn {
+	destroy func(_ *Txn, force bool)) *Txn {
 	return &Txn{
 		TransactionInfo: TransactionInfo{
 			ID:       id,
@@ -108,11 +108,11 @@ func NewTxn(
 			TaskTimeout: cfg.WoundUncommittedTxnThreshold,
 		},
 
-		cfg:     cfg,
-		kv:      kv,
-		store:   store,
-		s:       s,
-		destroy: destroy,
+		cfg:   cfg,
+		kv:    kv,
+		store: store,
+		s:     s,
+		gc:    destroy,
 	}
 }
 
@@ -366,9 +366,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 	case types.TxnStateRollbacking:
 		_ = txn.rollback(ctx, callerTxn.ID, false, "transaction rollbacking, txn error: %v", txn.err) // help rollback since original txn coordinator may have gone
 	case types.TxnStateRollbacked, types.TxnStateCommitted:
-		if txn.ID == callerTxn.ID {
-			txn.gc()
-		}
+		txn.gc(txn, false)
 	default:
 		panic(fmt.Sprintf("impossible transaction state %s", txn.TxnState))
 	}
@@ -452,7 +450,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 			return errors.ErrReadModifyWriteTransactionCommitWithNoWrittenKeys
 		}
 		txn.TxnState = types.TxnStateCommitted
-		txn.gc()
+		txn.gc(txn, true)
 		return nil
 	}
 
@@ -635,9 +633,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 
 	if txn.ID == callerTxn || txn.AreWrittenKeysCompleted() {
 		txn.TxnState = types.TxnStateRollbacked
-		if callerTxn == txn.ID {
-			txn.gc()
-		}
+		txn.gc(txn, true)
 	}
 	return nil
 }
@@ -674,9 +670,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			if err := txn.removeTxnRecord(ctx, false, callerTxn); err != nil {
 				return err
 			}
-			if callerTxn == txn.ID {
-				txn.gc()
-			}
+			txn.gc(txn, true)
 			return nil
 		},
 	)
@@ -791,10 +785,6 @@ func (txn *Txn) removeTxnRecord(ctx context.Context, rollback bool, callerTxn ty
 		return err
 	}
 	return nil
-}
-
-func (txn *Txn) gc() {
-	txn.destroy(txn)
 }
 
 func (txn *Txn) couldBeWounded() bool {

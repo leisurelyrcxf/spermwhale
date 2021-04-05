@@ -32,6 +32,14 @@ func (cmp *concurrentTxnMapPartition) gcWhen(txn types.TxnId, scheduleTime time.
 	cmp.gcThread.Schedule(timer.NewAggrTimerTask(scheduleTime, txn))
 }
 
+func (cmp *concurrentTxnMapPartition) contains(key types.TxnId) bool {
+	cmp.mutex.RLock()
+	defer cmp.mutex.RUnlock()
+
+	_, ok := cmp.m[key]
+	return ok
+}
+
 func (cmp *concurrentTxnMapPartition) get(key types.TxnId) (interface{}, bool) {
 	cmp.mutex.RLock()
 	defer cmp.mutex.RUnlock()
@@ -172,6 +180,10 @@ func (cmp *ConcurrentTxnMap) MustGet(key types.TxnId) interface{} {
 		panic("key not exists")
 	}
 	return val
+}
+
+func (cmp *ConcurrentTxnMap) Contains(key types.TxnId) bool {
+	return cmp.partitions[cmp.hash(key)].contains(key)
 }
 
 func (cmp *ConcurrentTxnMap) Get(key types.TxnId) (interface{}, bool) {

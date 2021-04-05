@@ -69,8 +69,8 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 	}
 }
 
-func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId,
-	preventFutureWrite bool, maxRetryTimes int) (txn *Txn, exists bool, preventedFutureWrite bool, err error) {
+func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId, allWrittenKey2LastVersion ttypes.KeyVersions,
+	preventFutureWrite bool, isCommitted *bool, maxRetryTimes int) (txn *Txn, preventedFutureWrite bool, err error) {
 	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithExactVersion(txnID.Version()).WithTxnRecord()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
@@ -78,20 +78,24 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	for i := 0; ; {
 		var txnRecordData types.ValueCC
 		txnRecordData, err = s.kv.Get(ctx, "", readOpt)
+		*isCommitted = txnRecordData.IsCommitted()
+		if txnRecordData.IsAborted() {
+			return s.partialTxnConstructor(txnID, types.TxnStateRollbacking, allWrittenKey2LastVersion).setErr(errors.ErrTransactionRecordNotFoundAndFoundAbortedValue), false, nil
+		}
 		if err == nil {
 			assert.Must(txnRecordData.Meta.Version == txnID.Version())
 			txn, err := DecodeTxn(txnID, txnRecordData.V)
 			if err != nil {
-				return nil, true, false, err
+				return nil, false, err
 			}
 			s.txnInitializer(txn)
-			return txn, true, false, nil
+			return txn, false, nil
 		}
 		if errors.IsNotExistsErr(err) {
-			return nil, false, txnRecordData.MaxReadVersion > txnID.Version(), nil
+			return nil, txnRecordData.MaxReadVersion > txnID.Version(), nil
 		}
 		if i++; i >= maxRetryTimes || ctx.Err() != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
 		time.Sleep(s.retryWaitPeriod)
 	}
@@ -105,18 +109,21 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	maxRetry int) (txn *Txn, err error) {
 	// TODO maybe get from txn manager first?
 	var (
-		recordExists                  bool
 		preventedFutureTxnRecordWrite bool
+		isCommitted                   bool
 	)
-	if txn, recordExists, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, preventFutureTxnRecordWrite, maxRetry); err != nil {
+	if txn, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, allWrittenKey2LastVersion, preventFutureTxnRecordWrite, &isCommitted, maxRetry); err != nil {
 		return nil, err
 	}
-	if recordExists {
+	if txn != nil {
 		assert.Must(txn.ID == txnId)
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key)) // TODO remove this in product
 		}
-		assert.Must(txn.TxnState == types.TxnStateStaging || txn.TxnState == types.TxnStateRollbacking)
+		if isCommitted && txn.AreWrittenKeysCompleted() {
+			assert.Must(txn.IsStaging())
+			txn.MarkAllWrittenKeysCommitted()
+		}
 		return txn, nil
 	}
 	assert.Must(!preventFutureTxnRecordWrite || preventedFutureTxnRecordWrite)
@@ -152,9 +159,6 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		if vv.IsCommitted() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
-			if txnId == callerTxn.ID {
-				txn.gc()
-			}
 			txn.MarkCommittedCleared(key, vv.Value)
 			return txn, nil
 		}

@@ -43,7 +43,7 @@ type Transaction struct {
 	txnRecordMaxReadVersion uint64
 	terminated              chan struct{}
 
-	destroy func(*Transaction)
+	GC func(*Transaction)
 }
 
 func newTransaction(id types.TxnId, db types.KV, destroy func(*Transaction)) *Transaction {
@@ -52,7 +52,7 @@ func newTransaction(id types.TxnId, db types.KV, destroy func(*Transaction)) *Tr
 		db:             db,
 		AtomicTxnState: types.NewAtomicTxnState(types.TxnStateUncommitted),
 		terminated:     make(chan struct{}),
-		destroy:        destroy,
+		GC:             destroy,
 	}
 }
 
@@ -244,7 +244,7 @@ func (t *Transaction) doneOnce(key string, isRollback bool, isOperatedByDifferen
 			glog.Infof("[Transaction::%s][doneOnce] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", caller, t.ID, t.GetTxnState(), t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		}
 
-		t.GC()
+		t.GC(t)
 		return doneOnce
 	}
 	t.Unlock()
@@ -284,10 +284,6 @@ func (t *Transaction) waitTerminate(ctx context.Context) error {
 		assert.Must(t.IsTerminated())
 		return nil
 	}
-}
-
-func (t *Transaction) GC() {
-	t.destroy(t)
 }
 
 // Deprecated

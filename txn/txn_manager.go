@@ -139,8 +139,10 @@ func (m *TransactionManager) GetTxn(txnID types.TxnId) (*Txn, error) {
 	return nil, errors.ErrTransactionNotFound
 }
 
-func (m *TransactionManager) RemoveTxn(txn *Txn) {
-	m.txns.Del(txn.ID)
+func (m *TransactionManager) RemoveTxn(txn *Txn, force bool) {
+	if force || m.txns.Contains(txn.ID) {
+		m.txns.Del(txn.ID)
+	}
 }
 
 func (m *TransactionManager) Close() error {
@@ -150,8 +152,8 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id types.TxnId, typ types.TxnType) *Txn {
-	return NewTxn(id, typ, m.kv, m.cfg, m.store, m.s, func(txn *Txn) {
-		m.RemoveTxn(txn)
+	return NewTxn(id, typ, m.kv, m.cfg, m.store, m.s, func(txn *Txn, force bool) {
+		m.RemoveTxn(txn, force)
 	})
 }
 
@@ -166,9 +168,7 @@ func (m *TransactionManager) createStore() *TransactionManager {
 			record.kv = m.kv
 			record.store = m.store
 			record.s = m.s
-			record.destroy = func(txn *Txn) {
-				m.RemoveTxn(txn)
-			}
+			record.gc = func(txn *Txn, force bool) {}
 		},
 		partialTxnConstructor: func(txnId types.TxnId, state types.TxnState, writtenKeys ttypes.KeyVersions) *Txn {
 			txn := m.newTxn(txnId, types.TxnTypeDefault)
