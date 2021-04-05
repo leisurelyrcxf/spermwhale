@@ -32,24 +32,23 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 	}).SetFlag(m.Flag)
 }
 
+func (m Meta) ToDB() DBMeta {
+	return DBMeta{
+		InternalVersion: m.InternalVersion,
+		Flag:            m.Flag,
+	}
+}
+
 func (m *Meta) SetCommitted() {
-	m.Flag |= consts.ValueMetaBitMaskCommitted
+	m.Flag = consts.WithCommitted(m.Flag)
 }
 
 func (m *Meta) SetAborted() {
 	m.Flag |= consts.ValueMetaBitMaskAborted
 }
 
-func (m *Meta) SetClearAborted() {
-	m.Flag &= consts.ClearValueMetaBitMaskAborted
-}
-
 func (m Meta) IsEmpty() bool {
 	return m.Version == 0
-}
-
-func (m Meta) IsDirty() bool {
-	return m.Flag&consts.ValueMetaBitMaskCommitted == 0
 }
 
 func (m Meta) IsFirstWriteOfKey() bool {
@@ -60,27 +59,16 @@ func (m Meta) IsWriteOfKey() bool {
 	return m.InternalVersion >= TxnInternalVersionMin // For txn record, InternalVersion is always 0
 }
 
-func (m Meta) ToDB() DBMeta {
-	return DBMeta{
-		InternalVersion: m.InternalVersion,
-		Flag:            m.Flag,
-	}
+func (m Meta) IsDirty() bool {
+	return consts.IsDirty(m.Flag)
+}
+
+func (m Meta) IsCommitted() bool {
+	return m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
 }
 
 func (m Meta) IsAborted() bool {
 	return m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
-}
-
-func (m Meta) WithAborted() Meta {
-	m.SetAborted()
-	return m
-}
-
-func (m Meta) CondAborted(b bool) Meta {
-	if b {
-		m.Flag |= consts.ValueMetaBitMaskAborted
-	}
-	return m
 }
 
 func (m Meta) WithTxnState(state TxnState) Meta {
@@ -108,7 +96,7 @@ func NewValue(val []byte, version uint64) Value {
 	return Value{
 		Meta: Meta{
 			Version: version,
-			Flag:    0,
+			Flag:    consts.ValueMetaBitMaskHasWriteIntent,
 		},
 		V: val,
 	}
@@ -164,13 +152,8 @@ func (v Value) WithVersion(version uint64) Value {
 	return v
 }
 
-func (v Value) WithNoWriteIntent() Value {
+func (v Value) WithCommitted() Value {
 	v.SetCommitted()
-	return v
-}
-
-func (v Value) WithClearAborted() Value {
-	v.SetClearAborted()
 	return v
 }
 
@@ -239,7 +222,7 @@ func (v ValueCC) WithSnapshotVersion(_ uint64) ValueCC {
 	panic(errors.ErrNotSupported)
 }
 
-func (v ValueCC) WithNoWriteIntent() ValueCC {
+func (v ValueCC) WithCommitted() ValueCC {
 	v.SetCommitted()
 	return v
 }
@@ -289,7 +272,6 @@ var EmptyTValue = TValue{}
 type TValue struct {
 	Value
 	SnapshotVersion uint64
-	tFlag           uint8
 }
 
 func NewTValue(value Value, snapshotVersion uint64) TValue {
@@ -303,13 +285,11 @@ func NewTValueFromPB(x *txnpb.TValue) TValue {
 	if x.Value == nil {
 		return TValue{
 			SnapshotVersion: x.SnapshotVersion,
-			tFlag:           x.GetFlagAsUint8(),
 		}
 	}
 	return TValue{
 		Value:           NewValueFromPB(x.Value),
 		SnapshotVersion: x.SnapshotVersion,
-		tFlag:           x.GetFlagAsUint8(),
 	}
 }
 
@@ -317,23 +297,22 @@ func (v TValue) ToPB() *txnpb.TValue {
 	return &txnpb.TValue{
 		Value:           v.Value.ToPB(),
 		SnapshotVersion: v.SnapshotVersion,
-		TxnFlag:         uint32(v.tFlag),
 	}
 }
 
 func (v TValue) IsEmpty() bool {
-	return v.Value.IsEmpty() && v.SnapshotVersion == 0 && v.tFlag == 0
+	return v.Value.IsEmpty() && v.SnapshotVersion == 0
 }
 
 func (v TValue) CondPreventedFutureWrite(b bool) TValue {
 	if b {
-		v.tFlag |= consts.TValueBitMaskPreventedFutureWrite
+		v.Flag |= consts.ValueMetaBitMaskPreventedFutureWrite
 	}
 	return v
 }
 
 func (v TValue) IsFutureWritePrevented() bool {
-	return v.tFlag&consts.TValueBitMaskPreventedFutureWrite == consts.TValueBitMaskPreventedFutureWrite
+	return v.Flag&consts.ValueMetaBitMaskPreventedFutureWrite == consts.ValueMetaBitMaskPreventedFutureWrite
 }
 
 type TValues []TValue

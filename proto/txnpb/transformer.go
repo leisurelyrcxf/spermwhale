@@ -10,10 +10,6 @@ func (x *TxnSnapshotReadOption) GetFlagAsUint8() uint8 {
 	return uint8(x.Flag)
 }
 
-func (x *TValue) GetFlagAsUint8() uint8 { // TODO handle endian?
-	return uint8(x.TxnFlag)
-}
-
 func (x *TValue) Validate() error {
 	if x == nil {
 		return fmt.Errorf("[TValue] x == nil")

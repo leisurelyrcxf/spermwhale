@@ -2,7 +2,6 @@ package kvpb
 
 import (
 	"github.com/leisurelyrcxf/spermwhale/consts"
-	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
 )
 
@@ -13,21 +12,7 @@ func (x *KVWriteOption) Validate() error {
 			Msg:  "WriteOption == nil",
 		}
 	}
-	if x.IsClearWriteIntent() && x.IsRemoveVersion() {
-		return &commonpb.Error{
-			Code: consts.ErrCodeInvalidRequest,
-			Msg:  "x.IsClearWriteIntent && x.IsRemoveVersion",
-		}
-	}
 	return nil
-}
-
-func (x *KVWriteOption) IsClearWriteIntent() bool {
-	return consts.IsWriteOptClearWriteIntent(uint8(x.Flag))
-}
-
-func (x *KVWriteOption) IsRemoveVersion() bool {
-	return consts.IsWriteOptRemoveVersion(uint8(x.Flag))
 }
 
 func (x *KVWriteOption) GetFlagSafe() uint8 {
@@ -42,12 +27,6 @@ func (x *KVWriteOption) SetFlagSafe(opt uint8) *KVWriteOption {
 func (x *KVSetRequest) Validate() error {
 	if err := x.Opt.Validate(); err != nil {
 		return err
-	}
-	if x.Opt.IsClearWriteIntent() && x.Value.Meta.IsDirty() {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.isClearWriteIntent() && x.Value.Meta.IsDirty()")
-	}
-	if x.Opt.IsRemoveVersion() && x.Value.Meta.IsDirty() {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsRemoveVersion() && x.Value.Meta.IsDirty()")
 	}
 	return nil
 }

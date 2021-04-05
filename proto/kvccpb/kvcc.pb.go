@@ -101,53 +101,6 @@ func (x *KVCCReadOption) GetMinAllowedSnapshotVersion() uint64 {
 	return 0
 }
 
-type KVCCWriteOption struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
-}
-
-func (x *KVCCWriteOption) Reset() {
-	*x = KVCCWriteOption{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_kvcc_proto_msgTypes[1]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *KVCCWriteOption) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KVCCWriteOption) ProtoMessage() {}
-
-func (x *KVCCWriteOption) ProtoReflect() protoreflect.Message {
-	mi := &file_kvcc_proto_msgTypes[1]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KVCCWriteOption.ProtoReflect.Descriptor instead.
-func (*KVCCWriteOption) Descriptor() ([]byte, []int) {
-	return file_kvcc_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *KVCCWriteOption) GetFlag() uint32 {
-	if x != nil {
-		return x.Flag
-	}
-	return 0
-}
-
 type KVCCGetRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -160,7 +113,7 @@ type KVCCGetRequest struct {
 func (x *KVCCGetRequest) Reset() {
 	*x = KVCCGetRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_kvcc_proto_msgTypes[2]
+		mi := &file_kvcc_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -173,7 +126,7 @@ func (x *KVCCGetRequest) String() string {
 func (*KVCCGetRequest) ProtoMessage() {}
 
 func (x *KVCCGetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_kvcc_proto_msgTypes[2]
+	mi := &file_kvcc_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -186,7 +139,7 @@ func (x *KVCCGetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVCCGetRequest.ProtoReflect.Descriptor instead.
 func (*KVCCGetRequest) Descriptor() ([]byte, []int) {
-	return file_kvcc_proto_rawDescGZIP(), []int{2}
+	return file_kvcc_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *KVCCGetRequest) GetKey() string {
@@ -215,7 +168,7 @@ type KVCCGetResponse struct {
 func (x *KVCCGetResponse) Reset() {
 	*x = KVCCGetResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_kvcc_proto_msgTypes[3]
+		mi := &file_kvcc_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -228,7 +181,7 @@ func (x *KVCCGetResponse) String() string {
 func (*KVCCGetResponse) ProtoMessage() {}
 
 func (x *KVCCGetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_kvcc_proto_msgTypes[3]
+	mi := &file_kvcc_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -241,7 +194,7 @@ func (x *KVCCGetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KVCCGetResponse.ProtoReflect.Descriptor instead.
 func (*KVCCGetResponse) Descriptor() ([]byte, []int) {
-	return file_kvcc_proto_rawDescGZIP(), []int{3}
+	return file_kvcc_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *KVCCGetResponse) GetV() *commonpb.ValueCC {
@@ -256,6 +209,53 @@ func (x *KVCCGetResponse) GetErr() *commonpb.Error {
 		return x.Err
 	}
 	return nil
+}
+
+type KVCCWriteOption struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
+}
+
+func (x *KVCCWriteOption) Reset() {
+	*x = KVCCWriteOption{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCWriteOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCWriteOption) ProtoMessage() {}
+
+func (x *KVCCWriteOption) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCWriteOption.ProtoReflect.Descriptor instead.
+func (*KVCCWriteOption) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *KVCCWriteOption) GetFlag() uint32 {
+	if x != nil {
+		return x.Flag
+	}
+	return 0
 }
 
 type KVCCSetRequest struct {
@@ -368,6 +368,469 @@ func (x *KVCCSetResponse) GetErr() *commonpb.Error {
 	return nil
 }
 
+type KVCCUpdateMetaOption struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
+}
+
+func (x *KVCCUpdateMetaOption) Reset() {
+	*x = KVCCUpdateMetaOption{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCUpdateMetaOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCUpdateMetaOption) ProtoMessage() {}
+
+func (x *KVCCUpdateMetaOption) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCUpdateMetaOption.ProtoReflect.Descriptor instead.
+func (*KVCCUpdateMetaOption) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *KVCCUpdateMetaOption) GetFlag() uint32 {
+	if x != nil {
+		return x.Flag
+	}
+	return 0
+}
+
+type KVCCUpdateMetaRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Key     string                `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Version uint64                `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Opt     *KVCCUpdateMetaOption `protobuf:"bytes,3,opt,name=opt,proto3" json:"opt,omitempty"`
+}
+
+func (x *KVCCUpdateMetaRequest) Reset() {
+	*x = KVCCUpdateMetaRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCUpdateMetaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCUpdateMetaRequest) ProtoMessage() {}
+
+func (x *KVCCUpdateMetaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCUpdateMetaRequest.ProtoReflect.Descriptor instead.
+func (*KVCCUpdateMetaRequest) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *KVCCUpdateMetaRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *KVCCUpdateMetaRequest) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *KVCCUpdateMetaRequest) GetOpt() *KVCCUpdateMetaOption {
+	if x != nil {
+		return x.Opt
+	}
+	return nil
+}
+
+type KVCCUpdateMetaResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+}
+
+func (x *KVCCUpdateMetaResponse) Reset() {
+	*x = KVCCUpdateMetaResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCUpdateMetaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCUpdateMetaResponse) ProtoMessage() {}
+
+func (x *KVCCUpdateMetaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCUpdateMetaResponse.ProtoReflect.Descriptor instead.
+func (*KVCCUpdateMetaResponse) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *KVCCUpdateMetaResponse) GetErr() *commonpb.Error {
+	if x != nil {
+		return x.Err
+	}
+	return nil
+}
+
+type KVCCRollbackKeyOption struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
+}
+
+func (x *KVCCRollbackKeyOption) Reset() {
+	*x = KVCCRollbackKeyOption{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRollbackKeyOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRollbackKeyOption) ProtoMessage() {}
+
+func (x *KVCCRollbackKeyOption) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRollbackKeyOption.ProtoReflect.Descriptor instead.
+func (*KVCCRollbackKeyOption) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *KVCCRollbackKeyOption) GetFlag() uint32 {
+	if x != nil {
+		return x.Flag
+	}
+	return 0
+}
+
+type KVCCRollbackKeyRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Key     string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Version uint64                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Opt     *KVCCRollbackKeyOption `protobuf:"bytes,3,opt,name=opt,proto3" json:"opt,omitempty"`
+}
+
+func (x *KVCCRollbackKeyRequest) Reset() {
+	*x = KVCCRollbackKeyRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRollbackKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRollbackKeyRequest) ProtoMessage() {}
+
+func (x *KVCCRollbackKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRollbackKeyRequest.ProtoReflect.Descriptor instead.
+func (*KVCCRollbackKeyRequest) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *KVCCRollbackKeyRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *KVCCRollbackKeyRequest) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *KVCCRollbackKeyRequest) GetOpt() *KVCCRollbackKeyOption {
+	if x != nil {
+		return x.Opt
+	}
+	return nil
+}
+
+type KVCCRollbackKeyResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+}
+
+func (x *KVCCRollbackKeyResponse) Reset() {
+	*x = KVCCRollbackKeyResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRollbackKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRollbackKeyResponse) ProtoMessage() {}
+
+func (x *KVCCRollbackKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRollbackKeyResponse.ProtoReflect.Descriptor instead.
+func (*KVCCRollbackKeyResponse) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *KVCCRollbackKeyResponse) GetErr() *commonpb.Error {
+	if x != nil {
+		return x.Err
+	}
+	return nil
+}
+
+type KVCCRemoveTxnRecordOption struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Flag uint32 `protobuf:"varint,1,opt,name=flag,proto3" json:"flag,omitempty"`
+}
+
+func (x *KVCCRemoveTxnRecordOption) Reset() {
+	*x = KVCCRemoveTxnRecordOption{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRemoveTxnRecordOption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRemoveTxnRecordOption) ProtoMessage() {}
+
+func (x *KVCCRemoveTxnRecordOption) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRemoveTxnRecordOption.ProtoReflect.Descriptor instead.
+func (*KVCCRemoveTxnRecordOption) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *KVCCRemoveTxnRecordOption) GetFlag() uint32 {
+	if x != nil {
+		return x.Flag
+	}
+	return 0
+}
+
+type KVCCRemoveTxnRecordRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Version uint64                     `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	Opt     *KVCCRemoveTxnRecordOption `protobuf:"bytes,2,opt,name=opt,proto3" json:"opt,omitempty"`
+}
+
+func (x *KVCCRemoveTxnRecordRequest) Reset() {
+	*x = KVCCRemoveTxnRecordRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRemoveTxnRecordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRemoveTxnRecordRequest) ProtoMessage() {}
+
+func (x *KVCCRemoveTxnRecordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRemoveTxnRecordRequest.ProtoReflect.Descriptor instead.
+func (*KVCCRemoveTxnRecordRequest) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *KVCCRemoveTxnRecordRequest) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *KVCCRemoveTxnRecordRequest) GetOpt() *KVCCRemoveTxnRecordOption {
+	if x != nil {
+		return x.Opt
+	}
+	return nil
+}
+
+type KVCCRemoveTxnRecordResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Err *commonpb.Error `protobuf:"bytes,1,opt,name=err,proto3" json:"err,omitempty"`
+}
+
+func (x *KVCCRemoveTxnRecordResponse) Reset() {
+	*x = KVCCRemoveTxnRecordResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_kvcc_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *KVCCRemoveTxnRecordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KVCCRemoveTxnRecordResponse) ProtoMessage() {}
+
+func (x *KVCCRemoveTxnRecordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_kvcc_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KVCCRemoveTxnRecordResponse.ProtoReflect.Descriptor instead.
+func (*KVCCRemoveTxnRecordResponse) Descriptor() ([]byte, []int) {
+	return file_kvcc_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *KVCCRemoveTxnRecordResponse) GetErr() *commonpb.Error {
+	if x != nil {
+		return x.Err
+	}
+	return nil
+}
+
 var File_kvcc_proto protoreflect.FileDescriptor
 
 var file_kvcc_proto_rawDesc = []byte{
@@ -384,19 +847,19 @@ var file_kvcc_proto_rawDesc = []byte{
 	0x77, 0x65, 0x64, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x76, 0x65, 0x72,
 	0x73, 0x69, 0x6f, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x19, 0x6d, 0x69, 0x6e, 0x41,
 	0x6c, 0x6c, 0x6f, 0x77, 0x65, 0x64, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x56, 0x65,
-	0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0x25, 0x0a, 0x0f, 0x4b, 0x56, 0x43, 0x43, 0x57, 0x72, 0x69,
-	0x74, 0x65, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x4b, 0x0a, 0x0e,
-	0x4b, 0x56, 0x43, 0x43, 0x47, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10,
-	0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79,
-	0x12, 0x27, 0x0a, 0x03, 0x6f, 0x70, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x65, 0x61, 0x64, 0x4f, 0x70,
-	0x74, 0x69, 0x6f, 0x6e, 0x52, 0x03, 0x6f, 0x70, 0x74, 0x22, 0x4f, 0x0a, 0x0f, 0x4b, 0x56, 0x43,
-	0x43, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1c, 0x0a, 0x01,
-	0x76, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x56, 0x61, 0x6c, 0x75, 0x65, 0x43, 0x43, 0x52, 0x01, 0x76, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72,
-	0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22, 0x70, 0x0a, 0x0e, 0x4b, 0x56,
+	0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0x4b, 0x0a, 0x0e, 0x4b, 0x56, 0x43, 0x43, 0x47, 0x65, 0x74,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x27, 0x0a, 0x03, 0x6f, 0x70, 0x74,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b,
+	0x56, 0x43, 0x43, 0x52, 0x65, 0x61, 0x64, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x03, 0x6f,
+	0x70, 0x74, 0x22, 0x4f, 0x0a, 0x0f, 0x4b, 0x56, 0x43, 0x43, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1c, 0x0a, 0x01, 0x76, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x0e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x43, 0x43,
+	0x52, 0x01, 0x76, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03,
+	0x65, 0x72, 0x72, 0x22, 0x25, 0x0a, 0x0f, 0x4b, 0x56, 0x43, 0x43, 0x57, 0x72, 0x69, 0x74, 0x65,
+	0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x70, 0x0a, 0x0e, 0x4b, 0x56,
 	0x43, 0x43, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03,
 	0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x22,
 	0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e,
@@ -406,16 +869,73 @@ var file_kvcc_proto_rawDesc = []byte{
 	0x65, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x03, 0x6f, 0x70, 0x74, 0x22, 0x31, 0x0a, 0x0f,
 	0x4b, 0x56, 0x43, 0x43, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
 	0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x32,
-	0x76, 0x0a, 0x04, 0x4b, 0x56, 0x43, 0x43, 0x12, 0x36, 0x0a, 0x03, 0x47, 0x65, 0x74, 0x12, 0x15,
-	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x47, 0x65, 0x74, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56,
-	0x43, 0x43, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12,
-	0x36, 0x0a, 0x03, 0x53, 0x65, 0x74, 0x12, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b,
-	0x56, 0x43, 0x43, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x53, 0x65, 0x74, 0x52, 0x65, 0x73,
-	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x0e, 0x5a, 0x0c, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2f, 0x6b, 0x76, 0x63, 0x63, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22,
+	0x2a, 0x0a, 0x14, 0x4b, 0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74,
+	0x61, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x72, 0x0a, 0x15, 0x4b,
+	0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x52, 0x65, 0x71,
+	0x75, 0x65, 0x73, 0x74, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f,
+	0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+	0x12, 0x2d, 0x0a, 0x03, 0x6f, 0x70, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65,
+	0x4d, 0x65, 0x74, 0x61, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x03, 0x6f, 0x70, 0x74, 0x22,
+	0x38, 0x0a, 0x16, 0x4b, 0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74,
+	0x61, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45,
+	0x72, 0x72, 0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22, 0x2b, 0x0a, 0x15, 0x4b, 0x56, 0x43,
+	0x43, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79, 0x4f, 0x70, 0x74, 0x69,
+	0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0d,
+	0x52, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x74, 0x0a, 0x16, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x6f,
+	0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
+	0x65, 0x79, 0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x04, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x2e, 0x0a, 0x03,
+	0x6f, 0x70, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65,
+	0x79, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x03, 0x6f, 0x70, 0x74, 0x22, 0x39, 0x0a, 0x17,
+	0x4b, 0x56, 0x43, 0x43, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72,
+	0x6f, 0x72, 0x52, 0x03, 0x65, 0x72, 0x72, 0x22, 0x2f, 0x0a, 0x19, 0x4b, 0x56, 0x43, 0x43, 0x52,
+	0x65, 0x6d, 0x6f, 0x76, 0x65, 0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x4f, 0x70,
+	0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0d, 0x52, 0x04, 0x66, 0x6c, 0x61, 0x67, 0x22, 0x6a, 0x0a, 0x1a, 0x4b, 0x56, 0x43, 0x43,
+	0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x52,
+	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f,
+	0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+	0x12, 0x32, 0x0a, 0x03, 0x6f, 0x70, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x20, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65,
+	0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x4f, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x52,
+	0x03, 0x6f, 0x70, 0x74, 0x22, 0x3d, 0x0a, 0x1b, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x65, 0x6d, 0x6f,
+	0x76, 0x65, 0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x12, 0x1e, 0x0a, 0x03, 0x65, 0x72, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x0c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x52, 0x03,
+	0x65, 0x72, 0x72, 0x32, 0xef, 0x02, 0x0a, 0x04, 0x4b, 0x56, 0x43, 0x43, 0x12, 0x36, 0x0a, 0x03,
+	0x47, 0x65, 0x74, 0x12, 0x15, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43,
+	0x47, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x16, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x47, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x22, 0x00, 0x12, 0x36, 0x0a, 0x03, 0x53, 0x65, 0x74, 0x12, 0x15, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x53, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x53,
+	0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4b, 0x0a, 0x0a,
+	0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x12, 0x1c, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74,
+	0x61, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x4b, 0x56, 0x43, 0x43, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4e, 0x0a, 0x0b, 0x52, 0x6f, 0x6c,
+	0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79, 0x12, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79,
+	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x4b, 0x56, 0x43, 0x43, 0x52, 0x6f, 0x6c, 0x6c, 0x62, 0x61, 0x63, 0x6b, 0x4b, 0x65, 0x79, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x5a, 0x0a, 0x0f, 0x52, 0x65, 0x6d,
+	0x6f, 0x76, 0x65, 0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x12, 0x21, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x65, 0x6d, 0x6f, 0x76, 0x65, 0x54,
+	0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x22, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x56, 0x43, 0x43, 0x52, 0x65, 0x6d, 0x6f,
+	0x76, 0x65, 0x54, 0x78, 0x6e, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x0e, 0x5a, 0x0c, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x6b,
+	0x76, 0x63, 0x63, 0x70, 0x62, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -430,34 +950,55 @@ func file_kvcc_proto_rawDescGZIP() []byte {
 	return file_kvcc_proto_rawDescData
 }
 
-var file_kvcc_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_kvcc_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_kvcc_proto_goTypes = []interface{}{
-	(*KVCCReadOption)(nil),   // 0: proto.KVCCReadOption
-	(*KVCCWriteOption)(nil),  // 1: proto.KVCCWriteOption
-	(*KVCCGetRequest)(nil),   // 2: proto.KVCCGetRequest
-	(*KVCCGetResponse)(nil),  // 3: proto.KVCCGetResponse
-	(*KVCCSetRequest)(nil),   // 4: proto.KVCCSetRequest
-	(*KVCCSetResponse)(nil),  // 5: proto.KVCCSetResponse
-	(*commonpb.ValueCC)(nil), // 6: proto.ValueCC
-	(*commonpb.Error)(nil),   // 7: proto.Error
-	(*commonpb.Value)(nil),   // 8: proto.Value
+	(*KVCCReadOption)(nil),              // 0: proto.KVCCReadOption
+	(*KVCCGetRequest)(nil),              // 1: proto.KVCCGetRequest
+	(*KVCCGetResponse)(nil),             // 2: proto.KVCCGetResponse
+	(*KVCCWriteOption)(nil),             // 3: proto.KVCCWriteOption
+	(*KVCCSetRequest)(nil),              // 4: proto.KVCCSetRequest
+	(*KVCCSetResponse)(nil),             // 5: proto.KVCCSetResponse
+	(*KVCCUpdateMetaOption)(nil),        // 6: proto.KVCCUpdateMetaOption
+	(*KVCCUpdateMetaRequest)(nil),       // 7: proto.KVCCUpdateMetaRequest
+	(*KVCCUpdateMetaResponse)(nil),      // 8: proto.KVCCUpdateMetaResponse
+	(*KVCCRollbackKeyOption)(nil),       // 9: proto.KVCCRollbackKeyOption
+	(*KVCCRollbackKeyRequest)(nil),      // 10: proto.KVCCRollbackKeyRequest
+	(*KVCCRollbackKeyResponse)(nil),     // 11: proto.KVCCRollbackKeyResponse
+	(*KVCCRemoveTxnRecordOption)(nil),   // 12: proto.KVCCRemoveTxnRecordOption
+	(*KVCCRemoveTxnRecordRequest)(nil),  // 13: proto.KVCCRemoveTxnRecordRequest
+	(*KVCCRemoveTxnRecordResponse)(nil), // 14: proto.KVCCRemoveTxnRecordResponse
+	(*commonpb.ValueCC)(nil),            // 15: proto.ValueCC
+	(*commonpb.Error)(nil),              // 16: proto.Error
+	(*commonpb.Value)(nil),              // 17: proto.Value
 }
 var file_kvcc_proto_depIdxs = []int32{
-	0, // 0: proto.KVCCGetRequest.opt:type_name -> proto.KVCCReadOption
-	6, // 1: proto.KVCCGetResponse.v:type_name -> proto.ValueCC
-	7, // 2: proto.KVCCGetResponse.err:type_name -> proto.Error
-	8, // 3: proto.KVCCSetRequest.value:type_name -> proto.Value
-	1, // 4: proto.KVCCSetRequest.opt:type_name -> proto.KVCCWriteOption
-	7, // 5: proto.KVCCSetResponse.err:type_name -> proto.Error
-	2, // 6: proto.KVCC.Get:input_type -> proto.KVCCGetRequest
-	4, // 7: proto.KVCC.Set:input_type -> proto.KVCCSetRequest
-	3, // 8: proto.KVCC.Get:output_type -> proto.KVCCGetResponse
-	5, // 9: proto.KVCC.Set:output_type -> proto.KVCCSetResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0,  // 0: proto.KVCCGetRequest.opt:type_name -> proto.KVCCReadOption
+	15, // 1: proto.KVCCGetResponse.v:type_name -> proto.ValueCC
+	16, // 2: proto.KVCCGetResponse.err:type_name -> proto.Error
+	17, // 3: proto.KVCCSetRequest.value:type_name -> proto.Value
+	3,  // 4: proto.KVCCSetRequest.opt:type_name -> proto.KVCCWriteOption
+	16, // 5: proto.KVCCSetResponse.err:type_name -> proto.Error
+	6,  // 6: proto.KVCCUpdateMetaRequest.opt:type_name -> proto.KVCCUpdateMetaOption
+	16, // 7: proto.KVCCUpdateMetaResponse.err:type_name -> proto.Error
+	9,  // 8: proto.KVCCRollbackKeyRequest.opt:type_name -> proto.KVCCRollbackKeyOption
+	16, // 9: proto.KVCCRollbackKeyResponse.err:type_name -> proto.Error
+	12, // 10: proto.KVCCRemoveTxnRecordRequest.opt:type_name -> proto.KVCCRemoveTxnRecordOption
+	16, // 11: proto.KVCCRemoveTxnRecordResponse.err:type_name -> proto.Error
+	1,  // 12: proto.KVCC.Get:input_type -> proto.KVCCGetRequest
+	4,  // 13: proto.KVCC.Set:input_type -> proto.KVCCSetRequest
+	7,  // 14: proto.KVCC.UpdateMeta:input_type -> proto.KVCCUpdateMetaRequest
+	10, // 15: proto.KVCC.RollbackKey:input_type -> proto.KVCCRollbackKeyRequest
+	13, // 16: proto.KVCC.RemoveTxnRecord:input_type -> proto.KVCCRemoveTxnRecordRequest
+	2,  // 17: proto.KVCC.Get:output_type -> proto.KVCCGetResponse
+	5,  // 18: proto.KVCC.Set:output_type -> proto.KVCCSetResponse
+	8,  // 19: proto.KVCC.UpdateMeta:output_type -> proto.KVCCUpdateMetaResponse
+	11, // 20: proto.KVCC.RollbackKey:output_type -> proto.KVCCRollbackKeyResponse
+	14, // 21: proto.KVCC.RemoveTxnRecord:output_type -> proto.KVCCRemoveTxnRecordResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_kvcc_proto_init() }
@@ -479,18 +1020,6 @@ func file_kvcc_proto_init() {
 			}
 		}
 		file_kvcc_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*KVCCWriteOption); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_kvcc_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KVCCGetRequest); i {
 			case 0:
 				return &v.state
@@ -502,8 +1031,20 @@ func file_kvcc_proto_init() {
 				return nil
 			}
 		}
-		file_kvcc_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+		file_kvcc_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*KVCCGetResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCWriteOption); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -538,6 +1079,114 @@ func file_kvcc_proto_init() {
 				return nil
 			}
 		}
+		file_kvcc_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCUpdateMetaOption); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCUpdateMetaRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCUpdateMetaResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRollbackKeyOption); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRollbackKeyRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRollbackKeyResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRemoveTxnRecordOption); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRemoveTxnRecordRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_kvcc_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*KVCCRemoveTxnRecordResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -545,7 +1194,7 @@ func file_kvcc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_kvcc_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -573,6 +1222,9 @@ const _ = grpc.SupportPackageIsVersion6
 type KVCCClient interface {
 	Get(ctx context.Context, in *KVCCGetRequest, opts ...grpc.CallOption) (*KVCCGetResponse, error)
 	Set(ctx context.Context, in *KVCCSetRequest, opts ...grpc.CallOption) (*KVCCSetResponse, error)
+	UpdateMeta(ctx context.Context, in *KVCCUpdateMetaRequest, opts ...grpc.CallOption) (*KVCCUpdateMetaResponse, error)
+	RollbackKey(ctx context.Context, in *KVCCRollbackKeyRequest, opts ...grpc.CallOption) (*KVCCRollbackKeyResponse, error)
+	RemoveTxnRecord(ctx context.Context, in *KVCCRemoveTxnRecordRequest, opts ...grpc.CallOption) (*KVCCRemoveTxnRecordResponse, error)
 }
 
 type kVCCClient struct {
@@ -601,10 +1253,40 @@ func (c *kVCCClient) Set(ctx context.Context, in *KVCCSetRequest, opts ...grpc.C
 	return out, nil
 }
 
+func (c *kVCCClient) UpdateMeta(ctx context.Context, in *KVCCUpdateMetaRequest, opts ...grpc.CallOption) (*KVCCUpdateMetaResponse, error) {
+	out := new(KVCCUpdateMetaResponse)
+	err := c.cc.Invoke(ctx, "/proto.KVCC/UpdateMeta", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kVCCClient) RollbackKey(ctx context.Context, in *KVCCRollbackKeyRequest, opts ...grpc.CallOption) (*KVCCRollbackKeyResponse, error) {
+	out := new(KVCCRollbackKeyResponse)
+	err := c.cc.Invoke(ctx, "/proto.KVCC/RollbackKey", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *kVCCClient) RemoveTxnRecord(ctx context.Context, in *KVCCRemoveTxnRecordRequest, opts ...grpc.CallOption) (*KVCCRemoveTxnRecordResponse, error) {
+	out := new(KVCCRemoveTxnRecordResponse)
+	err := c.cc.Invoke(ctx, "/proto.KVCC/RemoveTxnRecord", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KVCCServer is the server API for KVCC service.
 type KVCCServer interface {
 	Get(context.Context, *KVCCGetRequest) (*KVCCGetResponse, error)
 	Set(context.Context, *KVCCSetRequest) (*KVCCSetResponse, error)
+	UpdateMeta(context.Context, *KVCCUpdateMetaRequest) (*KVCCUpdateMetaResponse, error)
+	RollbackKey(context.Context, *KVCCRollbackKeyRequest) (*KVCCRollbackKeyResponse, error)
+	RemoveTxnRecord(context.Context, *KVCCRemoveTxnRecordRequest) (*KVCCRemoveTxnRecordResponse, error)
 }
 
 // UnimplementedKVCCServer can be embedded to have forward compatible implementations.
@@ -616,6 +1298,15 @@ func (*UnimplementedKVCCServer) Get(context.Context, *KVCCGetRequest) (*KVCCGetR
 }
 func (*UnimplementedKVCCServer) Set(context.Context, *KVCCSetRequest) (*KVCCSetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
+}
+func (*UnimplementedKVCCServer) UpdateMeta(context.Context, *KVCCUpdateMetaRequest) (*KVCCUpdateMetaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateMeta not implemented")
+}
+func (*UnimplementedKVCCServer) RollbackKey(context.Context, *KVCCRollbackKeyRequest) (*KVCCRollbackKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RollbackKey not implemented")
+}
+func (*UnimplementedKVCCServer) RemoveTxnRecord(context.Context, *KVCCRemoveTxnRecordRequest) (*KVCCRemoveTxnRecordResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveTxnRecord not implemented")
 }
 
 func RegisterKVCCServer(s *grpc.Server, srv KVCCServer) {
@@ -658,6 +1349,60 @@ func _KVCC_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KVCC_UpdateMeta_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVCCUpdateMetaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVCCServer).UpdateMeta(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.KVCC/UpdateMeta",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVCCServer).UpdateMeta(ctx, req.(*KVCCUpdateMetaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KVCC_RollbackKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVCCRollbackKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVCCServer).RollbackKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.KVCC/RollbackKey",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVCCServer).RollbackKey(ctx, req.(*KVCCRollbackKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _KVCC_RemoveTxnRecord_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(KVCCRemoveTxnRecordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KVCCServer).RemoveTxnRecord(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.KVCC/RemoveTxnRecord",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KVCCServer).RemoveTxnRecord(ctx, req.(*KVCCRemoveTxnRecordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _KVCC_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.KVCC",
 	HandlerType: (*KVCCServer)(nil),
@@ -669,6 +1414,18 @@ var _KVCC_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Set",
 			Handler:    _KVCC_Set_Handler,
+		},
+		{
+			MethodName: "UpdateMeta",
+			Handler:    _KVCC_UpdateMeta_Handler,
+		},
+		{
+			MethodName: "RollbackKey",
+			Handler:    _KVCC_RollbackKey_Handler,
+		},
+		{
+			MethodName: "RemoveTxnRecord",
+			Handler:    _KVCC_RemoveTxnRecord_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

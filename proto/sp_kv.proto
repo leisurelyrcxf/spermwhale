@@ -35,7 +35,37 @@ message KVSetResponse {
     Error err = 1;
 }
 
+message KVUpdateMetaOption {
+    uint32 flag = 1;
+}
+message KVUpdateMetaRequest {
+    string key = 1;
+    uint64 version = 2;
+    KVUpdateMetaOption opt = 3;
+}
+message KVUpdateMetaResponse {
+    Error err = 1;
+}
+
+message KVRollbackKeyRequest {
+    string key = 1;
+    uint64 version = 2;
+}
+message KVRollbackKeyResponse {
+    Error err = 1;
+}
+
+message KVRemoveTxnRecordRequest {
+    uint64 version = 1;
+}
+message KVRemoveTxnRecordResponse {
+    Error err = 1;
+}
+
 service KV {
     rpc Get(KVGetRequest) returns (KVGetResponse) {}
     rpc Set(KVSetRequest) returns (KVSetResponse) {}
+    rpc UpdateMeta(KVUpdateMetaRequest) returns (KVUpdateMetaResponse) {}
+    rpc RollbackKey(KVRollbackKeyRequest) returns (KVRollbackKeyResponse) {}
+    rpc RemoveTxnRecord(KVRemoveTxnRecordRequest) returns (KVRemoveTxnRecordResponse) {}
 }

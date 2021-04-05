@@ -5,10 +5,24 @@ import (
 	"encoding/json"
 
 	"github.com/golang/glog"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
+)
+
+type DBType string
+
+var AllDBTypes []DBType
+
+var (
+	addDBType = func(s string) DBType {
+		t := DBType(s)
+		AllDBTypes = append(AllDBTypes, t)
+		return t
+	}
+	DBTypeMemory = addDBType("memory")
+	DBTypeRedis  = addDBType("redis")
+	DBTypeMongo  = addDBType("mongo")
 )
 
 type DBMeta struct {
@@ -17,7 +31,11 @@ type DBMeta struct {
 }
 
 func (m DBMeta) IsDirty() bool {
-	return m.Flag&consts.ValueMetaBitMaskCommitted == 0
+	return consts.IsDirty(m.Flag)
+}
+
+func (m DBMeta) IsCommitted() bool {
+	return m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
 }
 
 func (m DBMeta) WithVersion(version uint64) Meta {
@@ -36,8 +54,8 @@ type DBValue struct {
 
 var EmptyDBValue = DBValue{}
 
-func (v DBValue) WithNoWriteIntent() DBValue {
-	v.Flag |= ValueMetaBitMaskCommitted
+func (v DBValue) WithCommitted() DBValue {
+	v.Flag = consts.WithCommitted(v.Flag)
 	return v
 }
 
@@ -121,34 +139,33 @@ func (opt *KVWriteOption) ToPB() *kvpb.KVWriteOption {
 }
 
 func (opt KVWriteOption) WithTxnRecord() KVWriteOption {
-	opt.flag |= CommonWriteOptBitMaskTxnRecord
-	return opt
-}
-
-func (opt KVWriteOption) WithClearWriteIntent() KVWriteOption {
-	opt.flag |= CommonWriteOptBitMaskClearWriteIntent
-	return opt
-}
-
-func (opt KVWriteOption) WithRemoveVersion() KVWriteOption {
-	opt.flag |= CommonWriteOptBitMaskRemoveVersion
+	opt.flag |= KVKVCCWriteOptOptBitMaskTxnRecord
 	return opt
 }
 
 func (opt KVWriteOption) IsTxnRecord() bool {
-	return consts.IsWriteTxnRecord(opt.flag)
+	return opt.flag&KVKVCCWriteOptOptBitMaskTxnRecord == KVKVCCWriteOptOptBitMaskTxnRecord
 }
 
-func (opt KVWriteOption) IsClearWriteIntent() bool {
-	return IsWriteOptClearWriteIntent(opt.flag)
+type KVUpdateMetaOption uint8
+
+func NewKVUpdateMetaOptionFromPB(opt *kvpb.KVUpdateMetaOption) KVUpdateMetaOption {
+	return KVUpdateMetaOption(opt.Flag)
 }
 
-func (opt KVWriteOption) IsRemoveVersion() bool {
-	return IsWriteOptRemoveVersion(opt.flag)
+func (opt KVUpdateMetaOption) ToPB() *kvpb.KVUpdateMetaOption {
+	return &kvpb.KVUpdateMetaOption{Flag: uint32(opt)}
+}
+
+func (opt KVUpdateMetaOption) IsClearWriteIntent() bool {
+	return opt&KVKVCCUpdateMetaOptBitMaskClearWriteIntent == KVKVCCUpdateMetaOptBitMaskClearWriteIntent
 }
 
 type KV interface {
 	Get(ctx context.Context, key string, opt KVReadOption) (Value, error)
 	Set(ctx context.Context, key string, val Value, opt KVWriteOption) error
+	UpdateMeta(ctx context.Context, key string, version uint64, opt KVUpdateMetaOption) error
+	RollbackKey(ctx context.Context, key string, version uint64) error
+	RemoveTxnRecord(ctx context.Context, version uint64) error
 	Close() error
 }

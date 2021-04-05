@@ -146,7 +146,7 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 						}
 						var ints = make([]int, len(values))
 						for idx, val := range values {
-							ts.True(!val.IsDirty())
+							ts.True(val.IsCommitted())
 							ts.Equal(types.TxnInternalVersion(1), val.InternalVersion)
 							ts.Equal(txn.GetSnapshotReadOption().SnapshotVersion, val.SnapshotVersion)
 							x, err := val.Int()

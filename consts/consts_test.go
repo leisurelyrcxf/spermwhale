@@ -8,5 +8,5 @@ import (
 
 func TestClearWriteIntent(t *testing.T) {
 	assert := testifyassert.New(t)
-	assert.Equal(0xfe, ValueMetaBitMaskClearWriteIntent)
+	assert.Equal(0xfe, ValueMetaBitMaskWriteIntentClear)
 }

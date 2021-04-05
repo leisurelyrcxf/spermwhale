@@ -79,7 +79,7 @@ func (i *KeyInfo) TryLock(dbMeta types.DBMeta, txn *transaction.Transaction) (wr
 			assert.MustNoError(errors.ErrPrevWriterNotFinishedYet) // TODO remove this in product
 			return nil, errors.ErrPrevWriterNotFinishedYet
 		}
-		if dbMeta.InternalVersion <= prevWriter.InternalVersion {
+		if dbMeta.InternalVersion <= prevWriter.Meta.InternalVersion {
 			assert.MustNoError(errors.ErrInternalVersionSmallerThanPrevWriter) // TODO remove this in product
 			return nil, errors.ErrInternalVersionSmallerThanPrevWriter
 		}

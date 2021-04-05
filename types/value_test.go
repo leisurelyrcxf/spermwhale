@@ -13,19 +13,29 @@ func TestValue(t *testing.T) {
 	assert.True(v.IsDirty())
 
 	{
-		v := v.WithNoWriteIntent()
+		v := v.WithCommitted()
 		assert.False(v.IsDirty())
 	}
-
-	assert.True(v.IsDirty())
-	v = v.WithNoWriteIntent()
-	assert.False(v.IsDirty())
 }
 
 func TestEmpty(t *testing.T) {
 	assert := testifyassert.New(t)
 
 	assert.True(EmptyValue.IsEmpty())
+	assert.True(!EmptyValue.IsDirty())
+	assert.True(!EmptyValue.IsCommitted())
+	assert.True(!EmptyValue.IsAborted())
+
 	assert.True(EmptyValueCC.IsEmpty())
+	assert.True(!EmptyValueCC.IsDirty())
+	assert.True(!EmptyValueCC.IsCommitted())
+	assert.True(!EmptyValueCC.IsAborted())
+
 	assert.True(EmptyTValue.IsEmpty())
+	assert.True(!EmptyTValue.IsDirty())
+	assert.True(!EmptyTValue.IsCommitted())
+	assert.True(!EmptyTValue.IsAborted())
+
+	assert.True(!EmptyDBValue.IsDirty())
+	assert.True(!EmptyDBValue.IsCommitted())
 }

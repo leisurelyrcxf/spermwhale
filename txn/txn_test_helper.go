@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 10
+	rounds             = 1
 )
 
 var (
@@ -293,7 +293,7 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
 				lastWriteTxn := txns[lastWriteTxnIndex]
-				if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value.WithClearAborted()) {
+				if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value) {
 					return false
 				}
 			}

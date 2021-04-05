@@ -148,7 +148,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 		if !ts.Equal(types.TxnInternalVersion(writeTimesPerTxn), val.InternalVersion) {
 			return
 		}
-		if !ts.False(val.IsDirty()) {
+		if !ts.True(val.IsCommitted()) {
 			return
 		}
 		if idx >= 1 {

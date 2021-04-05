@@ -71,6 +71,32 @@ func (g *Gate) Set(ctx context.Context, key string, val types.Value, opt types.K
 	return s.Set(ctx, key, val, opt)
 }
 
+func (g *Gate) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption) error {
+	assert.Must(key != "")
+	s, err := g.Route(types.TxnKeyUnion{Key: key})
+	if err != nil {
+		return err
+	}
+	return s.UpdateMeta(ctx, key, version, opt)
+}
+
+func (g *Gate) RollbackKey(ctx context.Context, key string, version uint64, opt types.KVCCRollbackKeyOption) error {
+	assert.Must(key != "")
+	s, err := g.Route(types.TxnKeyUnion{Key: key})
+	if err != nil {
+		return err
+	}
+	return s.RollbackKey(ctx, key, version, opt)
+}
+
+func (g *Gate) RemoveTxnRecord(ctx context.Context, version uint64, opt types.KVCCRemoveTxnRecordOption) error {
+	s, err := g.Route(types.TxnKeyUnion{TxnId: types.TxnId(version)})
+	if err != nil {
+		return err
+	}
+	return s.RemoveTxnRecord(ctx, version, opt)
+}
+
 func (g *Gate) Close() (err error) {
 	for _, s := range g.shards {
 		err = errors.Wrap(err, s.Close())

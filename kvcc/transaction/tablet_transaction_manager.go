@@ -12,7 +12,7 @@ import (
 
 const (
 	EstimatedMaxQPS = 1000000
-	TxnPartitionNum = 64
+	TxnPartitionNum = 256
 )
 
 type Manager struct {

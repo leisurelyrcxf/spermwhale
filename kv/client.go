@@ -64,6 +64,47 @@ func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types
 	return errors.NewErrorFromPB(resp.Err)
 }
 
+func (c *Client) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVUpdateMetaOption) error {
+	resp, err := c.kv.UpdateMeta(ctx, &kvpb.KVUpdateMetaRequest{
+		Key:     key,
+		Version: version,
+		Opt:     opt.ToPB(),
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::UpdateMeta resp == nil")
+	}
+	return errors.NewErrorFromPB(resp.Err)
+}
+func (c *Client) RollbackKey(ctx context.Context, key string, version uint64) error {
+	resp, err := c.kv.RollbackKey(ctx, &kvpb.KVRollbackKeyRequest{
+		Key:     key,
+		Version: version,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::RollbackKey resp == nil")
+	}
+	return errors.NewErrorFromPB(resp.Err)
+}
+
+func (c *Client) RemoveTxnRecord(ctx context.Context, version uint64) error {
+	resp, err := c.kv.RemoveTxnRecord(ctx, &kvpb.KVRemoveTxnRecordRequest{
+		Version: version,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil {
+		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::RemoveTxnRecord resp == nil")
+	}
+	return errors.NewErrorFromPB(resp.Err)
+}
+
 func (c *Client) Close() error {
 	return c.conn.Close()
 }

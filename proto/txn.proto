@@ -36,7 +36,6 @@ message Txn {
 message TValue {
     Value value = 1;
     uint64 snapshot_version = 2;
-    uint32 txn_flag = 3;
 }
 
 message BeginRequest {

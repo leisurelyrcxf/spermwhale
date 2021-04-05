@@ -178,7 +178,7 @@ func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion 
 	if isDirty {
 		assert.Must(val.IsDirty() && val.V == nil)
 	} else {
-		assert.Must(!val.IsDirty() && val.V != nil)
+		assert.Must(val.IsCommitted() && val.V != nil)
 	}
 	assert.Must(val.SnapshotVersion > 0 && val.Version <= val.SnapshotVersion &&
 		txn.MinAllowedSnapshotVersion <= val.SnapshotVersion && val.SnapshotVersion <= readSnapshotVersion)

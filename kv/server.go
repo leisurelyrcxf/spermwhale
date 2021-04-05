@@ -37,6 +37,21 @@ func (stub *Stub) Set(ctx context.Context, req *kvpb.KVSetRequest) (*kvpb.KVSetR
 	return &kvpb.KVSetResponse{Err: errors.ToPBError(err)}, nil
 }
 
+func (stub *Stub) UpdateMeta(ctx context.Context, req *kvpb.KVUpdateMetaRequest) (*kvpb.KVUpdateMetaResponse, error) {
+	err := stub.kv.UpdateMeta(ctx, req.Key, req.Version, types.NewKVUpdateMetaOptionFromPB(req.Opt))
+	return &kvpb.KVUpdateMetaResponse{Err: errors.ToPBError(err)}, nil
+}
+
+func (stub *Stub) RollbackKey(ctx context.Context, req *kvpb.KVRollbackKeyRequest) (*kvpb.KVRollbackKeyResponse, error) {
+	err := stub.kv.RollbackKey(ctx, req.Key, req.Version)
+	return &kvpb.KVRollbackKeyResponse{Err: errors.ToPBError(err)}, nil
+}
+
+func (stub *Stub) RemoveTxnRecord(ctx context.Context, req *kvpb.KVRemoveTxnRecordRequest) (*kvpb.KVRemoveTxnRecordResponse, error) {
+	err := stub.kv.RemoveTxnRecord(ctx, req.Version)
+	return &kvpb.KVRemoveTxnRecordResponse{Err: errors.ToPBError(err)}, nil
+}
+
 type Server struct {
 	Port int
 

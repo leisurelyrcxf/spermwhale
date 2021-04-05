@@ -13,10 +13,6 @@ message KVCCReadOption {
     uint64 min_allowed_snapshot_version = 4;
 }
 
-message KVCCWriteOption {
-    uint32 flag = 1;
-}
-
 message KVCCGetRequest {
     string key = 1;
     KVCCReadOption opt = 2;
@@ -25,6 +21,10 @@ message KVCCGetRequest {
 message KVCCGetResponse {
     ValueCC v = 1;
     Error err = 2;
+}
+
+message KVCCWriteOption {
+    uint32 flag = 1;
 }
 
 message KVCCSetRequest {
@@ -37,8 +37,51 @@ message KVCCSetResponse {
     Error err = 1;
 }
 
+message KVCCUpdateMetaOption {
+    uint32 flag = 1;
+}
+
+message KVCCUpdateMetaRequest {
+    string key = 1;
+    uint64 version = 2;
+    KVCCUpdateMetaOption opt = 3;
+}
+
+message KVCCUpdateMetaResponse {
+    Error err = 1;
+}
+
+message KVCCRollbackKeyOption {
+    uint32 flag = 1;
+}
+
+message KVCCRollbackKeyRequest {
+    string key = 1;
+    uint64 version = 2;
+    KVCCRollbackKeyOption opt = 3;
+}
+
+message KVCCRollbackKeyResponse {
+    Error err = 1;
+}
+
+message KVCCRemoveTxnRecordOption {
+    uint32 flag = 1;
+}
+
+message KVCCRemoveTxnRecordRequest {
+    uint64 version = 1;
+    KVCCRemoveTxnRecordOption opt = 2;
+}
+
+message KVCCRemoveTxnRecordResponse {
+    Error err = 1;
+}
 
 service KVCC {
     rpc Get(KVCCGetRequest) returns (KVCCGetResponse) {}
     rpc Set(KVCCSetRequest) returns (KVCCSetResponse) {}
+    rpc UpdateMeta(KVCCUpdateMetaRequest) returns (KVCCUpdateMetaResponse) {}
+    rpc RollbackKey(KVCCRollbackKeyRequest) returns (KVCCRollbackKeyResponse) {}
+    rpc RemoveTxnRecord(KVCCRemoveTxnRecordRequest) returns (KVCCRemoveTxnRecordResponse) {}
 }

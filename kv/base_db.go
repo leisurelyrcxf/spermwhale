@@ -6,6 +6,7 @@ import (
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
@@ -74,54 +75,59 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KV
 		isTxnRecord = opt.IsTxnRecord()
 	)
 	assert.Must((isTxnRecord && key == "") || (!isTxnRecord && key != ""))
-	if opt.IsClearWriteIntent() {
-		assert.Must(!isTxnRecord)
-		if utils.IsDebug() {
-			return db.updateFlagOfKeyRaw(ctx, key, val.Version, 0 /* TODO if there are multi bits, this is dangerous */, func(value types.DBValue) types.DBValue {
-				return value.WithNoWriteIntent()
-			}, func(err error) error {
-				if !test {
-					glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", val.Version, key)
-				}
-				return err
-			})
-		}
-		oldVal, err := db.vvs.Get(ctx, key, val.Version)
-		if err != nil {
-			if errors.IsNotExistsErr(err) && !test {
-				glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", val.Version, key)
-			}
-			return errors.Annotatef(err, "key: %s", key)
-		}
-		if !oldVal.IsDirty() {
-			return nil
-		}
-		return db.vvs.Upsert(ctx, key, val.Version, oldVal.WithNoWriteIntent())
-	}
-	if opt.IsRemoveVersion() {
-		assert.Must(!val.IsDirty())
-		// TODO can remove the check in the future if stable enough
-		if !isTxnRecord && utils.IsDebug() {
-			return db.vvs.RemoveIf(ctx, key, val.Version, func(prev types.DBValue) error {
-				if !prev.IsDirty() {
-					if !test {
-						glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, val.Version)
-					}
-					return errors.ErrCantRemoveCommittedValue
-				}
-				return nil
-			})
-		}
-		if isTxnRecord {
-			return db.ts.RemoveTxnRecord(ctx, val.Version)
-		} else {
-			return db.vvs.Remove(ctx, key, val.Version)
-		}
-	}
 	if isTxnRecord {
 		return errors.Annotatef(db.ts.UpsertTxnRecord(ctx, val.Version, val.ToDB()), "txn-record: %d", val.Version)
 	}
 	return errors.Annotatef(db.vvs.Upsert(ctx, key, val.Version, val.ToDB()), "key: '%s'", key)
+}
+
+func (db *DB) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVUpdateMetaOption) error {
+	if !opt.IsClearWriteIntent() {
+		return errors.ErrNotSupported
+	}
+	if utils.IsDebug() {
+		return db.updateFlagOfKeyRaw(ctx, key, version, consts.ValueMetaBitMaskCommitted /* TODO if there are multi bits, this is dangerous */, func(value types.DBValue) types.DBValue {
+			return value.WithCommitted()
+		}, func(err error) error {
+			if !test {
+				glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", version, key)
+			}
+			return err
+		})
+	}
+	oldVal, err := db.vvs.Get(ctx, key, version)
+	if err != nil {
+		if errors.IsNotExistsErr(err) && !test {
+			glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", version, key)
+		}
+		return errors.Annotatef(err, "key: %s", key)
+	}
+	if oldVal.IsCommitted() {
+		return nil
+	}
+	return db.vvs.Upsert(ctx, key, version, oldVal.WithCommitted())
+}
+
+func (db *DB) RollbackKey(ctx context.Context, key string, version uint64) error {
+	assert.Must(key != "")
+
+	// TODO can remove the check in the future if stable enough
+	if utils.IsDebug() {
+		return db.vvs.RemoveIf(ctx, key, version, func(prev types.DBValue) error {
+			if prev.IsCommitted() {
+				if !test {
+					glog.Fatalf("want to remove key %s of version %d which doesn't have write intent", key, version)
+				}
+				return errors.ErrCantRemoveCommittedValue
+			}
+			return nil
+		})
+	}
+	return db.vvs.Remove(ctx, key, version)
+}
+
+func (db *DB) RemoveTxnRecord(ctx context.Context, version uint64) error {
+	return db.ts.RemoveTxnRecord(ctx, version)
 }
 
 func (db *DB) Close() error {

@@ -547,7 +547,7 @@ func (txn *RecordValuesTxn) Get(ctx context.Context, key string) (TValue, error)
 	val, err := txn.Txn.Get(ctx, key)
 	if err == nil {
 		assert.Must(val.Version != 0)
-		assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.HasWritten(key)))
+		assert.Must(val.IsCommitted() || (val.Version == txn.GetId().Version() && txn.HasWritten(key)))
 		if txn.GetType().IsSnapshotRead() {
 			assert.Must(val.SnapshotVersion == txn.GetSnapshotReadOption().SnapshotVersion && val.Version <= val.SnapshotVersion)
 		}
@@ -561,7 +561,7 @@ func (txn *RecordValuesTxn) MGet(ctx context.Context, keys []string) ([]TValue, 
 	if err == nil {
 		for idx, val := range values {
 			assert.Must(val.Version != 0)
-			assert.Must(!val.IsDirty() || (val.Version == txn.GetId().Version() && txn.HasWritten(keys[idx])))
+			assert.Must(val.IsCommitted() || (val.Version == txn.GetId().Version() && txn.HasWritten(keys[idx])))
 		}
 		if txnType, ssVersion := txn.GetType(), txn.GetSnapshotReadOption().SnapshotVersion; txnType.IsSnapshotRead() {
 			for _, val := range values {
@@ -579,7 +579,7 @@ func (txn *RecordValuesTxn) Set(ctx context.Context, key string, val []byte) err
 	err := txn.Txn.Set(ctx, key, val)
 	if err == nil {
 		txn.writeValues[key] = NewValue(val, txn.Txn.GetId().Version()).
-			WithNoWriteIntent().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
+			WithCommitted().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
 	}
 	return err
 }
@@ -589,7 +589,7 @@ func (txn *RecordValuesTxn) MSet(ctx context.Context, keys []string, values [][]
 	if err == nil {
 		for idx, key := range keys {
 			txn.writeValues[key] = NewValue(values[idx], txn.Txn.GetId().Version()).
-				WithNoWriteIntent().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
+				WithCommitted().WithInternalVersion(txn.writeValues[key].InternalVersion + 1)
 		}
 	}
 	return err

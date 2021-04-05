@@ -14,7 +14,7 @@ type RetryDetailItem struct {
 }
 
 func (i RetryDetailItem) String() string {
-	return fmt.Sprintf("\"%s\": %d,", errors.AllErrors[i.ErrorKey].Msg, i.Count)
+	return fmt.Sprintf("\"%s\": %d", errors.AllErrors[i.ErrorKey].Msg, i.Count)
 }
 
 type RetryDetailItems []RetryDetailItem

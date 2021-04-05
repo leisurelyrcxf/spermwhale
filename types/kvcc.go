@@ -172,7 +172,6 @@ type KVCCWriteOption struct {
 func NewKVCCWriteOption() KVCCWriteOption {
 	return KVCCWriteOption{}
 }
-
 func NewKVCCWriteOptionFromPB(x *kvccpb.KVCCWriteOption) KVCCWriteOption {
 	return KVCCWriteOption{
 		flag: x.GetFlagSafe(),
@@ -182,26 +181,14 @@ func NewKVCCWriteOptionFromPB(x *kvccpb.KVCCWriteOption) KVCCWriteOption {
 func (opt *KVCCWriteOption) ToPB() *kvccpb.KVCCWriteOption {
 	return (&kvccpb.KVCCWriteOption{}).SetFlagSafe(opt.flag)
 }
+func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {
+	return KVWriteOption{flag: opt.flag}
+}
 
-func (opt KVCCWriteOption) WithClearWriteIntent() KVCCWriteOption {
-	opt.flag |= CommonWriteOptBitMaskClearWriteIntent
+func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
+	opt.flag |= KVKVCCWriteOptOptBitMaskTxnRecord
 	return opt
 }
-
-func (opt KVCCWriteOption) WithRollbackVersion() KVCCWriteOption {
-	opt.flag |= CommonWriteOptBitMaskRemoveVersion
-	opt.flag |= KVCCWriteOptBitMaskRemoveVersionRollback
-	return opt
-}
-
-func (opt KVCCWriteOption) WithRemoveTxnRecordCondRollback(isRollback bool) KVCCWriteOption {
-	opt.flag |= CommonWriteOptBitMaskRemoveVersion
-	if isRollback {
-		opt.flag |= KVCCWriteOptBitMaskRemoveVersionRollback
-	}
-	return opt.WithTxnRecord()
-}
-
 func (opt KVCCWriteOption) CondReadModifyWrite(b bool) KVCCWriteOption {
 	if b {
 		opt.flag |= KVCCWriteOptBitMaskReadModifyWrite
@@ -209,63 +196,142 @@ func (opt KVCCWriteOption) CondReadModifyWrite(b bool) KVCCWriteOption {
 	return opt
 }
 
-func (opt KVCCWriteOption) CondReadModifyWriteRollbackOrClearReadKey(b bool) KVCCWriteOption {
-	if b {
-		opt.flag |= KVCCWriteOptBitMaskReadModifyWriteRollbackOrClearReadKey
-	}
-	return opt
-}
-
-func (opt KVCCWriteOption) CondWriteByDifferentTransaction(b bool) KVCCWriteOption {
-	if b {
-		opt.flag |= KVCCWriteOptBitMaskWriteByDifferentTxn
-	}
-	return opt
-}
-
-func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
-	opt.flag |= CommonWriteOptBitMaskTxnRecord
-	return opt
-}
-
 func (opt KVCCWriteOption) IsTxnRecord() bool {
-	return consts.IsWriteTxnRecord(opt.flag)
+	return opt.flag&KVKVCCWriteOptOptBitMaskTxnRecord == KVKVCCWriteOptOptBitMaskTxnRecord
 }
-
-func (opt KVCCWriteOption) IsClearWriteIntent() bool {
-	return IsWriteOptClearWriteIntent(opt.flag)
-}
-
-func (opt KVCCWriteOption) IsRemoveVersion() bool {
-	return IsWriteOptRemoveVersion(opt.flag)
-}
-
-func (opt KVCCWriteOption) IsRollbackVersion() bool {
-	return IsWriteOptRollbackVersion(opt.flag)
-}
-
 func (opt KVCCWriteOption) IsReadModifyWrite() bool {
 	return opt.flag&KVCCWriteOptBitMaskReadModifyWrite == KVCCWriteOptBitMaskReadModifyWrite
 }
 
-func (opt KVCCWriteOption) IsReadModifyWriteRollbackOrClearReadKey() bool {
-	return opt.flag&KVCCWriteOptBitMaskReadModifyWriteRollbackOrClearReadKey == KVCCWriteOptBitMaskReadModifyWriteRollbackOrClearReadKey
+type KVCCOperationOption struct {
+	Flag uint8
 }
 
-func (opt KVCCWriteOption) IsWriteByDifferentTransaction() bool {
-	return opt.flag&KVCCWriteOptBitMaskWriteByDifferentTxn == KVCCWriteOptBitMaskWriteByDifferentTxn
+func (opt KVCCOperationOption) GetFlagAsUint32() uint32 {
+	return uint32(opt.Flag) // TODO handle endian?
 }
 
-func (opt KVCCWriteOption) IsRollbackKey() bool {
-	return !opt.IsTxnRecord() && opt.IsRollbackVersion()
+func (opt KVCCOperationOption) IsOperatedByDifferentTxn() bool {
+	return opt.Flag&CommonKVCCOpsOptBitMaskOperatedByDifferentTxn == CommonKVCCOpsOptBitMaskOperatedByDifferentTxn
+}
+func (opt KVCCOperationOption) IsReadOnlyKey() bool {
+	return opt.Flag&CommonKVCCOpsOptBitMaskIsReadOnlyKey == CommonKVCCOpsOptBitMaskIsReadOnlyKey
+}
+func (opt KVCCOperationOption) IsReadModifyWrite() bool {
+	return opt.Flag&CommonKVCCOpsOptBitMaskReadModifyWrite == CommonKVCCOpsOptBitMaskReadModifyWrite
 }
 
-func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {
-	return KVWriteOption{flag: opt.flag}
+func (opt *KVCCOperationOption) CondSetOperatedByDifferentTxn(b bool) {
+	if b {
+		opt.Flag |= CommonKVCCOpsOptBitMaskOperatedByDifferentTxn
+	}
+}
+func (opt *KVCCOperationOption) CondSetReadOnlyKey(b bool) {
+	if b {
+		opt.Flag |= CommonKVCCOpsOptBitMaskIsReadOnlyKey
+	}
+}
+func (opt *KVCCOperationOption) CondSetReadModifyWrite(b bool) {
+	if b {
+		opt.Flag |= CommonKVCCOpsOptBitMaskReadModifyWrite
+	}
+}
+
+type KVCCUpdateMetaOption struct {
+	KVCCOperationOption
+}
+
+var KVCCClearWriteIntent = KVCCUpdateMetaOption{KVCCOperationOption: KVCCOperationOption{Flag: KVKVCCUpdateMetaOptBitMaskClearWriteIntent}}
+
+func NewKVCCCUpdateMetaOptionFromPB(opt *kvccpb.KVCCUpdateMetaOption) KVCCUpdateMetaOption {
+	return KVCCUpdateMetaOption{KVCCOperationOption: KVCCOperationOption{Flag: uint8(opt.Flag)}}
+}
+
+func (opt KVCCUpdateMetaOption) ToPB() *kvccpb.KVCCUpdateMetaOption {
+	return &kvccpb.KVCCUpdateMetaOption{Flag: opt.GetFlagAsUint32()}
+}
+func (opt KVCCUpdateMetaOption) ToKV() KVUpdateMetaOption {
+	return KVUpdateMetaOption(opt.Flag & KVCC2KVUpdateMetaOptExtractor)
+}
+
+func (opt KVCCUpdateMetaOption) CondUpdateByDifferentTxn(b bool) KVCCUpdateMetaOption {
+	opt.CondSetOperatedByDifferentTxn(b)
+	return opt
+}
+func (opt KVCCUpdateMetaOption) CondReadOnlyKey(b bool) KVCCUpdateMetaOption {
+	opt.CondSetReadOnlyKey(b)
+	return opt
+}
+func (opt KVCCUpdateMetaOption) CondReadModifyWrite(b bool) KVCCUpdateMetaOption {
+	opt.CondSetReadModifyWrite(b)
+	return opt
+}
+
+func (opt KVCCUpdateMetaOption) IsClearWriteIntent() bool {
+	return opt.Flag&KVKVCCUpdateMetaOptBitMaskClearWriteIntent == KVKVCCUpdateMetaOptBitMaskClearWriteIntent
+}
+
+type KVCCRollbackKeyOption struct {
+	KVCCOperationOption
+}
+
+var EmptyKVCCRollbackKeyOption = KVCCRollbackKeyOption{}
+
+func NewKVCCCRollbackKeyOptionFromPB(opt *kvccpb.KVCCRollbackKeyOption) KVCCRollbackKeyOption {
+	return KVCCRollbackKeyOption{KVCCOperationOption: KVCCOperationOption{Flag: uint8(opt.Flag)}}
+}
+
+func (opt KVCCRollbackKeyOption) ToPB() *kvccpb.KVCCRollbackKeyOption {
+	return &kvccpb.KVCCRollbackKeyOption{Flag: opt.GetFlagAsUint32()}
+}
+
+func (opt KVCCRollbackKeyOption) CondRollbackByDifferentTxn(b bool) KVCCRollbackKeyOption {
+	opt.CondSetOperatedByDifferentTxn(b)
+	return opt
+}
+func (opt KVCCRollbackKeyOption) CondReadOnlyKey(b bool) KVCCRollbackKeyOption {
+	opt.CondSetReadOnlyKey(b)
+	return opt
+}
+func (opt KVCCRollbackKeyOption) CondReadModifyWrite(b bool) KVCCRollbackKeyOption {
+	opt.CondSetReadModifyWrite(b)
+	return opt
+}
+
+type KVCCRemoveTxnRecordOption struct {
+	KVCCOperationOption
+}
+
+var EmptyKVCCRemoveTxnRecordOption = KVCCRemoveTxnRecordOption{}
+
+func NewKVCCCRemoveTxnRecordOptionFromPB(opt *kvccpb.KVCCRemoveTxnRecordOption) KVCCRemoveTxnRecordOption {
+	return KVCCRemoveTxnRecordOption{KVCCOperationOption: KVCCOperationOption{Flag: uint8(opt.Flag)}}
+}
+
+func (opt KVCCRemoveTxnRecordOption) ToPB() *kvccpb.KVCCRemoveTxnRecordOption {
+	return &kvccpb.KVCCRemoveTxnRecordOption{Flag: opt.GetFlagAsUint32()}
+}
+
+func (opt KVCCRemoveTxnRecordOption) CondRemoveByDifferentTransaction(b bool) KVCCRemoveTxnRecordOption {
+	opt.CondSetOperatedByDifferentTxn(b)
+	return opt
+}
+func (opt KVCCRemoveTxnRecordOption) CondRollback(b bool) KVCCRemoveTxnRecordOption {
+	if b {
+		opt.Flag |= KVCCRemoveTxnRecordOptBitMaskRollback
+	}
+	return opt
+}
+
+func (opt KVCCRemoveTxnRecordOption) IsRollback() bool {
+	return opt.Flag&KVCCRemoveTxnRecordOptBitMaskRollback == KVCCRemoveTxnRecordOptBitMaskRollback
 }
 
 type KVCC interface {
 	Get(ctx context.Context, key string, opt KVCCReadOption) (ValueCC, error)
 	Set(ctx context.Context, key string, val Value, opt KVCCWriteOption) error
+	UpdateMeta(ctx context.Context, key string, version uint64, opt KVCCUpdateMetaOption) error
+	RollbackKey(ctx context.Context, key string, version uint64, opt KVCCRollbackKeyOption) error
+	RemoveTxnRecord(ctx context.Context, version uint64, opt KVCCRemoveTxnRecordOption) error
 	Close() error
 }

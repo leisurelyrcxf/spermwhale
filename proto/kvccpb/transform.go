@@ -13,31 +13,7 @@ func (x *KVCCWriteOption) Validate() error {
 			Msg:  "WriteOption == nil",
 		}
 	}
-	if x.IsClearWriteIntent() && x.IsRemoveVersion() {
-		return &commonpb.Error{
-			Code: consts.ErrCodeInvalidRequest,
-			Msg:  "x.isClearWriteIntent() && x.isRemoveVersion()",
-		}
-	}
-	if x.IsRollbackVersion() && !x.IsRemoveVersion() {
-		return &commonpb.Error{
-			Code: consts.ErrCodeInvalidRequest,
-			Msg:  "x.IsRollbackVersion() && !x.IsRemoveVersion()",
-		}
-	}
 	return nil
-}
-
-func (x *KVCCWriteOption) IsClearWriteIntent() bool {
-	return consts.IsWriteOptClearWriteIntent(uint8(x.Flag))
-}
-
-func (x *KVCCWriteOption) IsRemoveVersion() bool {
-	return consts.IsWriteOptRemoveVersion(uint8(x.Flag))
-}
-
-func (x *KVCCWriteOption) IsRollbackVersion() bool {
-	return consts.IsWriteOptRollbackVersion(uint8(x.Flag))
 }
 
 func (x *KVCCWriteOption) GetFlagSafe() uint8 {
@@ -64,12 +40,6 @@ func (x *KVCCSetRequest) Validate() error {
 	}
 	if x.Value.IsEmpty() {
 		return errors.Annotatef(errors.ErrInvalidRequest, "x.Value.IsEmpty()")
-	}
-	if x.Opt.IsClearWriteIntent() && x.Value.Meta.IsDirty() {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsClearWriteIntent() && x.Value.Meta.IsDirty()")
-	}
-	if x.Opt.IsRemoveVersion() && x.Value.Meta.IsDirty() {
-		return errors.Annotatef(errors.ErrInvalidRequest, "x.Opt.IsRemoveVersion() && x.Value.Meta.IsDirty()")
 	}
 	return nil
 }

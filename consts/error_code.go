@@ -41,8 +41,9 @@ const (
 	ErrCodeTabletWriteTransactionNotFound                         = 91
 	ErrCodeTransactionRecordNotFoundAndWontBeWritten              = 92
 	ErrCodeTransactionRecordNotFoundAndFoundRollbackedValue       = 93
-	ErrCodePrevWriterNotFinishedYet                               = 94
-	ErrCodeInternalVersionSmallerThanPrevWriter                   = 95
+	ErrCodeTransactionRecordAborted                               = 94
+	ErrCodePrevWriterNotFinishedYet                               = 95
+	ErrCodeInternalVersionSmallerThanPrevWriter                   = 96
 
 	ErrCodeNilResponse                                       int32 = 99
 	ErrCodeInvalidResponse                                         = 100

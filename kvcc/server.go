@@ -41,6 +41,21 @@ func (stub *Stub) Set(ctx context.Context, req *kvccpb.KVCCSetRequest) (*kvccpb.
 	return &kvccpb.KVCCSetResponse{Err: errors.ToPBError(err)}, nil
 }
 
+func (stub *Stub) UpdateMeta(ctx context.Context, req *kvccpb.KVCCUpdateMetaRequest) (*kvccpb.KVCCUpdateMetaResponse, error) {
+	err := stub.kvcc.UpdateMeta(ctx, req.Key, req.Version, types.NewKVCCCUpdateMetaOptionFromPB(req.Opt))
+	return &kvccpb.KVCCUpdateMetaResponse{Err: errors.ToPBError(err)}, nil
+}
+
+func (stub *Stub) RollbackKey(ctx context.Context, req *kvccpb.KVCCRollbackKeyRequest) (*kvccpb.KVCCRollbackKeyResponse, error) {
+	err := stub.kvcc.RollbackKey(ctx, req.Key, req.Version, types.NewKVCCCRollbackKeyOptionFromPB(req.Opt))
+	return &kvccpb.KVCCRollbackKeyResponse{Err: errors.ToPBError(err)}, nil
+}
+
+func (stub *Stub) RemoveTxnRecord(ctx context.Context, req *kvccpb.KVCCRemoveTxnRecordRequest) (*kvccpb.KVCCRemoveTxnRecordResponse, error) {
+	err := stub.kvcc.RemoveTxnRecord(ctx, req.Version, types.NewKVCCCRemoveTxnRecordOptionFromPB(req.Opt))
+	return &kvccpb.KVCCRemoveTxnRecordResponse{Err: errors.ToPBError(err)}, nil
+}
+
 type Server struct {
 	Port int
 

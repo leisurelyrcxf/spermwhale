@@ -39,14 +39,19 @@ const (
 )
 
 const (
-	CommonWriteOptBitMaskTxnRecord        = 1
-	CommonWriteOptBitMaskClearWriteIntent = 1 << 1
-	CommonWriteOptBitMaskRemoveVersion    = 1 << 2
+	KVKVCCWriteOptOptBitMaskTxnRecord = 1
 
-	KVCCWriteOptBitMaskWriteByDifferentTxn                   = 1 << 3
-	KVCCWriteOptBitMaskRemoveVersionRollback                 = 1 << 4
-	KVCCWriteOptBitMaskReadModifyWrite                       = 1 << 5
-	KVCCWriteOptBitMaskReadModifyWriteRollbackOrClearReadKey = 1 << 6
+	KVCCWriteOptBitMaskReadModifyWrite = 1 << 2
+
+	CommonKVCCOpsOptBitMaskOperatedByDifferentTxn = 1
+	CommonKVCCOpsOptBitMaskIsReadOnlyKey          = 1 << 1
+	CommonKVCCOpsOptBitMaskReadModifyWrite        = 1 << 2
+
+	KVCCUpdateMetaOptBitMaskStartBit           = 5
+	KVCC2KVUpdateMetaOptExtractor              = (0xff << KVCCUpdateMetaOptBitMaskStartBit) & 0xff
+	KVKVCCUpdateMetaOptBitMaskClearWriteIntent = 1 << KVCCUpdateMetaOptBitMaskStartBit
+
+	KVCCRemoveTxnRecordOptBitMaskRollback = 1 << 6
 )
 
 const (
@@ -57,29 +62,22 @@ const (
 )
 
 const (
-	ValueMetaBitMaskCommitted = 1
-	ValueMetaBitMaskAborted   = 1 << 1
+	ValueMetaBitMaskHasWriteIntent       = 1
+	ValueMetaBitMaskCommitted            = 1 << 1
+	ValueMetaBitMaskAborted              = 1 << 2
+	ValueMetaBitMaskPreventedFutureWrite = 1 << 7
 
-	ClearValueMetaBitMaskCommitted = (^ValueMetaBitMaskCommitted) & 0xff
-	ClearValueMetaBitMaskAborted   = (^ValueMetaBitMaskAborted) & 0xff
-
-	TValueBitMaskPreventedFutureWrite = 1
+	clearWriteIntent = (^ValueMetaBitMaskHasWriteIntent) & 0xff
 )
 
-func IsWriteTxnRecord(flag uint8) bool {
-	return flag&CommonWriteOptBitMaskTxnRecord == CommonWriteOptBitMaskTxnRecord
+func IsDirty(flag uint8) bool {
+	return flag&ValueMetaBitMaskHasWriteIntent == ValueMetaBitMaskHasWriteIntent
 }
 
-func IsWriteOptClearWriteIntent(flag uint8) bool {
-	return flag&CommonWriteOptBitMaskClearWriteIntent == CommonWriteOptBitMaskClearWriteIntent
-}
-
-func IsWriteOptRemoveVersion(flag uint8) bool {
-	return flag&CommonWriteOptBitMaskRemoveVersion == CommonWriteOptBitMaskRemoveVersion
-}
-
-func IsWriteOptRollbackVersion(flag uint8) bool {
-	return flag&KVCCWriteOptBitMaskRemoveVersionRollback == KVCCWriteOptBitMaskRemoveVersionRollback
+func WithCommitted(flag uint8) uint8 {
+	flag &= clearWriteIntent
+	flag |= ValueMetaBitMaskCommitted
+	return flag
 }
 
 const (

@@ -194,7 +194,7 @@ func (ks WriteKeyInfos) MarkWrittenKeyRollbacked(key string) {
 }
 
 func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
-	assert.Must(!value.IsDirty())
+	assert.Must(value.IsCommitted())
 	//v, ok := ks.keys[key]
 	//assert.Must(ok) // key may not exist
 	//assert.Must(v.LastWrittenVersion == consts. == value.InternalVersion)

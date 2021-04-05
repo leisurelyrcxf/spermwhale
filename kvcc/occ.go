@@ -143,11 +143,11 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 		glog.Infof("txn-%d get key '%s' succeeded, dirty: %v%s, cost: %s", opt.ReaderVersion, key, valCC.IsDirty(), errDesc, bench.Elapsed())
 	}
 
-	if val.IsAborted() && !exactVersion {
+	if !exactVersion && val.IsAborted() {
 		assert.Must(err == nil && val.Version != 0 && opt.IsUpdateTimestampCache())
 		*dbReadVersion = val.Version - 1
 		if try < consts.MaxRetryTxnGet {
-			return val.WithMaxReadVersion(0), nil, true
+			return types.EmptyValueCC, nil, true
 		}
 	}
 
@@ -194,7 +194,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 
 	defer func() {
 		assert.Must(err != nil || (exactVersion && val.Version == opt.ExactVersion) || (!exactVersion && val.Version <= opt.ReaderVersion))
-		if !val.IsDirty() {
+		if val.IsCommitted() {
 			return
 		}
 		if err != nil && (!exactVersion || !errors.IsNotExistsErr(err)) {
@@ -220,6 +220,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 		if opt.IsWaitWhenReadDirty() {
 			if waitErr := txn.WaitTerminateWithTimeout(ctx, consts.DefaultReadTimeout/10); waitErr != nil {
 				glog.V(8).Infof("[KVCC:getValue][txn-%d][key-'%s'] failed to wait terminate for txn-%d", opt.ReaderVersion, key, txn.ID.Version())
+				return
 			}
 		}
 
@@ -265,7 +266,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 
 		if writerVersion := w.ID.Version(); w.IsCommitted() {
 			assert.Must(val.Version == writerVersion && err == nil)
-			val = val.WithNoWriteIntent()
+			val = val.WithCommitted()
 			return val, nil
 		}
 		if exactVersion {
@@ -285,7 +286,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	}
 	for i, readerVersion := 0, uint64(0); ; {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
-		if val, err = kv.db.Get(ctx, key, opt.WithKVReadVersion(*dbReadVersion)); err != nil || !val.IsDirty() {
+		if val, err = kv.db.Get(ctx, key, opt.WithKVReadVersion(*dbReadVersion)); err != nil || val.IsCommitted() {
 			return val, err
 		}
 		if readerVersion = val.Version - 1; readerVersion < opt.MinAllowedSnapshotVersion {
@@ -300,6 +301,46 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	}
 }
 
+func (kv *KVCC) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption) (err error) {
+	assert.Must(key != "")
+	if !opt.IsClearWriteIntent() {
+		return errors.ErrNotSupported
+	}
+	inserted, txn := kv.txnManager.MustInsertTxnIfNotExists(types.TxnId(version), kv.db)
+	if inserted {
+		glog.V(OCCVerboseLevel).Infof("[KVCC::UpdateMeta] created new txn-%d", txn.ID)
+	}
+	err = txn.ClearWriteIntent(ctx, key, opt)
+	if opt.IsReadModifyWrite() {
+		kv.txnManager.SignalReadModifyWriteKeyEvent(types.TxnId(version), transaction.NewReadModifyWriteKeyEvent(key,
+			transaction.GetReadModifyWriteKeyEventTypeClearWriteIntent(err == nil)))
+	}
+	return err
+}
+
+func (kv *KVCC) RollbackKey(ctx context.Context, key string, version uint64, opt types.KVCCRollbackKeyOption) (err error) {
+	inserted, txn := kv.txnManager.MustInsertTxnIfNotExists(types.TxnId(version), kv.db)
+	if inserted {
+		glog.V(OCCVerboseLevel).Infof("[KVCC::RollbackKey] created new txn-%d", txn.ID)
+	}
+	if err = txn.RollbackKey(ctx, key, opt); err == nil {
+		kv.tsCache.RemoveVersion(key, version)
+	}
+	if opt.IsReadModifyWrite() {
+		kv.txnManager.SignalReadModifyWriteKeyEvent(types.TxnId(version), transaction.NewReadModifyWriteKeyEvent(key,
+			transaction.GetReadModifyWriteKeyEventTypeRemoveVersion(err == nil)))
+	}
+	return err
+}
+
+func (kv *KVCC) RemoveTxnRecord(ctx context.Context, version uint64, opt types.KVCCRemoveTxnRecordOption) error {
+	inserted, txn := kv.txnManager.MustInsertTxnIfNotExists(types.TxnId(version), kv.db)
+	if inserted {
+		glog.V(OCCVerboseLevel).Infof("[KVCC::RemoveTxnRecord] created new txn-%d", txn.ID)
+	}
+	return txn.RemoveTxnRecord(ctx, opt)
+}
+
 // Set must be non-blocking in current io framework.
 func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
 	var (
@@ -307,36 +348,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		txnId       = types.TxnId(val.Version)
 	)
 	assert.Must((!isTxnRecord && key != "") || (isTxnRecord && key == ""))
-	if !val.IsDirty() {
-		inserted, txn := kv.txnManager.MustInsertTxnIfNotExists(txnId, kv.db)
-		if inserted {
-			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::ClearOrRemoveVersion] created new txn-%d", txn.ID)
-		}
-		if isTxnRecord {
-			return txn.RemoveTxnRecord(ctx, val, opt)
-		}
-		var (
-			isClearWriteIntent = opt.IsClearWriteIntent()
-			isRollbackKey      = opt.IsRollbackKey()
-			err                error
-		)
-		assert.Must(isClearWriteIntent || isRollbackKey)
-		assert.Must(!isClearWriteIntent || !isRollbackKey)
-		if err = txn.DoneKey(ctx, key, val, opt); err == nil && isRollbackKey {
-			kv.tsCache.RemoveVersion(key, val.Version)
-		}
-		if opt.IsReadModifyWrite() {
-			if isClearWriteIntent {
-				kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key,
-					transaction.GetReadModifyWriteKeyEventTypeClearWriteIntent(err == nil)))
-			} else {
-				kv.txnManager.SignalReadModifyWriteKeyEvent(txnId, transaction.NewReadModifyWriteKeyEvent(key,
-					transaction.GetReadModifyWriteKeyEventTypeRemoveVersion(err == nil)))
-			}
-		}
-		return err
-	}
-
+	assert.Must(val.IsDirty())
 	assert.Must(!val.IsWriteOfKey() || !isTxnRecord)
 	assert.Must(val.IsWriteOfKey() || isTxnRecord)
 
@@ -398,6 +410,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	w, err := kv.tsCache.TryLock(key, val.Meta.ToDB(), txn)
 	if err != nil {
 		txn.Unlock()
+
 		return err
 	}
 	err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption())

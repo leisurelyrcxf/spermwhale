@@ -16,6 +16,17 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
+const ClearValueMetaBitMaskCommitted = (^consts.ValueMetaBitMaskCommitted) & 0xff
+
+func newValueWithoutWriteIntent(val []byte, version uint64) types.Value {
+	return types.Value{
+		Meta: types.Meta{
+			Version: version,
+		},
+		V: val,
+	}
+}
+
 func RunTestCase(t types.T, rounds int, newDB func() (*DB, error), testCase func(t types.T, db *DB) bool) (b bool) {
 	testifyassert.NoError(t, flag.Set("logtostderr", "true"))
 	testifyassert.NoError(t, flag.Set("v", "10"))
@@ -96,7 +107,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			assert.True(ok)
 			val := types.NewValue(obj.V, version).WithInternalVersion(obj.InternalVersion)
 			if !obj.WriteIntent {
-				return val.WithNoWriteIntent()
+				return val.WithCommitted()
 			}
 			return val
 		}
@@ -117,7 +128,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 			if err := db.Set(ctx, key, types.NewValue(nil, version), types.NewKVWriteOption()); !assert.NoError(err) {
 				return
 			}
-			if err := db.Set(ctx, key, types.NewValue(nil, version).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
+			if err := db.RollbackKey(ctx, key, version); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
 				return
 			}
 			utils.WithLogLevel(0, func() {
@@ -165,7 +176,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	if val, err := db.Get(ctx, key, types.NewKVReadOption(1).WithExactVersion()); !assertValueOfVersion(val, err, 1) {
 		return
 	}
-	if err := db.Set(ctx, key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !assert.NoError(err) {
+	if err := db.ClearWriteIntent(ctx, key, 1); !assert.NoError(err) {
 		return
 	}
 	clearWriteIntentOfVersion(1)
@@ -174,21 +185,23 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
-			value.Flag &= consts.ClearValueMetaBitMaskCommitted
+		if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
+			value.Flag &= ClearValueMetaBitMaskCommitted
+			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
 			return
 		}
-		if err := db.Set(ctx, key, types.NewValue(nil, 2).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !assert.NoError(err) {
+		if err := db.RollbackKey(ctx, key, 2); !assert.NoError(err) {
 			return
 		}
-		if val, err := db.Get(ctx, key, types.NewKVReadOption(3)); !assertValueOfVersion(val, err, 1) || !assert.False(val.IsDirty()) {
+		if val, err := db.Get(ctx, key, types.NewKVReadOption(3)); !assertValueOfVersion(val, err, 1) || !assert.True(val.IsCommitted()) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
-				value.Flag &= consts.ClearValueMetaBitMaskCommitted
+			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
+				value.Flag &= ClearValueMetaBitMaskCommitted
+				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return
@@ -197,18 +210,20 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 	}
 
 	{
-		if err := db.updateFlagOfKey(ctx, key, 1, 0, func(value types.DBValue) types.DBValue {
-			value.Flag &= consts.ClearValueMetaBitMaskCommitted
+		if err := db.updateFlagOfKey(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
+			value.Flag &= ClearValueMetaBitMaskCommitted
+			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
 			return
 		}
-		if err := db.Set(ctx, key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !assert.NoError(err) {
+		if err := db.RollbackKey(ctx, key, 1); !assert.NoError(err) {
 			return
 		}
 		utils.WithLogLevel(0, func() {
-			if err := db.updateFlagOfKey(ctx, key, 2, 0, func(value types.DBValue) types.DBValue {
-				value.Flag &= consts.ClearValueMetaBitMaskCommitted
+			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
+				value.Flag &= ClearValueMetaBitMaskCommitted
+				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return
@@ -263,7 +278,7 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 			if err := db.Set(ctx, "", types.NewValue(nil, version), writeOpt); !assert.NoError(err) {
 				return
 			}
-			if err := db.Set(ctx, "", types.NewValue(nil, version).WithNoWriteIntent(), writeOpt.WithRemoveVersion()); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
+			if err := db.RemoveTxnRecord(ctx, version); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
 				return
 			}
 			if val, err := db.Get(ctx, "", newReadOpt(version)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) || !assert.True(val.IsEmpty()) {
@@ -293,14 +308,14 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 	if _, err := db.Get(ctx, "", newReadOpt(0)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 		return
 	}
-	if err := db.Set(ctx, "", types.NewValue(nil, 2).WithNoWriteIntent(), writeOpt.WithRemoveVersion()); !assert.NoError(err) {
+	if err := db.RemoveTxnRecord(ctx, 2); !assert.NoError(err) {
 		return
 	}
-	if err := db.Set(ctx, "", types.NewValue(nil, 1).WithNoWriteIntent(), writeOpt.WithRemoveVersion()); !assert.NoError(err) {
+	if err := db.RemoveTxnRecord(ctx, 1); !assert.NoError(err) {
 		return
 	}
 	utils.WithLogLevel(0, func() {
-		if err := db.Set(ctx, "", types.NewValue(nil, 3).WithNoWriteIntent(), writeOpt.WithRemoveVersion()); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
+		if err := db.RemoveTxnRecord(ctx, 3); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {
 			return
 		}
 		if val, err := db.Get(ctx, "", newReadOpt(3)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) || !assert.True(val.IsEmpty()) {
@@ -313,36 +328,6 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 			return
 		}
 	})
-	return true
-}
-
-func TestConcurrentInsert(t types.T, db *DB) (b bool) {
-	assert := types.NewAssertion(t)
-	const key = "key_update"
-
-	if !assert.NoError(db.Set(context.Background(), key, types.NewValue([]byte("111"), 1), types.NewKVWriteOption())) {
-		return
-	}
-
-	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
-			if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(),
-				types.NewKVWriteOption()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrVersionAlreadyExists) {
-				return
-			}
-		}()
-	}
-
-	wg.Wait()
-	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.True(!val.IsDirty()) {
-		return
-	}
 	return true
 }
 
@@ -362,14 +347,14 @@ func TestCausalConsistency(t types.T, db *DB) (b bool) {
 	go func() {
 		defer close(done)
 
-		if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !assert.NoError(err) {
+		if err := db.ClearWriteIntent(context.Background(), key, 1); !assert.NoError(err) {
 			return
 		}
 	}()
 
 	<-done
 	val, err = db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	return assert.NoError(err) && assert.True(!val.IsDirty())
+	return assert.NoError(err) && assert.True(val.IsCommitted())
 }
 
 const (
@@ -392,7 +377,7 @@ func TestConcurrentClearWriteIntent(t types.T, db *DB) (b bool) {
 		go func() {
 			defer wg.Done()
 
-			if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !assert.NoError(err) {
+			if err := db.ClearWriteIntent(context.Background(), key, 1); !assert.NoError(err) {
 				return
 			}
 		}()
@@ -412,7 +397,7 @@ func TestConcurrentClearWriteIntent(t types.T, db *DB) (b bool) {
 
 	wg.Wait()
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
-	if !assert.NoError(err) || !assert.False(val.IsDirty()) {
+	if !assert.NoError(err) || !assert.True(val.IsCommitted()) {
 		return
 	}
 	return true
@@ -433,7 +418,7 @@ func TestConcurrentRemoveVersion(t types.T, db *DB) (b bool) {
 		go func() {
 			defer wg.Done()
 
-			if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !assert.NoError(err) {
+			if err := db.RollbackKey(context.Background(), key, 1); !assert.NoError(err) {
 				return
 			}
 		}()
@@ -475,11 +460,11 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 			defer wg.Done()
 
 			if i%2 == 0 {
-				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithClearWriteIntent()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist) {
+				if err := db.ClearWriteIntent(context.Background(), key, 1); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist) {
 					return
 				}
 			} else {
-				if err := db.Set(context.Background(), key, types.NewValue(nil, 1).WithNoWriteIntent(), types.NewKVWriteOption().WithRemoveVersion()); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrCantRemoveCommittedValue) {
+				if err := db.RollbackKey(context.Background(), key, 1); !errors.AssertNilOrErr(&assert.Assertions, err, errors.ErrCantRemoveCommittedValue) {
 					return
 				}
 			}
@@ -489,7 +474,7 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 	wg.Wait()
 	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
 	if err == nil {
-		return assert.Equal(uint64(1), val.Version) && assert.False(val.IsDirty())
+		return assert.Equal(uint64(1), val.Version) && assert.True(val.IsCommitted())
 	}
 	return errors.AssertIsErr(&assert.Assertions, err, errors.ErrKeyOrVersionNotExist)
 }
@@ -501,4 +486,8 @@ func (db *DB) updateFlagOfKey(ctx context.Context, key string, version uint64, n
 		}
 		return err
 	})
+}
+
+func (db *DB) ClearWriteIntent(ctx context.Context, key string, version uint64) error {
+	return db.UpdateMeta(ctx, key, version, consts.KVKVCCUpdateMetaOptBitMaskClearWriteIntent)
 }

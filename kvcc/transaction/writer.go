@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/leisurelyrcxf/spermwhale/errors"
@@ -16,7 +18,7 @@ import (
 type Writer struct {
 	*Transaction
 
-	types.DBMeta
+	Meta       types.DBMeta // NOTE: be cautious not inherit the type, otherwise will cause method conflict problem
 	OnUnlocked func()
 
 	writing   basic.AtomicBool
@@ -26,7 +28,7 @@ type Writer struct {
 
 func NewWriter(dbMeta types.DBMeta, txn *Transaction) *Writer {
 	assert.Must(dbMeta.IsDirty())
-	return &Writer{DBMeta: dbMeta, Transaction: txn}
+	return &Writer{Meta: dbMeta, Transaction: txn}
 }
 
 func (w *Writer) Lock() {
@@ -69,7 +71,7 @@ func (w *Writer) Succeeded() bool {
 
 func (w *Writer) ToValueIncomplete() types.Value {
 	return types.Value{
-		Meta: w.DBMeta.WithVersion(w.ID.Version()),
+		Meta: w.Meta.WithVersion(w.ID.Version()),
 		V:    nil,
 	}
 }
@@ -97,7 +99,7 @@ func (w *Writer) waitKeyRemoved(ctx context.Context, key string) error {
 
 // HasMoreWritingWriters is a dummy writer used to indicate that has
 // more pending writers afterwards, the Next list is not complete
-var HasMoreWritingWriters = NewWriter(types.DBMeta{}, newTransaction(types.MaxTxnId, nil, nil))
+var HasMoreWritingWriters = NewWriter(types.DBMeta{Flag: consts.ValueMetaBitMaskHasWriteIntent}, newTransaction(types.MaxTxnId, nil, nil))
 
 type WritingWriters []*Writer
 

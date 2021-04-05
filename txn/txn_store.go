@@ -149,7 +149,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		return nil, keyErr
 	}
 	if keyExists {
-		if !vv.IsDirty() {
+		if vv.IsCommitted() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
 			if txnId == callerTxn.ID {

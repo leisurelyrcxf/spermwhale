@@ -62,47 +62,51 @@ func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
 	return len(waiters) == 0 && waiters != nil
 }
 
-func (t *Transaction) DoneKey(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
-	var (
-		txnId         = types.TxnId(val.Version)
-		isRollbackKey = opt.IsRollbackKey()
-		err           error
-	)
-	assert.Must(opt.IsClearWriteIntent() || isRollbackKey)
-
+func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt types.KVCCUpdateMetaOption) (err error) {
 	// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed TODO needs test against kv.db.Set() failed.
-	action := t.terminate(isRollbackKey, "clear write intent of key", "rollback key")
+	t.Lock() // NOTE: Lock is must though seems not needed
+	t.SetTxnStateUnsafe(types.TxnStateCommitted)
+	t.Unlock()
 
-	if opt.IsReadModifyWriteRollbackOrClearReadKey() {
+	if opt.IsReadOnlyKey() {
 		return nil
 	}
 
-	if err = t.db.Set(ctx, key, val, opt.ToKVWriteOption()); err != nil {
+	if err = t.db.UpdateMeta(ctx, key, t.ID.Version(), opt.ToKV()); err != nil {
 		if glog.V(3) {
-			glog.Errorf("txn-%d %s '%s' failed: %v", txnId, action, key, err)
+			glog.Errorf("txn-%d clear write intent of key '%s' failed: %v", t.ID, key, err)
 		}
 		return err
 	}
 	if glog.V(60) {
-		glog.Infof("txn-%d %s '%s' succeeded, cost: %s", txnId, action, key, bench.Elapsed())
+		glog.Infof("txn-%d clear write intent of key '%s' succeeded, cost: %s", t.ID, key, bench.Elapsed())
 	}
-	t.doneOnce(key, isRollbackKey, opt, "DoneKey")
+	t.doneOnce(key, false, opt.IsOperatedByDifferentTxn(), "ClearWriteIntent")
 	return nil
 }
 
-func (t *Transaction) terminate(isRollback bool, commitAction, rollbackAction string) (action string) {
-	if !isRollback {
-		t.Lock() // NOTE: Lock is must though seems not needed
-		t.SetTxnStateUnsafe(types.TxnStateCommitted)
-		t.Unlock()
-		return commitAction
-	}
+func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVCCRollbackKeyOption) (err error) {
 	t.Lock()
 	if !t.IsAborted() {
 		t.SetTxnStateUnsafe(types.TxnStateRollbacking)
 	}
 	t.Unlock()
-	return rollbackAction
+
+	if opt.IsReadOnlyKey() {
+		return nil
+	}
+
+	if err = t.db.RollbackKey(ctx, key, t.ID.Version()); err != nil {
+		if glog.V(3) {
+			glog.Errorf("txn-%d rollback key '%s' failed: %v", t.ID, key, err)
+		}
+		return err
+	}
+	if glog.V(60) {
+		glog.Infof("txn-%d rollback key '%s' succeeded, cost: %s", t.ID, key, bench.Elapsed())
+	}
+	t.doneOnce(key, true, opt.IsOperatedByDifferentTxn(), "RollbackKey")
+	return nil
 }
 
 func (t *Transaction) GetMaxTxnRecordReadVersion() uint64 {
@@ -125,6 +129,11 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 	t.RUnlock()
 
 	val, err := t.db.Get(ctx, "", opt.ToKVReadOption())
+	if state := t.GetTxnState(); state.IsCommitted() {
+		val.SetCommitted()
+	} else if state.IsAborted() {
+		val.SetAborted()
+	}
 	if maxReadVersion != 0 {
 		return val.WithMaxReadVersion(maxReadVersion), err
 	}
@@ -164,23 +173,37 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 	return nil
 }
 
-func (t *Transaction) RemoveTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {
-	assert.Must(opt.IsRemoveVersion())
+func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveTxnRecordOption) (err error) {
 	var (
-		isRollback = opt.IsRollbackVersion()
+		action     string
+		isRollback = opt.IsRollback()
 	)
-	action := t.terminate(isRollback, "clear txn record on commit", "rollback txn record")
+	if !isRollback {
+		action = "clear txn record on commit"
 
-	if err = t.db.Set(ctx, "", val, opt.ToKVWriteOption()); err != nil {
+		t.Lock() // NOTE: Lock is must though seems not needed
+		t.SetTxnStateUnsafe(types.TxnStateCommitted)
+		t.Unlock()
+	} else {
+		action = "rollback txn record"
+
+		t.Lock()
+		if !t.IsAborted() {
+			t.SetTxnStateUnsafe(types.TxnStateRollbacking)
+		}
+		t.Unlock()
+	}
+
+	if err = t.db.RemoveTxnRecord(ctx, t.ID.Version()); err != nil {
 		if glog.V(4) {
-			glog.Errorf("[RemoveTxnRecord][txn-%d] %s failed: %v", val.Version, action, err)
+			glog.Errorf("[RemoveTxnRecord][txn-%d] %s failed: %v", t.ID, action, err)
 		}
 		return err
 	}
 	if glog.V(60) {
-		glog.Infof("[RemoveTxnRecord][txn-%d] %s succeeded, cost %s", val.Version, action, bench.Elapsed())
+		glog.Infof("[RemoveTxnRecord][txn-%d] %s succeeded, cost %s", t.ID, action, bench.Elapsed())
 	}
-	t.doneOnce(types.TxnId(val.Version).String(), isRollback, opt, "RemoveTxnRecord")
+	t.doneOnce(t.ID.String(), isRollback, opt.IsOperatedByDifferentTxn(), "RemoveTxnRecord")
 	return nil
 }
 
@@ -203,8 +226,8 @@ func (t *Transaction) IsKeyDone(key string) (b bool) {
 	return t.writtenKeys.IsKeyDoneUnsafe(key)
 }
 
-func (t *Transaction) doneOnce(key string, isRollback bool, opt types.KVCCWriteOption, caller string) (doneOnce bool) {
-	if opt.IsWriteByDifferentTransaction() {
+func (t *Transaction) doneOnce(key string, isRollback bool, isOperatedByDifferentTxn bool, caller string) (doneOnce bool) {
+	if isOperatedByDifferentTxn {
 		return false
 	}
 
@@ -218,7 +241,7 @@ func (t *Transaction) doneOnce(key string, isRollback bool, opt types.KVCCWriteO
 		t.Unlock()
 
 		if glog.V(60) {
-			glog.Infof("[Transaction::%s] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", caller, t.ID, t.GetTxnState(), t.writtenKeys.GetAddedKeyCountUnsafe(), key)
+			glog.Infof("[Transaction::%s][doneOnce] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", caller, t.ID, t.GetTxnState(), t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		}
 
 		t.GC()
@@ -230,7 +253,7 @@ func (t *Transaction) doneOnce(key string, isRollback bool, opt types.KVCCWriteO
 }
 
 // Hide AtomicTxnState::SetTxnState
-func (t *Transaction) SetTxnState(state types.TxnState) (newState types.TxnState, terminateOnce bool) {
+func (t *Transaction) SetTxnState(_ types.TxnState) (newState types.TxnState, terminateOnce bool) {
 	panic(errors.ErrNotSupported)
 }
 
@@ -258,6 +281,7 @@ func (t *Transaction) waitTerminate(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-t.terminated:
+		assert.Must(t.IsTerminated())
 		return nil
 	}
 }
