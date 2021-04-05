@@ -159,7 +159,8 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		if vv.IsCommitted() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
-			txn.MarkCommittedCleared(key, vv.Value)
+			txn.MarkCommitted(key, vv.Value)
+			//txn.MarkCommittedCleared(key, vv.Value) // TODO this is unsafe
 			return txn, nil
 		}
 		// Must haven't committed.

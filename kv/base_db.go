@@ -17,7 +17,7 @@ var (
 )
 
 type KeyStore interface {
-	Get(ctx context.Context, key string, version uint64) (types.DBValue, error)
+	Get(ctx context.Context, key string, version uint64) (types.DBValue, error) // TODO add metaOnly
 	Upsert(ctx context.Context, key string, version uint64, val types.DBValue) error
 	Remove(ctx context.Context, key string, version uint64) error
 	RemoveIf(ctx context.Context, key string, version uint64, pred func(prev types.DBValue) error) error
@@ -90,6 +90,7 @@ func (db *DB) UpdateMeta(ctx context.Context, key string, version uint64, opt ty
 			return value.WithCommitted()
 		}, func(err error) error {
 			if !test {
+				_, _ = key, version
 				glog.Fatalf("want to clear write intent for version %d of key %s, but the version doesn't exist", version, key)
 			}
 			return err

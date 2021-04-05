@@ -193,6 +193,15 @@ func (ks WriteKeyInfos) MarkWrittenKeyRollbacked(key string) {
 	ks.keys[key] = v
 }
 
+func (ks WriteKeyInfos) MarkCommitted(key string, value types.Value) {
+	v := ks.keys[key]
+	assert.Must(!ks.completed || v.LastWrittenVersion == value.InternalVersion)
+	v.LastWrittenVersion = value.InternalVersion
+	v.Committed = true
+
+	ks.keys[key] = v
+}
+
 func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
 	assert.Must(value.IsCommitted())
 	//v, ok := ks.keys[key]

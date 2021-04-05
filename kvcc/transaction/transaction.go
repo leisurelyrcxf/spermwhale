@@ -78,6 +78,7 @@ func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt type
 		}
 		return err
 	}
+	// TODO add state CommittedCleared maybe
 	if glog.V(60) {
 		glog.Infof("txn-%d clear write intent of key '%s' succeeded, cost: %s", t.ID, key, bench.Elapsed())
 	}
@@ -162,7 +163,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 	}
 
 	if err := t.db.Set(ctx, "", val, opt.ToKVWriteOption()); err != nil {
-		if glog.V(4) {
+		if glog.V(4) && err != errors.ErrInject {
 			glog.Errorf("[Transaction::SetTxnRecord] txn-%d set txn-record failed: '%v", val.Version, err)
 		}
 		return err

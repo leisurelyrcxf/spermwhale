@@ -120,6 +120,10 @@ func (opt KVReadOption) IsReadExactVersion() bool {
 	return opt.Flag&KVReadOptBitMaskExactVersion == KVReadOptBitMaskExactVersion
 }
 
+func (opt KVReadOption) IsMetaOnly() bool {
+	return opt.Flag&KVReadOptBitMaskMetaOnly == KVReadOptBitMaskMetaOnly
+}
+
 type KVWriteOption struct {
 	flag uint8
 }

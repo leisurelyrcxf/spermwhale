@@ -14,7 +14,13 @@ func TestValue(t *testing.T) {
 
 	{
 		v := v.WithCommitted()
-		assert.False(v.IsDirty())
+		assert.True(!v.IsDirty() && v.IsCommitted())
+	}
+
+	{
+		v := v
+		v.SetAborted()
+		assert.True(v.IsDirty() && v.IsAborted())
 	}
 }
 

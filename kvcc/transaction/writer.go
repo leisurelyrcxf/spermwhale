@@ -62,14 +62,7 @@ func (w *Writer) Succeeded() bool {
 	return w.succeeded.Get()
 }
 
-//func (w *Writer) ToValue() types.Value {
-//	return types.Value{
-//		Meta: w.DBMeta.WithVersion(w.ID.Version()).WithTxnState(w.GetTxnState()),
-//		V:    nil,
-//	}
-//}
-
-func (w *Writer) ToValueIncomplete() types.Value {
+func (w *Writer) ToValue() types.Value {
 	return types.Value{
 		Meta: w.Meta.WithVersion(w.ID.Version()),
 		V:    nil,

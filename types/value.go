@@ -71,18 +71,6 @@ func (m Meta) IsAborted() bool {
 	return m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
 }
 
-func (m Meta) WithTxnState(state TxnState) Meta {
-	if state.IsCommitted() {
-		assert.Must(!m.IsAborted())
-		m.SetCommitted()
-	}
-	if state.IsAborted() {
-		assert.Must(m.IsDirty())
-		m.SetAborted()
-	}
-	return m
-}
-
 type Value struct {
 	Meta
 

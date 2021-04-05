@@ -151,6 +151,9 @@ func (opt KVCCReadOption) ToKVReadOption() (kvOpt KVReadOption) {
 	if opt.IsTxnRecord() {
 		kvOpt.Flag |= KVReadOptBitMaskTxnRecord
 	}
+	if opt.IsMetaOnly() {
+		kvOpt.Flag |= KVReadOptBitMaskMetaOnly
+	}
 	return kvOpt
 }
 
