@@ -68,6 +68,8 @@ const (
 	ValueMetaBitMaskAborted              = 1 << 2
 	ValueMetaBitMaskPreventedFutureWrite = 1 << 7
 
+	ValueMetaBitMaskTerminated = ValueMetaBitMaskCommitted | ValueMetaBitMaskAborted
+
 	clearWriteIntent = (^ValueMetaBitMaskHasWriteIntent) & 0xff
 )
 

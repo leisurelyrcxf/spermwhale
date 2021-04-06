@@ -43,23 +43,19 @@ type Transaction struct {
 	txnRecordMaxReadVersion uint64
 	terminated              chan struct{}
 
-	GC func(*Transaction)
+	Unref func(*Transaction)
 }
 
-func newTransaction(id types.TxnId, db types.KV, destroy func(*Transaction)) *Transaction {
-	return &Transaction{
+func newTransaction(id types.TxnId, db types.KV, unref func(*Transaction)) *Transaction {
+	t := &Transaction{
 		ID:             id,
 		db:             db,
 		AtomicTxnState: types.NewAtomicTxnState(types.TxnStateUncommitted),
 		terminated:     make(chan struct{}),
-		GC:             destroy,
+		Unref:          unref,
 	}
-}
-
-var invalidKeyWaiters = make([]*KeyEventWaiter, 0, 0)
-
-func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
-	return len(waiters) == 0 && waiters != nil
+	t.writtenKeys.Initialize()
+	return t
 }
 
 func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt types.KVCCUpdateMetaOption) (err error) {
@@ -68,22 +64,28 @@ func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt type
 	t.SetTxnStateUnsafe(types.TxnStateCommitted)
 	t.Unlock()
 
-	if opt.IsReadOnlyKey() {
-		return nil
+	var readonly bool
+	if readonly, err = clearWriteIntent(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
+		t.doneOnce(key, false, opt.IsOperatedByDifferentTxn(), "ClearWriteIntent")
 	}
+	return err
+}
 
-	if err = t.db.UpdateMeta(ctx, key, t.ID.Version(), opt.ToKV()); err != nil {
+func clearWriteIntent(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption, db types.KV) (readOnly bool, _ error) {
+	if opt.IsReadOnlyKey() {
+		return true, nil
+	}
+	if err := db.UpdateMeta(ctx, key, version, opt.ToKV()); err != nil {
 		if glog.V(3) {
-			glog.Errorf("txn-%d clear write intent of key '%s' failed: %v", t.ID, key, err)
+			glog.Errorf("txn-%d clear write intent of key '%s' failed: %v", version, key, err)
 		}
-		return err
+		return false, err
 	}
 	// TODO add state CommittedCleared maybe
 	if glog.V(60) {
-		glog.Infof("txn-%d clear write intent of key '%s' succeeded, cost: %s", t.ID, key, bench.Elapsed())
+		glog.Infof("txn-%d clear write intent of key '%s' succeeded, cost: %s", version, key, bench.Elapsed())
 	}
-	t.doneOnce(key, false, opt.IsOperatedByDifferentTxn(), "ClearWriteIntent")
-	return nil
+	return false, nil
 }
 
 func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVCCRollbackKeyOption) (err error) {
@@ -93,21 +95,27 @@ func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVC
 	}
 	t.Unlock()
 
-	if opt.IsReadOnlyKey() {
-		return nil
+	var readonly bool
+	if readonly, err = rollbackKey(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
+		t.doneOnce(key, true, opt.IsOperatedByDifferentTxn(), "RollbackKey")
 	}
+	return err
+}
 
-	if err = t.db.RollbackKey(ctx, key, t.ID.Version()); err != nil {
+func rollbackKey(ctx context.Context, key string, version uint64, opt types.KVCCRollbackKeyOption, db types.KV) (readonly bool, _ error) {
+	if opt.IsReadOnlyKey() {
+		return true, nil
+	}
+	if err := db.RollbackKey(ctx, key, version); err != nil {
 		if glog.V(3) {
-			glog.Errorf("txn-%d rollback key '%s' failed: %v", t.ID, key, err)
+			glog.Errorf("txn-%d rollback key '%s' failed: %v", version, key, err)
 		}
-		return err
+		return false, err
 	}
 	if glog.V(60) {
-		glog.Infof("txn-%d rollback key '%s' succeeded, cost: %s", t.ID, key, bench.Elapsed())
+		glog.Infof("txn-%d rollback key '%s' succeeded, cost: %s", version, key, bench.Elapsed())
 	}
-	t.doneOnce(key, true, opt.IsOperatedByDifferentTxn(), "RollbackKey")
-	return nil
+	return false, nil
 }
 
 func (t *Transaction) GetMaxTxnRecordReadVersion() uint64 {
@@ -120,6 +128,36 @@ func (t *Transaction) updateMaxTxnRecordReadVersion(readerVersion uint64) uint64
 	return readerVersion
 }
 
+func (t *Transaction) MustGetMeta(key string) (m types.Meta, isAborted bool) {
+	t.RLock()
+	defer t.RUnlock()
+
+	m = t.writtenKeys.MustGetDBMetaUnsafe(key).WithVersion(t.ID.Version())
+	isAborted = m.Update(t.GetTxnState())
+	return
+}
+
+func (t *Transaction) GetMetaOnlyValue(key string, readExactVersion bool) (val types.Value, err error, shouldRetry bool) {
+	t.RLock()
+	defer t.RUnlock()
+
+	dbMeta, ok := t.writtenKeys.GetDBMetaUnsafe(key)
+	if !ok {
+		assert.Must(!t.IsCommitted())
+		return types.EmptyValue, errors.ErrKeyOrVersionNotExist, false
+	}
+	meta := dbMeta.WithVersion(t.ID.Version())
+	isAborted := meta.Update(t.GetTxnState())
+	return types.Value{Meta: meta}, nil, isAborted && !readExactVersion
+}
+
+func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
+	t.RLock()
+	defer t.RUnlock()
+
+	return t.writtenKeys.HasPositiveInternalVersion(key, version)
+}
+
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
 	// NOTE: the lock is must though seems no needed
 	t.RLock()
@@ -130,11 +168,7 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 	t.RUnlock()
 
 	val, err := t.db.Get(ctx, "", opt.ToKVReadOption())
-	if state := t.GetTxnState(); state.IsCommitted() {
-		val.SetCommitted()
-	} else if state.IsAborted() {
-		val.SetAborted()
-	}
+	val.Update(t.GetTxnState())
 	if maxReadVersion != 0 {
 		return val.WithMaxReadVersion(maxReadVersion), err
 	}
@@ -158,7 +192,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteReadConflict
 	}
 
-	if txnKey := types.TxnId(val.Version).String(); t.AddUnsafe(txnKey) {
+	if txnKey := types.TxnId(val.Version).String(); t.writtenKeys.MustAddUnsafe(txnKey, val.Meta.ToDB()) {
 		glog.V(70).Infof("[Transaction::SetTxnRecord] txn-%d added key '%s'", val.Version, txnKey)
 	}
 
@@ -195,29 +229,27 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveT
 		t.Unlock()
 	}
 
-	if err = t.db.RemoveTxnRecord(ctx, t.ID.Version()); err != nil {
+	if err = removeTxnRecord(ctx, t.ID.Version(), action, t.db); err == nil {
+		t.doneOnce(t.ID.String(), isRollback, opt.IsOperatedByDifferentTxn(), "RemoveTxnRecord")
+	}
+	return err
+}
+
+func removeTxnRecord(ctx context.Context, version uint64, action string, db types.KV) (err error) {
+	if err = db.RemoveTxnRecord(ctx, version); err != nil {
 		if glog.V(4) {
-			glog.Errorf("[RemoveTxnRecord][txn-%d] %s failed: %v", t.ID, action, err)
+			glog.Errorf("[removeTxnRecord][txn-%d] %s failed: %v", version, action, err)
 		}
 		return err
 	}
 	if glog.V(60) {
-		glog.Infof("[RemoveTxnRecord][txn-%d] %s succeeded, cost %s", t.ID, action, bench.Elapsed())
+		glog.Infof("[removeTxnRecord][txn-%d] %s succeeded, cost %s", version, action, bench.Elapsed())
 	}
-	t.doneOnce(t.ID.String(), isRollback, opt.IsOperatedByDifferentTxn(), "RemoveTxnRecord")
 	return nil
 }
 
-func (t *Transaction) AddUnsafe(key string) (addedNewKey bool) {
-	assert.Must(!t.IsDoneUnsafe())
-	var keyDone bool
-	addedNewKey, keyDone = t.writtenKeys.AddUnsafe(key)
-	assert.Must(!keyDone)
-	return addedNewKey
-}
-
-func (t *Transaction) IsDoneUnsafe() bool {
-	return t.writtenKeys.IsDoneUnsafe()
+func (t *Transaction) MustAddWrittenKeyUnsafe(key string, meta types.DBMeta) (addedNewKey bool) {
+	return t.writtenKeys.MustAddUnsafe(key, meta)
 }
 
 func (t *Transaction) IsKeyDone(key string) (b bool) {
@@ -245,7 +277,7 @@ func (t *Transaction) doneOnce(key string, isRollback bool, isOperatedByDifferen
 			glog.Infof("[Transaction::%s][doneOnce] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", caller, t.ID, t.GetTxnState(), t.writtenKeys.GetAddedKeyCountUnsafe(), key)
 		}
 
-		t.GC(t)
+		t.Unref(t)
 		return doneOnce
 	}
 	t.Unlock()
@@ -282,7 +314,6 @@ func (t *Transaction) waitTerminate(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-t.terminated:
-		assert.Must(t.IsTerminated())
 		return nil
 	}
 }
@@ -391,4 +422,10 @@ func (t *Transaction) getWaiterCounts() (waiterCount, waiterKeyCount int) {
 		waiterCount += len(ws)
 	}
 	return waiterCount, len(t.keyEventWaiters)
+}
+
+var invalidKeyWaiters = make([]*KeyEventWaiter, 0, 0)
+
+func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
+	return len(waiters) == 0 && waiters != nil
 }

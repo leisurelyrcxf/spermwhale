@@ -617,11 +617,11 @@ func testTxnLostUpdateModAdd(ctx context.Context, ts *TestCase) (b bool) {
 
 func testTxnReadWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
 	const (
-		initialValue = 101
-		delta        = 6
+		key1InitialValue, key2InitialValue = 99, 101
+		key1Delta, key2Delta               = 6, 10
 	)
 	sc := ts.scs[0]
-	if err := sc.SetInt(ctx, "k1", initialValue); !ts.NoError(err) {
+	if err := sc.MSetInts(ctx, []string{"k1", "k2"}, []int{key1InitialValue, key2InitialValue}); !ts.NoError(err) {
 		return
 	}
 
@@ -633,35 +633,31 @@ func testTxnReadWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
 			defer wg.Done()
 
 			ts.True(ts.DoTransaction(ctx, goRoutineIdx, sc, func(ctx context.Context, txn types.Txn) error {
-				val, err := txn.Get(ctx, "k1")
+				values, err := txn.MGet(ctx, []string{"k1", "k2"})
 				if err != nil {
 					return err
 				}
-				v1, err := val.Int()
-				if !ts.NoError(err) {
-					return err
-				}
-				v1 += delta
+				v1, v2 := values[0].MustInt(), values[1].MustInt()
+				v1 += key1Delta
+				v2 += key2Delta
 
-				if err := txn.Set(ctx, "k1", types.NewIntValue(v1-1).V); err != nil {
+				if err := txn.MSet(ctx, []string{"k1", "k2"}, [][]byte{types.NewIntValue(v1 - 1).V, types.NewIntValue(v2 - 1).V}); err != nil {
 					return err
 				}
-				if err := txn.Set(ctx, "k1", types.NewIntValue(v1-3).V); err != nil {
+				if err := txn.MSet(ctx, []string{"k1", "k2"}, [][]byte{types.NewIntValue(v1 - 3).V, types.NewIntValue(v2 - 3).V}); err != nil {
 					return err
 				}
-				if err := txn.Set(ctx, "k1", types.NewIntValue(v1).V); err != nil {
+				if err := txn.MSet(ctx, []string{"k1", "k2"}, [][]byte{types.NewIntValue(v1).V, types.NewIntValue(v2).V}); err != nil {
 					return err
 				}
 
-				val2, err := txn.Get(ctx, "k1")
-				if err != nil {
+				if values, err = txn.MGet(ctx, []string{"k1", "k2"}); err != nil {
 					return err
 				}
-				v2, err := val2.Int()
-				if !ts.NoError(err) {
-					return err
+				if !ts.Equalf(v1, values[0].MustInt(), "read_version: %d, txn_version: %d", values[0].Version, txn.GetId()) {
+					return errors.ErrAssertFailed
 				}
-				if !ts.Equalf(v1, v2, "read_version: %d, txn_version: %d", val2.Version, txn.GetId()) {
+				if !ts.Equalf(v2, values[1].MustInt(), "read_version: %d, txn_version: %d", values[0].Version, txn.GetId()) {
 					return errors.ErrAssertFailed
 				}
 				return nil
@@ -670,12 +666,12 @@ func testTxnReadWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool) {
 	}
 
 	wg.Wait()
-	val, err := sc.GetInt(ctx, "k1")
+	values, err := sc.MGetInts(ctx, []string{"k1", "k2"}, types.TxnTypeDefault)
 	if !ts.NoError(err) {
 		return
 	}
-	ts.t.Logf("k1: %d", val)
-	if !ts.Equal(ts.GoRoutineNum*delta+initialValue, val) {
+	ts.t.Logf("k1: %d", values[0])
+	if !ts.Equal(ts.GoRoutineNum*key1Delta+key1InitialValue, values[0]) || !ts.Equal(ts.GoRoutineNum*key2Delta+key2InitialValue, values[1]) {
 		return
 	}
 

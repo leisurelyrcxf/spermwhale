@@ -67,8 +67,24 @@ func (m Meta) IsCommitted() bool {
 	return m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
 }
 
+func (m Meta) IsTerminated() bool {
+	return m.Flag&consts.ValueMetaBitMaskTerminated != 0
+}
+
 func (m Meta) IsAborted() bool {
 	return m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
+}
+
+func (m *Meta) Update(state TxnState) (isAborted bool) {
+	if state.IsAborted() {
+		m.SetAborted()
+		return true
+	}
+	if state.IsCommitted() {
+		m.SetCommitted()
+		return false
+	}
+	return false
 }
 
 type Value struct {
@@ -201,13 +217,14 @@ func (v ValueCC) IsEmpty() bool {
 
 // Hide Value::WithMaxReadVersion
 func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
-	v.MaxReadVersion = maxReadVersion
+	panic(errors.ErrNotSupported)
 	return v
 }
 
 // Hide Value::WithMaxReadVersion
-func (v ValueCC) WithSnapshotVersion(_ uint64) ValueCC {
+func (v ValueCC) WithSnapshotVersion(ssVersion uint64) ValueCC {
 	panic(errors.ErrNotSupported)
+	return v
 }
 
 func (v ValueCC) WithCommitted() ValueCC {

@@ -43,7 +43,7 @@ func (txn *TestTxn) Add(key string) error {
 		return errTerminated
 	}
 	assert.Must(!txn.Future.IsDoneUnsafe())
-	added, done := txn.Future.AddUnsafe(key)
+	added, done := txn.Future.AddUnsafe(key, types.DBMeta{})
 	if added {
 		glog.V(120).Infof("[TestTxn::Add] inserted key '%s'", key)
 	}
@@ -61,7 +61,7 @@ func (txn *TestTxn) Done(key string) bool {
 	doneOnce, done := txn.Future.doneUnsafeEx(key)
 	if done {
 		for key, done := range txn.Future.keys {
-			assert.Mustf(done, "'%s' not done yet", key)
+			assert.Mustf(done.Done, "'%s' not done yet", key)
 		}
 		glog.V(120).Infof("[TestTxn::Done] txn done after done key '%s'", key)
 	}
@@ -138,7 +138,7 @@ func testDoneSetFunc(t *testing.T, sleep bool) (b bool) {
 
 	wg.Wait()
 	for key, done := range txn.Future.keys {
-		if !ts.Truef(done, "'%s' not done yet", key) {
+		if !ts.Truef(done.Done, "'%s' not done yet", key) {
 			return
 		}
 	}

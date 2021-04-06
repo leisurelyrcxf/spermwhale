@@ -26,7 +26,7 @@ func (tm *Manager) removeTxnById(txnId types.TxnId) (alreadyRemoved bool) {
 }
 
 func (tm *Manager) removeTxnPrimitive(txn *Transaction) {
-	tm.writeTxns.GCWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
+	tm.writeTxns.RemoveWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
 }
 
 func TestInvalidWaiters(t *testing.T) {
@@ -49,7 +49,7 @@ func TestManagerInsert(t *testing.T) {
 func testManagerInsert(t types.T) (b bool) {
 	var (
 		txnIds = []types.TxnId{types.TxnId(1111), types.TxnId(2222)}
-		tm     = NewManager(types.DefaultTableTxnManagerCfg)
+		tm     = NewManager(types.DefaultTableTxnManagerCfg, nil)
 	)
 	defer tm.Close()
 
@@ -94,7 +94,7 @@ func testManagerGC(t types.T) (b bool) {
 	var (
 		oracle = physical.NewOracle()
 		txnIds = []types.TxnId{types.TxnId(oracle.MustFetchTimestamp()), types.TxnId(oracle.MustFetchTimestamp())}
-		tm     = NewManager(cfg)
+		tm     = NewManager(cfg, nil)
 	)
 	if !testifyassert.NotEqual(t, txnIds[0], txnIds[1]) {
 		return false
@@ -117,7 +117,7 @@ func testManagerGC(t types.T) (b bool) {
 					tm.removeTxnPrimitive(transaction)
 				})
 				txnObjectsCount.Add(1)
-				txn.GC()
+				txn.Unref(txn)
 				return txn
 			})
 		}

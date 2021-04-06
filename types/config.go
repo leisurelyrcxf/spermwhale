@@ -154,7 +154,8 @@ type TabletTxnManagerConfig struct {
 	ReadModifyWriteQueueCfg
 
 	// outputs
-	TxnLifeSpan time.Duration
+	TxnLifeSpan        time.Duration
+	TxnInsertThreshold time.Duration
 }
 
 func NewTabletTxnManagerConfig(
@@ -168,5 +169,6 @@ func NewTabletTxnManagerConfig(
 
 func (c TabletTxnManagerConfig) Sanitize() TabletTxnManagerConfig {
 	c.TxnLifeSpan = c.TabletTxnConfig.GetWaitTimestampCacheInvalidTimeout()
+	c.TxnInsertThreshold = c.StaleWriteThreshold / 10 * 9
 	return c
 }

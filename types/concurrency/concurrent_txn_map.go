@@ -28,7 +28,7 @@ func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, quit chan s
 	cmp.gcThread.Start()
 }
 
-func (cmp *concurrentTxnMapPartition) gcWhen(txn types.TxnId, scheduleTime time.Time) {
+func (cmp *concurrentTxnMapPartition) removeWhen(txn types.TxnId, scheduleTime time.Time) {
 	cmp.gcThread.Schedule(timer.NewAggrTimerTask(scheduleTime, txn))
 }
 
@@ -214,8 +214,8 @@ func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {
 	cmp.partitions[cmp.hash(key)].del(key)
 }
 
-func (cmp *ConcurrentTxnMap) GCWhen(txn types.TxnId, scheduleTime time.Time) {
-	cmp.partitions[cmp.hash(txn)].gcWhen(txn, scheduleTime)
+func (cmp *ConcurrentTxnMap) RemoveWhen(txn types.TxnId, scheduleTime time.Time) {
+	cmp.partitions[cmp.hash(txn)].removeWhen(txn, scheduleTime)
 }
 
 func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {

@@ -265,4 +265,8 @@ var (
 		Code: consts.ErrCodeRemoveKeyFailed,
 		Msg:  "remove key failed",
 	})
+	UnreachableCode = registerErr(&Error{
+		Code: consts.ErrCodeUnreachableCode,
+		Msg:  "unreachable code",
+	})
 )

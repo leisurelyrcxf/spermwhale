@@ -64,4 +64,5 @@ const (
 	ErrCodeInject                                                  = 11111
 	ErrCodeDummy                                                   = 12222
 	ErrCodeAssertFailed                                            = 22222
+	ErrCodeUnreachableCode                                         = 33333
 )
