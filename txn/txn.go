@@ -685,7 +685,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			key          = key
 			isWrittenKey = isWrittenKey
 			opt          = types.KVCCClearWriteIntent.CondReadModifyWrite(txn.IsReadModifyWrite()).
-					CondReadOnlyKey(!isWrittenKey).CondUpdateByDifferentTxn(callerTxn != txn.ID)
+					CondReadOnlyKey(!isWrittenKey).CondUpdateByDifferentTxn(callerTxn != txn.ID).WithInternalVersion(txn.MustGetInternalVersion(key))
 		)
 		_ = types.NewTreeTaskNoResult(
 			basic.NewTaskId(txn.ID.Version(), key), "clear-key-write-intent", txn.cfg.ClearTimeout, root, func(ctx context.Context, _ []interface{}) error {

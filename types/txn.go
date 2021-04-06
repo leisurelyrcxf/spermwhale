@@ -97,6 +97,10 @@ func (v TxnInternalVersion) IsValid() bool {
 	return v != 0 && v != TxnInternalVersionPositiveInvalid
 }
 
+func (v TxnInternalVersion) AsUint32() uint32 {
+	return uint32(v)
+}
+
 type TxnKeyUnion struct {
 	Key   string
 	TxnId TxnId

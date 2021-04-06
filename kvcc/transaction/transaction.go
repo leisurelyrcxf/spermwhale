@@ -61,6 +61,7 @@ func newTransaction(id types.TxnId, db types.KV, unref func(*Transaction)) *Tran
 func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt types.KVCCUpdateMetaOption) (err error) {
 	// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed TODO needs test against kv.db.Set() failed.
 	t.Lock() // NOTE: Lock is must though seems not needed
+	assert.Must(opt.TxnInternalVersion == t.writtenKeys.MustGetDBMetaUnsafe(key).InternalVersion)
 	t.SetTxnStateUnsafe(types.TxnStateCommitted)
 	t.Unlock()
 

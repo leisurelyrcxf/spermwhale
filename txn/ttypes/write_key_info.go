@@ -149,6 +149,12 @@ func (ks WriteKeyInfos) GetCommittedVersion(key string) types.TxnInternalVersion
 	return v.LastWrittenVersion
 }
 
+func (ks WriteKeyInfos) MustGetInternalVersion(key string) types.TxnInternalVersion {
+	v, ok := ks.keys[key]
+	assert.Must(ok)
+	return v.LastWrittenVersion
+}
+
 func (ks WriteKeyInfos) AreWrittenKeysCompleted() bool {
 	return ks.completed
 }

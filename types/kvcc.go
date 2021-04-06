@@ -242,16 +242,23 @@ func (opt *KVCCOperationOption) CondSetReadModifyWrite(b bool) {
 
 type KVCCUpdateMetaOption struct {
 	KVCCOperationOption
+	TxnInternalVersion
 }
 
 var KVCCClearWriteIntent = KVCCUpdateMetaOption{KVCCOperationOption: KVCCOperationOption{Flag: KVKVCCUpdateMetaOptBitMaskClearWriteIntent}}
 
 func NewKVCCCUpdateMetaOptionFromPB(opt *kvccpb.KVCCUpdateMetaOption) KVCCUpdateMetaOption {
-	return KVCCUpdateMetaOption{KVCCOperationOption: KVCCOperationOption{Flag: uint8(opt.Flag)}}
+	return KVCCUpdateMetaOption{
+		KVCCOperationOption: KVCCOperationOption{Flag: uint8(opt.Flag)},
+		TxnInternalVersion:  TxnInternalVersion(opt.TxnInternalVersion),
+	}
 }
 
 func (opt KVCCUpdateMetaOption) ToPB() *kvccpb.KVCCUpdateMetaOption {
-	return &kvccpb.KVCCUpdateMetaOption{Flag: opt.GetFlagAsUint32()}
+	return &kvccpb.KVCCUpdateMetaOption{
+		Flag:               opt.GetFlagAsUint32(),
+		TxnInternalVersion: opt.TxnInternalVersion.AsUint32(),
+	}
 }
 func (opt KVCCUpdateMetaOption) ToKV() KVUpdateMetaOption {
 	return KVUpdateMetaOption(opt.Flag & KVCC2KVUpdateMetaOptExtractor)
@@ -267,6 +274,10 @@ func (opt KVCCUpdateMetaOption) CondReadOnlyKey(b bool) KVCCUpdateMetaOption {
 }
 func (opt KVCCUpdateMetaOption) CondReadModifyWrite(b bool) KVCCUpdateMetaOption {
 	opt.CondSetReadModifyWrite(b)
+	return opt
+}
+func (opt KVCCUpdateMetaOption) WithInternalVersion(version TxnInternalVersion) KVCCUpdateMetaOption {
+	opt.TxnInternalVersion = version
 	return opt
 }
 
