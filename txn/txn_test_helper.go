@@ -359,6 +359,8 @@ type TestCase struct {
 	scs         []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
 	txnServers  []*Server
 	txnManagers []types.TxnManager
+	KVCC        types.KVCC
+	KV          types.KV
 	stopper     func()
 
 	// statistics
@@ -440,6 +442,9 @@ func (ts *TestCase) runOneRound(i int) bool {
 	if !ts.CheckSerializability() {
 		return false
 	}
+	if !ts.CheckCommittedCleared() {
+		return false
+	}
 	ts.LogExecuteInfos(float64(cost) / float64(time.Second))
 	return true
 }
@@ -480,6 +485,8 @@ func (ts *TestCase) GenTestEnv() bool {
 		}
 		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability).
 			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnCfg)
+		ts.KVCC = kvc
+		ts.KV = titan
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
 		ts.txnManagers = append(ts.txnManagers, m)
 		ts.stopper = func() {
@@ -495,6 +502,8 @@ func (ts *TestCase) GenTestEnv() bool {
 		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
 		return false
 	}
+	ts.KVCC = ts.txnServers[0].tm.kv
+	ts.KV = gate.NewReadOnlyKV(ts.GetGate1())
 	for _, clientTm := range clientTxnManagers {
 		ts.txnManagers = append(ts.txnManagers, clientTm)
 	}
@@ -538,6 +547,30 @@ func (ts *TestCase) CheckSerializability() bool {
 		ts.t.Logf("%s CheckSerializability passed", ts.t.Name())
 	}
 	return b
+}
+
+func (ts *TestCase) CheckCommittedCleared() bool {
+	if !ts.NotEmpty(ts.allExecutedTxns) {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	for _, txn := range ts.allExecutedTxns {
+		for key, writeVal := range txn.WriteValues {
+			if _, err := txn.Get(ctx, key); !ts.Equal(consts.ErrCodeTransactionStateCorrupted, errors.GetErrorCode(err)) {
+				return false
+			}
+			val, err := ts.KV.Get(ctx, key, types.NewKVReadOptionWithExactVersion(txn.ID))
+			if !ts.NoError(err) {
+				return false
+			}
+			if !ts.EqualValue(writeVal, val) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // CheckReadModifyWriteOnly only used for checking only have update (read for write) transactions in the test case

@@ -227,3 +227,15 @@ func (kv *ReadOnlyKV) Get(ctx context.Context, key string, opt types.KVReadOptio
 func (kv *ReadOnlyKV) Set(context.Context, string, types.Value, types.KVWriteOption) error {
 	return errors.Annotatef(errors.ErrNotSupported, "this is an read-only kv server")
 }
+
+func (kv *ReadOnlyKV) UpdateMeta(context.Context, string, uint64, types.KVUpdateMetaOption) error {
+	return errors.ErrNotSupported
+}
+
+func (kv *ReadOnlyKV) RollbackKey(context.Context, string, uint64) error {
+	return errors.ErrNotSupported
+}
+
+func (kv *ReadOnlyKV) RemoveTxnRecord(context.Context, uint64) error {
+	return errors.ErrNotSupported
+}

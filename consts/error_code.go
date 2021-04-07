@@ -27,7 +27,7 @@ const (
 
 	ErrCodeTransactionAlreadyExists           int32 = 62
 	ErrCodeTransactionNotFound                      = 63
-	ErrCodeTransactionStateCorrupted                = 64
+	ErrCodeTransactionStateCorrupted          int32 = 64
 	ErrCodeTransactionInternalVersionOverflow       = 65
 
 	ErrCodeWriteIntentQueueFull         int32 = 70
