@@ -4,63 +4,124 @@ import (
 	"context"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvccpb"
 )
 
-type KVCCReadOption struct {
-	ReaderVersion             uint64
-	flag                      uint8
-	ExactVersion              uint64
+type KVCCReadOptionConst struct {
 	MinAllowedSnapshotVersion uint64
+
+	ExactVersion     uint64
+	ReadExactVersion bool
+
+	IsTxnRecord                     bool
+	UpdateTimestampCache            bool // Default to true
+	GetMaxReadVersion               bool // Default to true
+	IsReadModifyWrite               bool
+	IsReadModifyWriteFirstReadOfKey bool
+	IsSnapshotRead                  bool
+	WaitWhenReadDirty               bool
+	IsMetaOnly                      bool
+}
+
+type KVCCReadOption struct {
+	ReaderVersion uint64
+	DBReadVersion uint64
+
+	KVCCReadOptionConst
+	flag uint8
 }
 
 func NewKVCCReadOption(readerVersion uint64) KVCCReadOption {
-	return KVCCReadOption{
-		ReaderVersion: readerVersion,
-	}
+	opt := KVCCReadOption{ReaderVersion: readerVersion}
+	opt.InitializeWithZeroFlag()
+	return opt
 }
 
 func NewSnapshotKVCCReadOption(snapshotVersion uint64, minAllowedSnapshotVersion uint64) KVCCReadOption {
 	opt := NewKVCCReadOption(snapshotVersion)
-	opt.flag |= KVCCReadOptBitMaskSnapshotRead
-	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
 	opt.MinAllowedSnapshotVersion = minAllowedSnapshotVersion
+
+	opt.flag |= KVCCReadOptBitMaskSnapshotRead
+	opt.IsSnapshotRead = true
+
+	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
+	opt.GetMaxReadVersion = false
 	return opt
 }
 
 func NewKVCCReadOptionFromPB(x *kvccpb.KVCCReadOption) KVCCReadOption {
-	return KVCCReadOption{
-		ReaderVersion:             x.ReaderVersion,
-		flag:                      x.GetFlagSafe(),
-		ExactVersion:              x.ExactVersion,
-		MinAllowedSnapshotVersion: x.MinAllowedSnapshotVersion,
+	opt := KVCCReadOption{
+		ReaderVersion: x.ReaderVersion,
+		DBReadVersion: x.DBReadVersion,
+		KVCCReadOptionConst: KVCCReadOptionConst{
+			MinAllowedSnapshotVersion: x.MinAllowedSnapshotVersion,
+			ExactVersion:              x.ExactVersion,
+		},
+		flag: x.GetFlagSafe(),
 	}
+	opt.Initialize()
+	return opt
 }
 
 func (opt KVCCReadOption) ToPB() *kvccpb.KVCCReadOption {
-	return (&kvccpb.KVCCReadOption{
+	return &kvccpb.KVCCReadOption{
 		ReaderVersion:             opt.ReaderVersion,
+		Flag:                      uint32(opt.flag), // TODO check endian
 		ExactVersion:              opt.ExactVersion,
 		MinAllowedSnapshotVersion: opt.MinAllowedSnapshotVersion,
-	}).SetFlagSafe(opt.flag)
+		DBReadVersion:             opt.DBReadVersion,
+	}
+}
+
+func (opt *KVCCReadOption) Initialize() {
+	opt.ReadExactVersion = opt.ExactVersion != 0
+	opt.IsTxnRecord = opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord
+	opt.UpdateTimestampCache = opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0
+	opt.GetMaxReadVersion = opt.flag&KVCCReadOptBitMaskNotGetMaxReadVersion == 0
+	opt.IsReadModifyWrite = opt.flag&KVCCReadOptBitMaskReadModifyWrite == KVCCReadOptBitMaskReadModifyWrite
+	opt.IsReadModifyWriteFirstReadOfKey = opt.flag&KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey == KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey
+	opt.IsSnapshotRead = opt.flag&KVCCReadOptBitMaskSnapshotRead == KVCCReadOptBitMaskSnapshotRead
+	opt.WaitWhenReadDirty = opt.flag&KVCCReadOptBitMaskWaitWhenReadDirty == KVCCReadOptBitMaskWaitWhenReadDirty
+	opt.IsMetaOnly = opt.flag&KVCCReadOptBitMaskMetaOnly == KVCCReadOptBitMaskMetaOnly
+}
+
+func (opt *KVCCReadOption) AssertFlags() {
+	assert.Must(opt.ReadExactVersion == (opt.ExactVersion != 0))
+	assert.Must(opt.IsTxnRecord == (opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord))
+	assert.Must(opt.UpdateTimestampCache == (opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0))
+	assert.Must(opt.GetMaxReadVersion == (opt.flag&KVCCReadOptBitMaskNotGetMaxReadVersion == 0))
+	assert.Must(opt.IsReadModifyWrite == (opt.flag&KVCCReadOptBitMaskReadModifyWrite == KVCCReadOptBitMaskReadModifyWrite))
+	assert.Must(opt.IsReadModifyWriteFirstReadOfKey == (opt.flag&KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey == KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey))
+	assert.Must(opt.IsSnapshotRead == (opt.flag&KVCCReadOptBitMaskSnapshotRead == KVCCReadOptBitMaskSnapshotRead))
+	assert.Must(opt.WaitWhenReadDirty == (opt.flag&KVCCReadOptBitMaskWaitWhenReadDirty == KVCCReadOptBitMaskWaitWhenReadDirty))
+	assert.Must(opt.IsMetaOnly == (opt.flag&KVCCReadOptBitMaskMetaOnly == KVCCReadOptBitMaskMetaOnly))
+}
+
+func (opt *KVCCReadOption) InitializeWithZeroFlag() {
+	opt.ReadExactVersion = opt.ExactVersion != 0
+	opt.UpdateTimestampCache = true
+	opt.GetMaxReadVersion = true
+	opt.AssertFlags()
 }
 
 func (opt KVCCReadOption) WithNotUpdateTimestampCache() KVCCReadOption {
 	opt.flag |= KVCCReadOptBitMaskNotUpdateTimestampCache
+	opt.UpdateTimestampCache = false
 	return opt
 }
 
 func (opt KVCCReadOption) WithNotGetMaxReadVersion() KVCCReadOption {
 	opt.flag |= KVCCReadOptBitMaskNotGetMaxReadVersion
+	opt.GetMaxReadVersion = false
 	return opt
 }
 
 func (opt KVCCReadOption) CondReadModifyWrite(b bool) KVCCReadOption {
 	if b {
 		opt.flag |= KVCCReadOptBitMaskReadModifyWrite
+		opt.IsReadModifyWrite = true
 	}
 	return opt
 }
@@ -68,17 +129,29 @@ func (opt KVCCReadOption) CondReadModifyWrite(b bool) KVCCReadOption {
 func (opt KVCCReadOption) CondReadModifyWriteFirstReadOfKey(b bool) KVCCReadOption {
 	if b {
 		opt.flag |= KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey
+		opt.IsReadModifyWriteFirstReadOfKey = true
 	}
 	return opt
 }
 
 func (opt KVCCReadOption) WithTxnRecord() KVCCReadOption {
 	opt.flag |= KVCCReadOptBitMaskTxnRecord
+	opt.IsTxnRecord = true
 	return opt
 }
 
 func (opt KVCCReadOption) WithExactVersion(exactVersion uint64) KVCCReadOption {
 	opt.ExactVersion = exactVersion
+	opt.ReadExactVersion = exactVersion != 0
+	return opt
+}
+
+func (opt KVCCReadOption) WithCheckVersion(exactVersion uint64) KVCCReadOption {
+	opt.ExactVersion = exactVersion
+	opt.ReadExactVersion = exactVersion != 0
+
+	opt.flag |= consts.KVCCReadOptBitMaskMetaOnly
+	opt.IsMetaOnly = true
 	return opt
 }
 
@@ -90,80 +163,38 @@ func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
 func (opt KVCCReadOption) CondWaitWhenReadDirty(b bool) KVCCReadOption {
 	if b {
 		opt.flag |= consts.KVCCReadOptBitMaskWaitWhenReadDirty
+		opt.WaitWhenReadDirty = true
 	}
 	return opt
 }
 
-func (opt KVCCReadOption) WithMetaOnly() KVCCReadOption {
+func (opt KVCCReadOption) withMetaOnly() KVCCReadOption {
 	opt.flag |= consts.KVCCReadOptBitMaskMetaOnly
+	opt.IsMetaOnly = true
 	return opt
 }
 
-func (opt KVCCReadOption) IsReadExactVersion() bool {
-	return opt.ExactVersion != 0
-}
-
-func (opt KVCCReadOption) IsTxnRecord() bool {
-	return opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord
-}
-
-func (opt KVCCReadOption) IsUpdateTimestampCache() bool {
-	return opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0
-}
-
-func (opt KVCCReadOption) IsGetMaxReadVersion() bool {
-	return opt.flag&KVCCReadOptBitMaskNotGetMaxReadVersion == 0
-}
-
-func (opt KVCCReadOption) IsReadModifyWrite() bool {
-	return opt.flag&KVCCReadOptBitMaskReadModifyWrite == KVCCReadOptBitMaskReadModifyWrite
-}
-
-func (opt KVCCReadOption) IsReadModifyWriteFirstReadOfKey() bool {
-	return opt.flag&KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey == KVCCReadOptBitMaskReadModifyWriteFirstReadOfKey
-}
-
-func (opt KVCCReadOption) IsSnapshotRead() bool {
-	return opt.flag&KVCCReadOptBitMaskSnapshotRead == KVCCReadOptBitMaskSnapshotRead
-}
-
-func (opt KVCCReadOption) IsWaitWhenReadDirty() bool {
-	return opt.flag&KVCCReadOptBitMaskWaitWhenReadDirty == KVCCReadOptBitMaskWaitWhenReadDirty
-}
-
-func (opt KVCCReadOption) IsMetaOnly() bool {
-	return opt.flag&KVCCReadOptBitMaskMetaOnly == KVCCReadOptBitMaskMetaOnly
-}
-
 func (opt KVCCReadOption) GetKVReadVersion() uint64 {
-	if opt.IsReadExactVersion() {
+	if opt.ReadExactVersion {
 		return opt.ExactVersion
 	}
 	return opt.ReaderVersion
 }
 
-func (opt KVCCReadOption) ToKVReadOption() (kvOpt KVReadOption) {
-	if opt.IsReadExactVersion() {
-		kvOpt = NewKVReadOption(opt.ExactVersion).WithExactVersion()
+func (opt KVCCReadOption) ToKV() (kvOpt KVReadOption) {
+	if opt.ReadExactVersion {
+		kvOpt = NewKVReadOptionWithExactVersion(opt.ExactVersion)
+		assert.Must(opt.DBReadVersion == 0 || opt.DBReadVersion == kvOpt.Version)
 	} else {
-		kvOpt = NewKVReadOption(opt.ReaderVersion)
+		if kvOpt = NewKVReadOption(opt.ReaderVersion); opt.DBReadVersion != 0 && opt.DBReadVersion < kvOpt.Version {
+			kvOpt.Version = opt.DBReadVersion
+		}
 	}
-	if opt.IsTxnRecord() {
+	if opt.IsTxnRecord {
 		kvOpt.Flag |= KVReadOptBitMaskTxnRecord
 	}
-	if opt.IsMetaOnly() {
+	if opt.IsMetaOnly {
 		kvOpt.Flag |= KVReadOptBitMaskMetaOnly
-	}
-	return kvOpt
-}
-
-func (opt KVCCReadOption) WithKVReadVersion(kvReadVersion uint64) (kvOpt KVReadOption) {
-	assert.Must(kvReadVersion != 0)
-
-	if kvOpt = opt.ToKVReadOption(); kvOpt.IsReadExactVersion() {
-		assert.Must(kvReadVersion == kvOpt.Version)
-	} else if kvReadVersion < kvOpt.Version {
-		kvOpt.Version = kvReadVersion
 	}
 	return kvOpt
 }

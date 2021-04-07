@@ -14,6 +14,10 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
+func TestTxnReadModifyWrite2KeysDeadlockMGetMSet(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlockMGetMSet).Run()
+}
+
 func TestTxnLostUpdate(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
@@ -74,9 +78,6 @@ func TestTxnReadModifyWrite2KeysDeadlockReadModifyWriteWaitWhenReadDirty(t *test
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
-func TestTxnReadModifyWrite2KeysDeadlockMGetMSet(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlockMGetMSet).Run()
-}
 func TestTxnReadModifyWrite2KeysDeadlockMGetMSetReadModifyWrit(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlockMGetMSet).SetTxnType(types.TxnTypeReadModifyWrite).Run()
 }

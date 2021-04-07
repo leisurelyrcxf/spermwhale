@@ -199,7 +199,7 @@ func (ks WriteKeyInfos) MarkWrittenKeyRollbacked(key string) {
 	ks.keys[key] = v
 }
 
-func (ks WriteKeyInfos) MarkCommitted(key string, value types.Value) {
+func (ks WriteKeyInfos) MarkWrittenKeyCommitted(key string, value types.Value) {
 	v := ks.keys[key]
 	assert.Must(!ks.completed || v.LastWrittenVersion == value.InternalVersion)
 	v.LastWrittenVersion = value.InternalVersion
@@ -208,7 +208,7 @@ func (ks WriteKeyInfos) MarkCommitted(key string, value types.Value) {
 	ks.keys[key] = v
 }
 
-func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
+func (ks WriteKeyInfos) MarkWrittenKeyCommittedCleared(key string, value types.Value) {
 	assert.Must(value.IsCommitted())
 	//v, ok := ks.keys[key]
 	//assert.Must(ok) // key may not exist
@@ -222,6 +222,11 @@ func (ks WriteKeyInfos) MarkCommittedCleared(key string, value types.Value) {
 	v.CommittedCleared = true
 
 	ks.keys[key] = v
+}
+
+// MarkWrittenKeysCompleted, keys and LastWrittenVersion won't change after this call.
+func (ks *WriteKeyInfos) MarkWrittenKeysCompleted() {
+	ks.completed = true
 }
 
 // Below are write methods, need pass pointers
@@ -254,11 +259,6 @@ func (ks *WriteKeyInfos) WriteKey(s *scheduler.ConcurrentDynamicListScheduler, k
 	ks.keys[key] = v
 	ks.tasks = append(ks.tasks, task)
 	return nil
-}
-
-// MarkWrittenKeyCompleted, keys and LastWrittenVersion won't change after this call.
-func (ks *WriteKeyInfos) MarkWrittenKeyCompleted() {
-	ks.completed = true
 }
 
 // only sued for test

@@ -132,7 +132,7 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 				return
 			}
 			utils.WithLogLevel(0, func() {
-				if val, err := db.Get(ctx, key, types.NewKVReadOption(version).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) || !assert.True(val.IsEmpty()) {
+				if val, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(version)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) || !assert.True(val.IsEmpty()) {
 					return
 				}
 			})
@@ -163,24 +163,24 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 		if _, err := db.Get(ctx, key, types.NewKVReadOption(0)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 			return
 		}
-		if _, err := db.Get(ctx, key, types.NewKVReadOption(0).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
+		if _, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(0)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 			return
 		}
-		if _, err := db.Get(ctx, key, types.NewKVReadOption(3).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
+		if _, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(3)); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 			return
 		}
 	})
-	if val, err := db.Get(ctx, key, types.NewKVReadOption(2).WithExactVersion()); !assertValueOfVersion(val, err, 2) {
+	if val, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(2)); !assertValueOfVersion(val, err, 2) {
 		return
 	}
-	if val, err := db.Get(ctx, key, types.NewKVReadOption(1).WithExactVersion()); !assertValueOfVersion(val, err, 1) {
+	if val, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(1)); !assertValueOfVersion(val, err, 1) {
 		return
 	}
 	if err := db.ClearWriteIntent(ctx, key, 1); !assert.NoError(err) {
 		return
 	}
 	clearWriteIntentOfVersion(1)
-	if val, err := db.Get(ctx, key, types.NewKVReadOption(1).WithExactVersion()); !assertValueOfVersion(val, err, 1) {
+	if val, err := db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(1)); !assertValueOfVersion(val, err, 1) {
 		return
 	}
 
@@ -268,7 +268,7 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 		}
 		writeOpt   = types.NewKVWriteOption().WithTxnRecord()
 		newReadOpt = func(version uint64) types.KVReadOption {
-			return types.NewKVReadOption(version).WithTxnRecord().WithExactVersion()
+			return types.NewKVReadOptionWithExactVersion(version).WithTxnRecord()
 		}
 	)
 
@@ -338,7 +338,7 @@ func TestCausalConsistency(t types.T, db *DB) (b bool) {
 	if !assert.NoError(db.Set(context.Background(), key, types.NewValue([]byte("111"), 1), types.NewKVWriteOption())) {
 		return
 	}
-	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	val, err := db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1))
 	if !assert.NoError(err) || !assert.True(val.IsDirty()) {
 		return false
 	}
@@ -353,7 +353,7 @@ func TestCausalConsistency(t types.T, db *DB) (b bool) {
 	}()
 
 	<-done
-	val, err = db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	val, err = db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1))
 	return assert.NoError(err) && assert.True(val.IsCommitted())
 }
 
@@ -389,14 +389,14 @@ func TestConcurrentClearWriteIntent(t types.T, db *DB) (b bool) {
 		go func() {
 			defer wg.Done()
 
-			if _, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion()); !assert.NoError(err) {
+			if _, err := db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1)); !assert.NoError(err) {
 				return
 			}
 		}()
 	}
 
 	wg.Wait()
-	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	val, err := db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1))
 	if !assert.NoError(err) || !assert.True(val.IsCommitted()) {
 		return
 	}
@@ -437,7 +437,7 @@ func TestConcurrentRemoveVersion(t types.T, db *DB) (b bool) {
 	}
 
 	wg.Wait()
-	if _, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion()); !errors.AssertIsKeyOrVersionNotExistsErr(&assert.Assertions, err) {
+	if _, err := db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1)); !errors.AssertIsKeyOrVersionNotExistsErr(&assert.Assertions, err) {
 		return
 	}
 	return true
@@ -472,7 +472,7 @@ func TestConcurrentClearWriteIntentRemoveVersion(t types.T, db *DB) (b bool) {
 	}
 
 	wg.Wait()
-	val, err := db.Get(context.Background(), key, types.NewKVReadOption(1).WithExactVersion())
+	val, err := db.Get(context.Background(), key, types.NewKVReadOptionWithExactVersion(1))
 	if err == nil {
 		return assert.Equal(uint64(1), val.Version) && assert.True(val.IsCommitted())
 	}

@@ -18,16 +18,6 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/types/concurrency"
 )
 
-// Deprecated
-type keyEventHolder struct {
-	// Deprecated
-	keyEventWaitersMu sync.Mutex
-	// Deprecated
-	rollbackedKey2Success map[string]bool
-	// Deprecated
-	keyEventWaiters map[string][]*KeyEventWaiter
-}
-
 type Transaction struct {
 	// Deprecated
 	*keyEventHolder
@@ -138,18 +128,18 @@ func (t *Transaction) MustGetMeta(key string) (m types.Meta, isAborted bool) {
 	return
 }
 
-func (t *Transaction) GetMetaOnlyValue(key string, readExactVersion bool) (val types.Value, err error, shouldRetry bool) {
+func (t *Transaction) GetMeta(key string) (types.Meta, error) {
 	t.RLock()
 	defer t.RUnlock()
 
 	dbMeta, ok := t.writtenKeys.GetDBMetaUnsafe(key)
 	if !ok {
 		assert.Must(!t.IsCommitted())
-		return types.EmptyValue, errors.ErrKeyOrVersionNotExist, false
+		return types.Meta{}, errors.ErrKeyOrVersionNotExist
 	}
-	meta := dbMeta.WithVersion(t.ID.Version())
-	isAborted := meta.Update(t.GetTxnState())
-	return types.Value{Meta: meta}, nil, isAborted && !readExactVersion
+	m := dbMeta.WithVersion(t.ID.Version())
+	m.Update(t.GetTxnState())
+	return m, nil
 }
 
 func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
@@ -160,20 +150,20 @@ func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnIn
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
+	var maxReadVersion uint64
+
 	// NOTE: the lock is must though seems no needed
 	t.RLock()
-	var maxReadVersion uint64
-	if opt.IsUpdateTimestampCache() {
+	if opt.UpdateTimestampCache {
 		maxReadVersion = t.updateMaxTxnRecordReadVersion(opt.ReaderVersion)
+	} else {
+		maxReadVersion = t.GetMaxTxnRecordReadVersion()
 	}
 	t.RUnlock()
 
-	val, err := t.db.Get(ctx, "", opt.ToKVReadOption())
+	val, err := t.db.Get(ctx, "", opt.ToKV())
 	val.Update(t.GetTxnState())
-	if maxReadVersion != 0 {
-		return val.WithMaxReadVersion(maxReadVersion), err
-	}
-	return val.WithMaxReadVersion(t.GetMaxTxnRecordReadVersion()), err // TODO maybe return max reader version to user?
+	return val.WithMaxReadVersion(maxReadVersion), err // TODO maybe return max reader version to user?
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) error {
@@ -320,6 +310,16 @@ func (t *Transaction) waitTerminate(ctx context.Context) error {
 }
 
 // Deprecated
+type keyEventHolder struct {
+	// Deprecated
+	keyEventWaitersMu sync.Mutex
+	// Deprecated
+	rollbackedKey2Success map[string]bool
+	// Deprecated
+	keyEventWaiters map[string][]*KeyEventWaiter
+}
+
+// Deprecated
 func (t *Transaction) registerKeyEventWaiter(key string) (*KeyEventWaiter, KeyEvent, error) {
 	t.RLock()
 	defer t.RUnlock()
@@ -425,8 +425,10 @@ func (t *Transaction) getWaiterCounts() (waiterCount, waiterKeyCount int) {
 	return waiterCount, len(t.keyEventWaiters)
 }
 
+// Deprecated
 var invalidKeyWaiters = make([]*KeyEventWaiter, 0, 0)
 
+// Deprecated
 func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
 	return len(waiters) == 0 && waiters != nil
 }

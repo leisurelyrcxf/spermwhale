@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -23,12 +22,6 @@ const (
 	MaxTxnVersion     = uint64(7258118400000000000)
 	MaxTxnId          = TxnId(MaxTxnVersion)
 )
-
-func SafeIncr(version *uint64) {
-	if cur := *version; cur != math.MaxUint64 {
-		*version = cur + 1
-	}
-}
 
 type TxnId uint64
 

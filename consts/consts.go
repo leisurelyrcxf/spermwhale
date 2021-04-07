@@ -36,7 +36,7 @@ const (
 
 	KVReadOptBitMaskTxnRecord    = 1
 	KVReadOptBitMaskExactVersion = 1 << 1
-	KVReadOptBitMaskMetaOnly     = 1 << 2
+	KVReadOptBitMaskMetaOnly     = 1 << 7
 )
 
 const (

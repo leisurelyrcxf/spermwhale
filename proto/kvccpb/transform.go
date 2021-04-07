@@ -29,11 +29,6 @@ func (x *KVCCReadOption) GetFlagSafe() uint8 {
 	return uint8(x.Flag & 0xff)
 }
 
-func (x *KVCCReadOption) SetFlagSafe(opt uint8) *KVCCReadOption {
-	x.Flag = uint32(opt)
-	return x
-}
-
 func (x *KVCCSetRequest) Validate() error {
 	if err := x.Opt.Validate(); err != nil {
 		return err

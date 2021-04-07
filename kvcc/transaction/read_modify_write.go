@@ -46,7 +46,8 @@ func (cond *readModifyWriteCond) notify() {
 }
 
 type reader struct {
-	types.KVCCReadOption
+	ReaderVersion     uint64
+	WaitWhenReadDirty bool
 
 	readModifyWriteCond
 
@@ -55,7 +56,8 @@ type reader struct {
 
 func newReader(opt types.KVCCReadOption) *reader {
 	return &reader{
-		KVCCReadOption: opt,
+		ReaderVersion:     opt.ReaderVersion,
+		WaitWhenReadDirty: opt.WaitWhenReadDirty,
 		readModifyWriteCond: readModifyWriteCond{
 			waitress: make(chan struct{}),
 		},
@@ -173,7 +175,7 @@ func (pq *readModifyWriteQueue) notifyKeyEvent(readModifyWriteTxnId types.TxnId,
 	}
 
 	if eventType == ReadModifyWriteKeyEventTypeKeyWritten {
-		if second := pq.second(); second == nil || !second.IsWaitWhenReadDirty() {
+		if second := pq.second(); second == nil || !second.WaitWhenReadDirty {
 			return
 		}
 	}

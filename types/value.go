@@ -64,15 +64,19 @@ func (m Meta) IsDirty() bool {
 }
 
 func (m Meta) IsCommitted() bool {
-	return m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
+	committed := m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
+	assert.Must(!committed || m.Flag&(0b111) == consts.ValueMetaBitMaskCommitted) // TODO remove this in product
+	return committed
+}
+
+func (m Meta) IsAborted() bool {
+	aborted := m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
+	//assert.Must(!aborted || m.Flag&(0b111) == consts.ValueMetaBitMaskAborted|consts.ValueMetaBitMaskHasWriteIntent) // TODO remove this in product
+	return aborted
 }
 
 func (m Meta) IsTerminated() bool {
 	return m.Flag&consts.ValueMetaBitMaskTerminated != 0
-}
-
-func (m Meta) IsAborted() bool {
-	return m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
 }
 
 func (m *Meta) Update(state TxnState) (isAborted bool) {

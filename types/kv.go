@@ -89,6 +89,13 @@ func NewKVReadOption(Version uint64) KVReadOption {
 	}
 }
 
+func NewKVReadOptionWithExactVersion(exactVersion uint64) KVReadOption {
+	return KVReadOption{
+		Version: exactVersion,
+		Flag:    KVReadOptBitMaskExactVersion,
+	}
+}
+
 func NewKVReadOptionFromPB(x *kvpb.KVReadOption) KVReadOption {
 	return KVReadOption{
 		Version: x.Version,
@@ -107,9 +114,9 @@ func (opt KVReadOption) WithTxnRecord() KVReadOption {
 	return opt
 }
 
-func (opt KVReadOption) WithExactVersion() KVReadOption {
+func (opt *KVReadOption) SetExactVersion(version uint64) {
+	opt.Version = version
 	opt.Flag |= KVReadOptBitMaskExactVersion
-	return opt
 }
 
 func (opt KVReadOption) IsTxnRecord() bool {

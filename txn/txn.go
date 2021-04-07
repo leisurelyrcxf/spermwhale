@@ -214,7 +214,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		if writeErr := lastWriteTask.Err(); writeErr != nil {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
 		}
-		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()).WithNotUpdateTimestampCache())
+		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()).WithNotUpdateTimestampCache()) // TODO check this is safe?
 	} else {
 		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).
 			CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)).
@@ -224,7 +224,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 	vv.MaxReadVersion > txn.ID.Version() {
 		txn.preventFutureWriteKeys.Insert(key)
 	}
-	if txn.IsReadModifyWrite() {
+	if txn.IsReadModifyWrite() { // NOTE: Must be after CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key))
 		txn.readModifyWriteReadKeys.Insert(key)
 	}
 	if err != nil {
@@ -234,6 +234,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		return types.EmptyValueCC, err
 	}
 	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
+	assert.Must(!vv.IsAborted())
 	if vv.IsCommitted() || vv.Version == txn.ID.Version() /* read after write */ {
 		return vv, nil
 	}
@@ -261,7 +262,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 		}
 		assert.Must(writeTxn.TxnState == types.TxnStateRollbacking)
-		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, "previous txn %d", writeTxn.ID)
+		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, "previous txn %d", writeTxn.ID) // TODO can be optimized, skip the aborted version
 	}
 	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
 }
@@ -326,23 +327,16 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				continue
 			}
 			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, true, maxRetry)
+			assert.Must(!vv.IsAborted() || (!exists && err == nil))
 			if err != nil {
-				return
-			}
-			if vv.IsAborted() {
-				if !exists {
-					txn.MarkWrittenKeyRollbacked(key)
-				}
-				txn.TxnState = types.TxnStateRollbacking
-				_ = txn.rollback(ctx, callerTxn.ID, true, "Txn::CheckCommitState found aborted key '%s' of txn %d", key, txn.ID) // help rollback since original txn coordinator may have gone
 				return
 			}
 			if exists {
 				assert.Must(vv.Version == txn.ID.Version() && vv.InternalVersion > 0)
 				if vv.IsCommitted() {
 					txn.TxnState = types.TxnStateCommitted
-					txn.MarkCommitted(key, vv.Value)
-					//txn.MarkCommittedCleared(key, vv.Value) // TODO this is unsafe
+					txn.MarkWrittenKeyCommitted(key, vv.Value)
+					//txn.MarkWrittenKeyCommittedCleared(key, vv.Value) // TODO this is unsafe
 					txn.onCommitted(callerTxn.ID, "[CheckCommitState] key '%s' write intent cleared", key) // help commit since original txn coordinator may have gone
 					return
 				}
@@ -351,7 +345,8 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				}
 				assert.Must(vv.InternalVersion < txnWrittenKeys[key])
 			}
-			if vv.MaxReadVersion > txn.ID.Version() /* this include '!exits and preventFutureWrite' */ {
+			// TODO evaluate the performance gain
+			if vv.IsAborted() || vv.MaxReadVersion > txn.ID.Version() /* this include '!exits and preventFutureWrite' */ {
 				if !exists { // not exists and won't exist
 					txn.MarkWrittenKeyRollbacked(key)
 				}
@@ -456,7 +451,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	}
 
 	txn.TxnState = types.TxnStateStaging
-	txn.MarkWrittenKeyCompleted()
+	txn.MarkWrittenKeysCompleted()
 	recordData := txn.Encode()
 	txnRecordTask := basic.NewTask(
 		basic.NewTaskId(txn.ID.Version(), ""), "write-staging-txn-record",

@@ -26,7 +26,7 @@ type TransactionStore struct {
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
 	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
-	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithExactVersion(txnId.Version())
+	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithCheckVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	} else {
@@ -39,7 +39,7 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 		readOpt = readOpt.WithNotGetMaxReadVersion()
 	}
 	for i := 0; ; {
-		if val, err = s.kv.Get(ctx, key, readOpt.WithMetaOnly()); err == nil || errors.IsNotExistsErr(err) {
+		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
 			return val, err == nil, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
@@ -54,8 +54,8 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for key := range keys {
-			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithExactVersion(txnId.Version()).
-				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion().WithMetaOnly())
+			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithCheckVersion(txnId.Version()).
+				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
 			if err == nil || errors.IsNotExistsErr(err) {
 				return key, val, err == nil, nil
 			}
@@ -120,7 +120,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key)) // TODO remove this in product
 		}
-		if isCommitted && txn.AreWrittenKeysCompleted() {
+		if isCommitted && txn.AreWrittenKeysCompleted() { // TODO this is not necessary, only used for assertions, 'txn.AreWrittenKeysCompleted()' can be removed in product.
 			assert.Must(txn.IsStaging())
 			txn.MarkAllWrittenKeysCommitted()
 		}
@@ -151,6 +151,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	} else {
 		key, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allWrittenKey2LastVersion, txnId, callerTxn, maxRetry)
 	}
+	assert.Must(!vv.IsAborted() || (!keyExists && keyErr == nil))
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%v)) returns unexpected error: %v", txnId, callerTxn.ID, allWrittenKey2LastVersion, keyErr)
 		return nil, keyErr
@@ -159,12 +160,12 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		if vv.IsCommitted() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
-			txn.MarkCommitted(key, vv.Value)
-			//txn.MarkCommittedCleared(key, vv.Value) // TODO this is unsafe
+			txn.MarkWrittenKeyCommitted(key, vv.Value)
+			//txn.MarkWrittenKeyCommittedCleared(key, vv.Value) // TODO this is unsafe
 			return txn, nil
 		}
 		// Must haven't committed.
-		if !vv.IsAborted() && !preventedFutureTxnRecordWrite {
+		if !preventedFutureTxnRecordWrite {
 			return nil, errors.Annotatef(errors.ErrKeyOrVersionNotExist, "txn record of %d not exists", txnId)
 		}
 	}

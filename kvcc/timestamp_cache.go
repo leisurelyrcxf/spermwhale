@@ -125,20 +125,20 @@ func (i *KeyInfo) AddWriter(txn *transaction.Transaction) (writer Writer, err er
 }
 
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, maxReadVersion *uint64, minSnapshotVersionViolated *bool) (w *transaction.Writer, writingWritersBefore transaction.WritingWriters, err error) {
-	assert.Must(opt.IsUpdateTimestampCache() || (opt.IsReadExactVersion() && !opt.IsSnapshotRead()))
+	assert.Must(opt.UpdateTimestampCache || (opt.ReadExactVersion && !opt.IsSnapshotRead))
 
 	i.mu.RLock()
 	defer func() {
-		if err != nil && !errors.IsNotExistsErr(err) {
+		if err != nil {
 			i.mu.RUnlock()
 			return
 		}
 
-		if opt.IsUpdateTimestampCache() {
+		if opt.UpdateTimestampCache {
 			*maxReadVersion = i.updateMaxReaderVersion(opt.ReaderVersion)
 		}
 
-		if w == nil || opt.IsReadExactVersion() {
+		if w == nil || opt.ReadExactVersion {
 			i.mu.RUnlock()
 			return
 		}
@@ -154,16 +154,11 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, maxReadVersion *uint64,
 		i.mu.RUnlock()
 	}()
 
-	if opt.IsReadExactVersion() {
+	if opt.ReadExactVersion {
 		exactNode, found := i.writers.Get(opt.ExactVersion)
-		if !found {
-			if opt.ExactVersion > i.maxRemovedWriterVersion {
-				return nil, nil, errors.ErrKeyOrVersionNotExist
-			}
-			return nil, nil, nil
-		}
-		assert.Must(!opt.IsSnapshotRead())
-		return exactNode.(*transaction.Writer), nil, nil
+		w, _ := exactNode.(*transaction.Writer)
+		assert.Must(!found || w != nil)
+		return w, nil, nil
 	}
 
 	maxBelowOrEqualWriterNode, found := i.writers.Floor(opt.ReaderVersion) // max <=
@@ -171,7 +166,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, maxReadVersion *uint64,
 		return nil, nil, nil
 	}
 
-	if !opt.IsSnapshotRead() {
+	if !opt.IsSnapshotRead {
 		return maxBelowOrEqualWriterNode.Value.(*transaction.Writer), nil, nil
 	}
 
@@ -188,7 +183,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, maxReadVersion *uint64,
 		if newReaderVersion < opt.MinAllowedSnapshotVersion {
 			*minSnapshotVersionViolated = true
 
-			if !opt.IsWaitWhenReadDirty() {
+			if !opt.WaitWhenReadDirty {
 				return w, nil, errors.ErrMinAllowedSnapshotVersionViolated
 			}
 			return w, nil, nil
