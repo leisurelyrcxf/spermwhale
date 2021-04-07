@@ -155,11 +155,6 @@ func (opt KVCCReadOption) WithCheckVersion(exactVersion uint64) KVCCReadOption {
 	return opt
 }
 
-func (opt KVCCReadOption) WithIncrReaderVersion() KVCCReadOption {
-	opt.ReaderVersion += 1
-	return opt
-}
-
 func (opt KVCCReadOption) CondWaitWhenReadDirty(b bool) KVCCReadOption {
 	if b {
 		opt.flag |= consts.KVCCReadOptBitMaskWaitWhenReadDirty
@@ -215,7 +210,7 @@ func NewKVCCWriteOptionFromPB(x *kvccpb.KVCCWriteOption) KVCCWriteOption {
 func (opt *KVCCWriteOption) ToPB() *kvccpb.KVCCWriteOption {
 	return (&kvccpb.KVCCWriteOption{}).SetFlagSafe(opt.flag)
 }
-func (opt KVCCWriteOption) ToKVWriteOption() KVWriteOption {
+func (opt KVCCWriteOption) ToKV() KVWriteOption {
 	return KVWriteOption{flag: opt.flag}
 }
 

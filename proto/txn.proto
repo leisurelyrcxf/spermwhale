@@ -10,9 +10,10 @@ enum TxnState {
     StateInvalid     = 0;
     StateUncommitted = 1;
     StateStaging     = 2;
-    StateCommitted   = 3;
-    StateRollbacking = 4;
-    StateRollbacked  = 5;
+    StateCommitted   = 4;
+    StateRollbacking = 8;
+    StateCommittedCleared = 20;
+    StateRollbacked  = 24;
 }
 
 message TxnSnapshotReadOption {

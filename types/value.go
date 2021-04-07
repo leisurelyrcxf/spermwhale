@@ -231,11 +231,6 @@ func (v ValueCC) WithSnapshotVersion(ssVersion uint64) ValueCC {
 	return v
 }
 
-func (v ValueCC) WithCommitted() ValueCC {
-	v.SetCommitted()
-	return v
-}
-
 func (v ValueCC) ToTValue() TValue {
 	return TValue{
 		Value:           v.Value,

@@ -63,9 +63,20 @@ const (
 )
 
 const (
+	TxnStateBitMaskUncommitted = 1
+	TxnStateBitMaskStaging     = 1 << 1
+	TxnStateBitMaskCommitted   = 1 << 2
+	TxnStateBitMaskAborted     = 1 << 3
+	TxnStateBitMaskDone        = 1 << 4
+
+	TxnStateTerminatedMask = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
+)
+
+const (
 	ValueMetaBitMaskHasWriteIntent       = 1
-	ValueMetaBitMaskCommitted            = 1 << 1
-	ValueMetaBitMaskAborted              = 1 << 2
+	ValueMetaBitMaskCommitted            = TxnStateBitMaskCommitted // 1 << 2
+	ValueMetaBitMaskAborted              = TxnStateBitMaskAborted   // 1 << 3
+	ValueMetaBitMaskDone                 = TxnStateBitMaskDone      // 1 << 4
 	ValueMetaBitMaskPreventedFutureWrite = 1 << 7
 
 	ValueMetaBitMaskTerminated = ValueMetaBitMaskCommitted | ValueMetaBitMaskAborted

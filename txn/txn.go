@@ -255,7 +255,8 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 	if writeTxn.IsCommitted() {
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
-		return vv.WithCommitted(), nil
+		vv.SetCommitted()
+		return vv, nil
 	}
 	if writeTxn.IsAborted() {
 		if writeTxn.IsWrittenKeyRollbacked(key) {

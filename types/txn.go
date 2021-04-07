@@ -116,24 +116,75 @@ func (tk TxnKeyUnion) String() string {
 	return "txn-record"
 }
 
+type KeyState uint8
+
+const (
+	KeyStateInvalid     KeyState = 0
+	KeyStateUncommitted KeyState = consts.TxnStateBitMaskUncommitted
+	//KeyStateStaging          KeyState undefined
+	KeyStateCommitted        KeyState = consts.TxnStateBitMaskCommitted
+	KeyStateCommittedCleared KeyState = consts.TxnStateBitMaskCommitted | consts.TxnStateBitMaskDone
+	KeyStateRollbacking      KeyState = consts.TxnStateBitMaskAborted
+	KeyStateRollbacked       KeyState = consts.TxnStateBitMaskAborted | consts.TxnStateBitMaskDone
+)
+
+var keyStateStrings = map[KeyState]string{
+	KeyStateInvalid:          "'invalid'",
+	KeyStateUncommitted:      "'uncommitted'",
+	KeyStateCommitted:        "'committed'",
+	KeyStateCommittedCleared: "'committed_cleared'",
+	KeyStateRollbacking:      "'rollbacking'",
+	KeyStateRollbacked:       "'rollbacked'",
+}
+
+func (s KeyState) IsCommitted() bool {
+	return s&consts.TxnStateBitMaskCommitted == consts.TxnStateBitMaskCommitted
+}
+
+func (s KeyState) IsAborted() bool {
+	return s&consts.TxnStateBitMaskAborted == consts.TxnStateBitMaskAborted
+}
+
+func (s KeyState) IsTerminated() bool {
+	return s&consts.TxnStateTerminatedMask > 0
+}
+
+func (s KeyState) IsDone() bool {
+	done := s&consts.TxnStateBitMaskDone == consts.TxnStateBitMaskDone
+	assert.Must(!done || s.IsTerminated())
+	return done
+}
+
+func (s KeyState) AsInt32() int32 {
+	return int32(s)
+}
+
+func (s KeyState) String() string {
+	str, ok := keyStateStrings[s]
+	assert.Must(ok)
+	return str
+}
+
 type TxnState uint8
 
 const (
-	TxnStateInvalid     TxnState = 0
-	TxnStateUncommitted TxnState = 1
-	TxnStateStaging     TxnState = 2
-	TxnStateCommitted   TxnState = 3
-	TxnStateRollbacking TxnState = 4
-	TxnStateRollbacked  TxnState = 5
+	TxnStateInvalid          TxnState = 0
+	TxnStateUncommitted      TxnState = consts.TxnStateBitMaskUncommitted
+	TxnStateStaging          TxnState = consts.TxnStateBitMaskStaging
+	TxnStateCommitted        TxnState = consts.TxnStateBitMaskCommitted
+	TxnStateCommittedCleared TxnState = consts.TxnStateBitMaskCommitted | consts.TxnStateBitMaskDone
+	TxnStateRollbacking      TxnState = consts.TxnStateBitMaskAborted
+	TxnStateRollbacked       TxnState = consts.TxnStateBitMaskAborted | consts.TxnStateBitMaskDone
 )
 
-var stateStrings = map[TxnState]string{
-	TxnStateInvalid:     "'invalid'",
-	TxnStateUncommitted: "'uncommitted'",
-	TxnStateStaging:     "'staging'",
-	TxnStateCommitted:   "'committed'",
-	TxnStateRollbacking: "'rollbacking'",
-	TxnStateRollbacked:  "'rollbacked'",
+var txnStateStrings = map[TxnState]string{
+	TxnStateInvalid:          "'invalid'",
+	TxnStateUncommitted:      "'uncommitted'",
+	TxnStateStaging:          "'staging'",
+	TxnStateCommitted:        "'committed'",
+	TxnStateCommittedCleared: "'committed_cleared",
+	TxnStateRollbacking:      "'rollbacking'",
+	TxnStateRollbacked:       "'rollbacked'",
 }
 
 func (s TxnState) ToPB() txnpb.TxnState {
@@ -145,19 +196,21 @@ func (s TxnState) IsStaging() bool {
 }
 
 func (s TxnState) IsCommitted() bool {
-	return s == TxnStateCommitted
+	return s&consts.TxnStateBitMaskCommitted == consts.TxnStateBitMaskCommitted
 }
 
 func (s TxnState) IsAborted() bool {
-	return s == TxnStateRollbacking || s == TxnStateRollbacked
-}
-
-func (s TxnState) isRollbacked() bool {
-	return s == TxnStateRollbacked
+	return s&consts.TxnStateBitMaskAborted == consts.TxnStateBitMaskAborted
 }
 
 func (s TxnState) IsTerminated() bool {
-	return s.IsAborted() || s.IsCommitted()
+	return s&consts.TxnStateTerminatedMask > 0
+}
+
+func (s TxnState) IsDone() bool {
+	done := s&consts.TxnStateBitMaskDone == consts.TxnStateBitMaskDone
+	assert.Must(!done || s.IsTerminated())
+	return done
 }
 
 func (s TxnState) AsInt32() int32 {
@@ -165,7 +218,9 @@ func (s TxnState) AsInt32() int32 {
 }
 
 func (s TxnState) String() string {
-	return stateStrings[s]
+	str, ok := txnStateStrings[s]
+	assert.Must(ok)
+	return str
 }
 
 type AtomicTxnState struct {
@@ -187,7 +242,7 @@ func (s *AtomicTxnState) SetTxnState(state TxnState) (newState TxnState, termina
 		assert.Must(oldState != TxnStateInvalid)
 		assert.Must(!state.IsCommitted() || !oldState.IsAborted())
 		assert.Must(!state.IsAborted() || !oldState.IsCommitted())
-		assert.Must(!oldState.isRollbacked() || state != TxnStateRollbacking) // rollbacked->rollbacking now allowed
+		assert.Must(!oldState.IsDone() || state.IsDone())
 		if atomic.CompareAndSwapInt32(&s.int32, old, state.AsInt32()) {
 			return state, !oldState.IsTerminated() && state.IsTerminated()
 		}
@@ -200,7 +255,7 @@ func (s *AtomicTxnState) SetTxnStateUnsafe(state TxnState) (newState TxnState, t
 	assert.Must(oldState != TxnStateInvalid)
 	assert.Must(!state.IsCommitted() || !oldState.IsAborted())
 	assert.Must(!state.IsAborted() || !oldState.IsCommitted())
-	assert.Must(!oldState.isRollbacked() || state != TxnStateRollbacking) // rollbacked->rollbacking now allowed
+	assert.Must(!oldState.IsDone() || state.IsDone())
 	atomic.StoreInt32(&s.int32, state.AsInt32())
 	return state, !oldState.IsTerminated() && state.IsTerminated()
 }
@@ -598,4 +653,14 @@ func (txn *RecordValuesTxn) GetReadValues() map[string]TValue {
 
 func (txn *RecordValuesTxn) GetWriteValues() map[string]Value {
 	return txn.writeValues
+}
+
+func init() {
+	assert.Must(uint8(TxnStateInvalid) == uint8(txnpb.TxnState_StateInvalid))
+	assert.Must(uint8(TxnStateUncommitted) == uint8(txnpb.TxnState_StateUncommitted))
+	assert.Must(uint8(TxnStateStaging) == uint8(txnpb.TxnState_StateStaging))
+	assert.Must(uint8(TxnStateCommitted) == uint8(txnpb.TxnState_StateCommitted))
+	assert.Must(uint8(TxnStateCommittedCleared) == uint8(txnpb.TxnState_StateCommittedCleared))
+	assert.Must(uint8(TxnStateRollbacking) == uint8(txnpb.TxnState_StateRollbacking))
+	assert.Must(uint8(TxnStateRollbacked) == uint8(txnpb.TxnState_StateRollbacked))
 }

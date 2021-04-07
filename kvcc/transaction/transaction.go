@@ -183,11 +183,11 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteReadConflict
 	}
 
-	if txnKey := types.TxnId(val.Version).String(); t.writtenKeys.MustAddUnsafe(txnKey, val.Meta.ToDB()) {
+	if txnKey := t.ID.String(); t.writtenKeys.MustAddUnsafe(txnKey, val.Meta.ToDB()) {
 		glog.V(70).Infof("[Transaction::SetTxnRecord] txn-%d added key '%s'", val.Version, txnKey)
 	}
 
-	if err := t.db.Set(ctx, "", val, opt.ToKVWriteOption()); err != nil {
+	if err := t.db.Set(ctx, "", val, opt.ToKV()); err != nil {
 		if glog.V(4) && err != errors.ErrInject {
 			glog.Errorf("[Transaction::SetTxnRecord] txn-%d set txn-record failed: '%v", val.Version, err)
 		}

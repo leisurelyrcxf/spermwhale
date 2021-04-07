@@ -439,7 +439,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 		return err
 	}
-	if err = kv.db.Set(ctx, key, val, opt.ToKVWriteOption()); err == nil && txn.MustAddWrittenKeyUnsafe(key, val.Meta.ToDB()) {
+	if err = kv.db.Set(ctx, key, val, opt.ToKV()); err == nil && txn.MustAddWrittenKeyUnsafe(key, val.Meta.ToDB()) {
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] added new key '%s' to txn-%d", key, txnId)
 	}
 	w.SetResult(err)
