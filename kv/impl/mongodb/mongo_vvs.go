@@ -88,6 +88,10 @@ func (m MongoVVS) Upsert(ctx context.Context, key string, version uint64, val ty
 	return nil
 }
 
+func (m MongoVVS) VersionCount(context.Context, string) (int64, error) {
+	return 0, errors.ErrNotSupported
+}
+
 func (m MongoVVS) UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.CASError2(m.cli.Database(defaultDatabase).Collection(keyCollection).FindOneAndUpdate(ctx, pkEqualOfKey(key, version),
 		bson.D{{Key: "$set", Value: bson.D{

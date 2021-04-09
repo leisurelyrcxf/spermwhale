@@ -228,6 +228,10 @@ func (kv *ReadOnlyKV) Set(context.Context, string, types.Value, types.KVWriteOpt
 	return errors.Annotatef(errors.ErrNotSupported, "this is an read-only kv server")
 }
 
+func (kv *ReadOnlyKV) KeyVersionCount(context.Context, string) (int64, error) {
+	return 0, errors.ErrNotSupported
+}
+
 func (kv *ReadOnlyKV) UpdateMeta(context.Context, string, uint64, types.KVUpdateMetaOption) error {
 	return errors.ErrNotSupported
 }

@@ -461,7 +461,7 @@ func (ts *TestCase) runOneRound(i int) bool {
 	if !ts.CheckSerializability() {
 		return false
 	}
-	if !ts.CheckCommittedCleared() {
+	if !ts.CheckCleared() {
 		return false
 	}
 	ts.LogExecuteInfos(float64(cost) / float64(time.Second))
@@ -568,15 +568,17 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
-func (ts *TestCase) CheckCommittedCleared() bool {
+func (ts *TestCase) CheckCleared() bool {
 	if !ts.NotEmpty(ts.allExecutedTxns) {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
+	keyVersionCount := make(map[string]int64)
 	for _, txn := range ts.allExecutedTxns {
 		for key, writeVal := range txn.WriteValues {
+			keyVersionCount[key]++
 			if _, err := txn.Get(ctx, key); !ts.Equal(consts.ErrCodeTransactionStateCorrupted, errors.GetErrorCode(err)) {
 				return false
 			}
@@ -587,6 +589,12 @@ func (ts *TestCase) CheckCommittedCleared() bool {
 			if !ts.EqualValue(writeVal, val) {
 				return false
 			}
+		}
+	}
+	for key, versionCount := range keyVersionCount {
+		if actualVersionCount, err := ts.KV.KeyVersionCount(ctx, key); !ts.NoError(err) ||
+			!ts.PresqueEqual(versionCount, actualVersionCount, 1) {
+			return false
 		}
 	}
 	return true

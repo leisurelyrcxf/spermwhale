@@ -78,6 +78,10 @@ func (assert *Assertions) EqualValue(exp Value, actual Value) (b bool) {
 	return true
 }
 
+func (assert *Assertions) PresqueEqual(exp int64, actual int64, rang int64) (b bool) {
+	return assert.Truef(actual >= exp-rang && actual <= exp+rang, "expect %d+-%d, but got %d", rang, actual)
+}
+
 func NewAssertion(t T) *Assertions {
 	var mt myT
 	if vt, ok := t.(myT); !ok {

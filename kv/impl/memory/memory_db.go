@@ -68,6 +68,14 @@ func (vvs *VersionedValues) Upsert(_ context.Context, key string, version uint64
 	}).(*KeyVersionedValues).Upsert(version, val)
 }
 
+func (vvs *VersionedValues) VersionCount(_ context.Context, key string) (int64, error) {
+	kvvs, ok := vvs.keys.Get(key)
+	if !ok {
+		return 0, nil
+	}
+	return kvvs.(*KeyVersionedValues).VersionCount(), nil
+}
+
 func (vvs *VersionedValues) UpdateFlag(context.Context, string, uint64, uint8) error {
 	return errors.ErrNotSupported
 }
@@ -211,6 +219,10 @@ func (kvvs *KeyVersionedValues) RemoveIf(version uint64, pred func(prev types.DB
 func (kvvs *KeyVersionedValues) Remove(version uint64) error {
 	(*concurrency.ConcurrentTreeMap)(kvvs).Remove(version)
 	return nil
+}
+
+func (kvvs *KeyVersionedValues) VersionCount() int64 {
+	return int64((*concurrency.ConcurrentTreeMap)(kvvs).Size())
 }
 
 func NewMemoryDB() *kv.DB {

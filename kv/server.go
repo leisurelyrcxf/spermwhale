@@ -37,6 +37,11 @@ func (stub *Stub) Set(ctx context.Context, req *kvpb.KVSetRequest) (*kvpb.KVSetR
 	return &kvpb.KVSetResponse{Err: errors.ToPBError(err)}, nil
 }
 
+func (stub *Stub) KeyVersionCount(ctx context.Context, req *kvpb.KVVersionCountRequest) (*kvpb.KVVersionCountResponse, error) {
+	count, err := stub.kv.KeyVersionCount(ctx, req.Key)
+	return &kvpb.KVVersionCountResponse{VersionCount: count, Err: errors.ToPBError(err)}, nil
+}
+
 func (stub *Stub) UpdateMeta(ctx context.Context, req *kvpb.KVUpdateMetaRequest) (*kvpb.KVUpdateMetaResponse, error) {
 	err := stub.kv.UpdateMeta(ctx, req.Key, req.Version, types.NewKVUpdateMetaOptionFromPB(req.Opt))
 	return &kvpb.KVUpdateMetaResponse{Err: errors.ToPBError(err)}, nil

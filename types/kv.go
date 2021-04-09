@@ -187,6 +187,7 @@ func (opt KVUpdateMetaOption) IsClearWriteIntent() bool {
 type KV interface {
 	Get(ctx context.Context, key string, opt KVReadOption) (Value, error)
 	Set(ctx context.Context, key string, val Value, opt KVWriteOption) error
+	KeyVersionCount(ctx context.Context, key string) (int64, error)
 	UpdateMeta(ctx context.Context, key string, version uint64, opt KVUpdateMetaOption) error
 	RollbackKey(ctx context.Context, key string, version uint64) error
 	RemoveTxnRecord(ctx context.Context, version uint64) error

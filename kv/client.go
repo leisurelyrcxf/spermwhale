@@ -59,9 +59,20 @@ func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types
 		return err
 	}
 	if resp == nil {
-		return errors.Annotatef(errors.ErrNilResponse, "TabletClient::Set resp == nil")
+		return errors.Annotatef(errors.ErrNilResponse, "kv::Client::Set resp == nil")
 	}
 	return errors.NewErrorFromPB(resp.Err)
+}
+
+func (c *Client) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	resp, err := c.kv.KeyVersionCount(ctx, &kvpb.KVVersionCountRequest{Key: key})
+	if err != nil {
+		return 0, err
+	}
+	if resp == nil {
+		return 0, errors.Annotatef(errors.ErrNilResponse, "kv::Client::KeyVersionCount resp == nil")
+	}
+	return resp.VersionCount, nil
 }
 
 func (c *Client) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVUpdateMetaOption) error {

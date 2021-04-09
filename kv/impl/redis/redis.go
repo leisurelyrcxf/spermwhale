@@ -94,6 +94,10 @@ func (vvs RVVS) Upsert(_ context.Context, key string, version uint64, val types.
 	return err
 }
 
+func (vvs RVVS) VersionCount(context.Context, string) (int64, error) {
+	return 0, errors.ErrNotSupported
+}
+
 func (vvs RVVS) UpdateFlag(_ context.Context, key string, version uint64, newFlag uint8) error {
 	return errors.ErrNotSupported
 }

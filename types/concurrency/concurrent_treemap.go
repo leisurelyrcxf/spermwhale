@@ -128,3 +128,9 @@ func (ctm *ConcurrentTreeMap) Ceiling(key interface{}) (foundKey interface{}, fo
 	defer ctm.mutex.RUnlock()
 	return ctm.tm.Ceiling(key)
 }
+
+func (ctm *ConcurrentTreeMap) Size() int {
+	ctm.mutex.RLock()
+	defer ctm.mutex.RUnlock()
+	return ctm.tm.Size()
+}

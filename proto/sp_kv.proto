@@ -10,29 +10,33 @@ message KVReadOption {
     uint64 version = 1;
     uint32 flag = 2;
 }
-
-message KVWriteOption {
-    uint32 flag = 1;
-}
-
 message KVGetRequest {
     string key = 1;
     KVReadOption opt = 2;
 }
-
 message KVGetResponse {
     Value v = 1;
     Error err = 2;
 }
 
+message KVWriteOption {
+    uint32 flag = 1;
+}
 message KVSetRequest {
     string key = 1;
     Value value = 2;
     KVWriteOption opt = 3;
 }
-
 message KVSetResponse {
     Error err = 1;
+}
+
+message KVVersionCountRequest {
+    string key = 1;
+}
+message KVVersionCountResponse {
+    Error err = 1;
+    int64 version_count = 2;
 }
 
 message KVUpdateMetaOption {
@@ -65,6 +69,7 @@ message KVRemoveTxnRecordResponse {
 service KV {
     rpc Get(KVGetRequest) returns (KVGetResponse) {}
     rpc Set(KVSetRequest) returns (KVSetResponse) {}
+    rpc KeyVersionCount(KVVersionCountRequest) returns (KVVersionCountResponse) {}
     rpc UpdateMeta(KVUpdateMetaRequest) returns (KVUpdateMetaResponse) {}
     rpc RollbackKey(KVRollbackKeyRequest) returns (KVRollbackKeyResponse) {}
     rpc RemoveTxnRecord(KVRemoveTxnRecordRequest) returns (KVRemoveTxnRecordResponse) {}

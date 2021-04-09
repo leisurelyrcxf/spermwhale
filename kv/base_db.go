@@ -19,6 +19,7 @@ var (
 type KeyStore interface {
 	Get(ctx context.Context, key string, version uint64) (types.DBValue, error) // TODO add metaOnly
 	Upsert(ctx context.Context, key string, version uint64, val types.DBValue) error
+	VersionCount(ctx context.Context, key string) (int64, error)
 	Remove(ctx context.Context, key string, version uint64) error
 	RemoveIf(ctx context.Context, key string, version uint64, pred func(prev types.DBValue) error) error
 	UpdateFlag(ctx context.Context, key string, version uint64, newFlag uint8) error
@@ -79,6 +80,10 @@ func (db *DB) Set(ctx context.Context, key string, val types.Value, _ types.KVWr
 		return errors.Annotatef(db.ts.UpsertTxnRecord(ctx, val.Version, val.ToDB()), "txn-record: %d", val.Version)
 	}
 	return errors.Annotatef(db.vvs.Upsert(ctx, key, val.Version, val.ToDB()), "key: '%s'", key)
+}
+
+func (db *DB) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	return db.vvs.VersionCount(ctx, key)
 }
 
 func (db *DB) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVUpdateMetaOption) error {
