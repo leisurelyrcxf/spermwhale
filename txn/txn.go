@@ -82,7 +82,7 @@ type Txn struct {
 
 	allWriteTasksFinished bool
 
-	cfg   types.TxnManagerConfig
+	cfg   types.TxnConfig
 	kv    types.KVCC
 	store *TransactionStore
 	s     *Scheduler
@@ -93,7 +93,7 @@ type Txn struct {
 
 func NewTxn(
 	id types.TxnId, typ types.TxnType,
-	kv types.KVCC, cfg types.TxnManagerConfig,
+	kv types.KVCC, cfg types.TxnConfig,
 	store *TransactionStore,
 	s *Scheduler,
 	destroy func(_ *Txn, force bool)) *Txn {
@@ -179,6 +179,9 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, e
 		if err != nil && errors.IsMustRollbackGetErr(err) {
 			txn.TxnState = types.TxnStateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Get: %v", err)
+		}
+		if err == nil {
+			tVal.AssertValid()
 		}
 		assert.Must(err != nil || tVal.Version == txn.ID.Version() || (tVal.Version != 0 && tVal.IsCommitted()))
 	}()
@@ -362,7 +365,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 		txn.onCommitted(callerTxn.ID, "[CheckCommitState] all keys exist and match latest internal txn version") // help commit since original txn coordinator may have gone
 	case types.TxnStateRollbacking:
 		_ = txn.rollback(ctx, callerTxn.ID, false, "transaction rollbacking, txn error: %v", txn.err) // help rollback since original txn coordinator may have gone
-	case types.TxnStateRollbacked, types.TxnStateCommitted:
+	case types.TxnStateRollbackedCleared, types.TxnStateCommitted:
 		txn.gc(txn, false)
 	default:
 		panic(fmt.Sprintf("impossible transaction state %s", txn.TxnState))
@@ -475,7 +478,7 @@ func (txn *Txn) Commit(ctx context.Context) error {
 	var lastNonRollbackableIOErr error
 	for _, ioTask := range txn.getAllWriteTasks() {
 		if ioTaskErr := ioTask.Err(); ioTaskErr != nil {
-			if errors.IsMustRollbackCommitErr(ioTaskErr) {
+			if errors.IsMustRollbackSetErr(ioTaskErr) {
 				// write record must failed
 				txn.TxnState = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, txn.ID, true, "write key %s returns rollbackable error: '%v'", ioTask.ID, ioTaskErr)
@@ -535,7 +538,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 		return nil
 	}
 	txn.waitWriteTasks(ctx, true)
-	if txn.TxnState == types.TxnStateRollbacked {
+	if txn.TxnState == types.TxnStateRollbackedCleared {
 		return nil
 	}
 
@@ -552,7 +555,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	)
 	if noNeedToRemoveTxnRecord && len(toClearKeys) == 0 {
 		if txn.ID == callerTxn || txn.AreWrittenKeysCompleted() {
-			txn.TxnState = types.TxnStateRollbacked
+			txn.TxnState = types.TxnStateRollbackedCleared
 		}
 		return nil
 	}
@@ -629,7 +632,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	}
 
 	if txn.ID == callerTxn || txn.AreWrittenKeysCompleted() {
-		txn.TxnState = types.TxnStateRollbacked
+		txn.TxnState = types.TxnStateRollbackedCleared
 		txn.gc(txn, true)
 	}
 	return nil
@@ -773,7 +776,7 @@ func (txn *Txn) getAllWriteTasks() []*basic.Task {
 func (txn *Txn) writeTxnRecord(ctx context.Context, recordData []byte) error {
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
-	err := txn.kv.Set(ctx, "", types.NewValue(recordData, txn.ID.Version()), types.NewKVCCWriteOption().WithTxnRecord())
+	err := txn.kv.Set(ctx, "", types.NewTxnValue(recordData, txn.ID.Version()).WithInternalVersion(types.TxnInternalVersionMin), types.NewKVCCWriteOption())
 	if err != nil {
 		glog.V(7).Infof("[writeTxnRecord] write transaction record failed: %v", err)
 	}

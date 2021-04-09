@@ -2,6 +2,7 @@ package kvcc
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"time"
 
@@ -52,7 +53,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		db:              db,
 		txnManager: transaction.NewManager(types.NewTabletTxnManagerConfig(
 			cfg,
-			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(utils.MaxDuration(consts.MinTxnLifeSpan, cfg.StaleWriteThreshold)),
+			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(cfg.StaleWriteThreshold*4/5),
 		), db),
 		tsCache: NewTimestampCache(),
 	}
@@ -101,7 +102,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if err != nil {
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), err
 			}
-			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, kv.StaleWriteThreshold/2)); waitErr != nil {
+			if waitErr := w.Wait(ctx, kv.StaleWriteThreshold/2); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}
@@ -141,7 +142,11 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 			if err != nil {
 				errDesc = ", " + err.Error()
 			}
-			glog.Infof("txn-%d get key '%s' succeeded, dirty: %v%s, cost: %s", opt.ReaderVersion, key, valCC.IsDirty(), errDesc, bench.Elapsed())
+			var exactVersionDesc = ", read_exact_version: false"
+			if opt.ReadExactVersion {
+				exactVersionDesc = fmt.Sprintf(", read_exact_version: true, exact_version: %d", opt.ExactVersion)
+			}
+			glog.Infof("txn-%d get key '%s' succeeded, version: %d, dirty: %v%s%s, cost: %s", opt.ReaderVersion, key, val.Version, valCC.IsDirty(), exactVersionDesc, errDesc, bench.Elapsed())
 		}
 		if retry && try < consts.MaxRetryTxnGet {
 			return types.EmptyValueCC, nil, true, retryDBReadVersion
@@ -217,19 +222,21 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	if opt.IsMetaOnly {
 		if opt.ReadExactVersion {
 			if w != nil {
-				meta, err := w.Transaction.GetMeta(key)
-				assert.Must(!w.Succeeded() || (err == nil && meta.InternalVersion >= 1))
-				return types.Value{Meta: meta}, err, false, 0
-			}
-			if txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion)); err == nil {
-				meta, err := txn.GetMeta(key)
-				return types.Value{Meta: meta}, err, false, 0
+				if meta, err, valid := w.Transaction.GetMetaWeak(key); valid {
+					assert.Must(!w.Succeeded() || err == nil)
+					return types.Value{Meta: meta}, err, false, 0
+				}
+			} else if txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion)); err == nil {
+				if meta, err, valid := txn.GetMetaWeak(key); valid {
+					return types.Value{Meta: meta}, err, false, 0
+				}
 			}
 		} else if w != nil && w.Succeeded() {
-			meta, isAborted := w.Transaction.MustGetMeta(key)
-			return types.Value{Meta: meta}, nil, isAborted && !opt.ReadExactVersion, utils.SafeDecr(meta.Version)
+			if meta := w.Transaction.MustGetMetaWeak(key); meta.IsValid() {
+				return types.Value{Meta: meta}, nil, meta.IsAborted() && !opt.ReadExactVersion, utils.SafeDecr(meta.Version)
+			}
 		}
-		defer func() { val.V = nil }() // TODO evaluate performance gain
+		//defer func() { val.V = nil }() // low level should guarantee this
 	}
 
 	if !opt.IsSnapshotRead || w != nil {
@@ -314,28 +321,29 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 		}
 	}
 
-	state := txn.GetTxnState()
-	if state.IsCommitted() {
+	dbMeta := txn.GetDBMetaStrongUnsafe(key)
+	if dbMeta.IsCommitted() {
 		assert.Must(err == nil && val.Version != 0 && val.InternalVersion > 0)
 		if maxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
-			assert.Must(txn.HasPositiveInternalVersion(key, val.InternalVersion)) // TODO remove in product
-			val.SetCommitted()
+			assert.Must(dbMeta.InternalVersion == val.InternalVersion)
+			val.Meta.VFlag = dbMeta.VFlag
 			return val, err, false, 0
 		}
 		if txn.HasPositiveInternalVersion(key, val.InternalVersion) {
-			val.SetCommitted()
+			assert.Must(dbMeta.InternalVersion == val.InternalVersion)
+			val.Meta.VFlag = dbMeta.VFlag
 			return val, err, false, 0
 		}
 		return val, err, true, opt.DBReadVersion // retry to get latest committed value
 	}
-	if state.IsAborted() {
-		if txn.IsKeyDone(key) { // TODO remove in product
+	if dbMeta.IsAborted() {
+		if txn.IsKeyDoneUnsafe(key) { // TODO remove in product
 			if vv, err := kv.db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(txn.ID.Version())); !errors.IsNotExistsErr(err) {
 				assert.Must(vv.Version == txn.ID.Version())
 				glog.Fatalf("txn-%d value of key '%s' still exists after rollbacked", vv.Version, key)
 			}
 		}
-		val.SetAborted()
+		val.Meta.VFlag = dbMeta.VFlag
 		return val, err, !opt.ReadExactVersion, utils.SafeDecr(val.Version)
 	}
 	assert.Must(!opt.WaitWhenReadDirty)
@@ -371,28 +379,37 @@ func (kv *KVCC) RemoveTxnRecord(ctx context.Context, version uint64, opt types.K
 }
 
 // Set must be non-blocking in current io framework.
-func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
+func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) (setErr error) {
 	var (
-		isTxnRecord = opt.IsTxnRecord()
+		isTxnRecord = val.IsTxnRecord()
 		txnId       = types.TxnId(val.Version)
 	)
 	assert.Must((!isTxnRecord && key != "") || (isTxnRecord && key == ""))
 	assert.Must(val.IsDirty())
-	assert.Must(!val.IsWriteOfKey() || !isTxnRecord)
-	assert.Must(val.IsWriteOfKey() || isTxnRecord)
 
 	// cache may lost after restarted, so ignore too stale write
 	if err := utils.CheckOldMan(val.Version, kv.StaleWriteThreshold); err != nil {
 		return err
 	}
 
+	var (
+		txn *transaction.Transaction
+	)
+	defer func() {
+		if txn != nil && errors.IsMustRollbackSetErr(setErr) {
+			txn.Lock()
+			txn.SetAbortedUnsafe(false, "got must rollback error '%v' during setting key '%s'", setErr, key) // don't rollback keys here because we wan't to notify upper layer as soon as possible
+			txn.Unlock()
+		}
+	}()
+
 	if isTxnRecord {
 		kv.lm.Lock(txnId)
 		defer kv.lm.Unlock(txnId)
 
-		inserted, txn, err := kv.txnManager.InsertTxnIfNotExists(txnId)
-		if err != nil {
-			return err
+		var inserted bool
+		if inserted, txn, setErr = kv.txnManager.InsertTxnIfNotExists(txnId); setErr != nil {
+			return setErr
 		}
 		if inserted {
 			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setTxnRecord] created new txn-%d", txnId)
@@ -400,8 +417,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		return txn.SetTxnRecord(ctx, val, opt)
 	}
 
-	var txn *transaction.Transaction
-	if val.IsFirstWriteOfKey() {
+	if val.IsFirstWrite() {
 		var (
 			inserted bool
 			err      error
@@ -414,23 +430,24 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 			glog.V(OCCVerboseLevel).Infof("[KVCC::Set::setKey] created new txn-%d", txnId)
 		}
 	} else {
-		assert.Must(val.IsWriteOfKey())
+		assert.Must(val.InternalVersion > types.TxnInternalVersionMin && val.InternalVersion <= types.TxnInternalVersionMax)
 		var err error
 		if txn, err = kv.txnManager.GetTxn(txnId); err != nil {
 			return errors.Annotatef(err, "key: '%s'", key)
 		}
 	}
 
-	txn.Lock()
+	txn.Lock() // TODO use RLock instead
 	if txn.GetTxnState() != types.TxnStateUncommitted {
 		if txn.IsCommitted() {
 			glog.Fatalf("txn-%d write key '%s' after committed", txnId, key)
 		}
 		assert.Must(txn.IsAborted())
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
+		err := errors.ErrWriteKeyAfterTabletTxnRollbacked
 		txn.Unlock()
 
-		return errors.ErrWriteKeyAfterTabletTxnRollbacked
+		return err
 	}
 
 	w, err := kv.tsCache.AddWriter(key, txn)
@@ -439,9 +456,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 		return err
 	}
-	if err = kv.db.Set(ctx, key, val, opt.ToKV()); err == nil && txn.MustAddWrittenKeyUnsafe(key, val.Meta.ToDB()) {
-		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] added new key '%s' to txn-%d", key, txnId)
-	}
+	err = txn.SetRLocked(ctx, key, key, val, opt)
 	w.SetResult(err)
 	w.Done()
 	txn.Unlock()

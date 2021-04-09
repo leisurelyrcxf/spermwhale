@@ -47,7 +47,7 @@ func benchmarkTxnLostUpdate(b *testing.B, waitNoWriteIntent bool) (ret bool) {
 
 	ts := NewEmbeddedTestCase(b, 1, nil).SetTxnType(types.TxnTypeReadModifyWrite.CondWaitWhenReadDirty(waitNoWriteIntent)).
 		SetGoRoutineNum(goRoutineNum).
-		SetSimulatedLatency(latency).SetFailureProbability(failurePattern).SetFailurePattern(failureProbability)
+		SetSimulatedLatency(latency).SetWriteFailureProb(failurePattern).SetFailurePattern(failureProbability)
 	if !ts.True(ts.GenTestEnv()) {
 		return
 	}

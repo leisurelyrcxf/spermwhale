@@ -119,7 +119,7 @@ func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64
 			}
 			assert.Must(prevVersion == version)
 			cur := modifyFlag(prev)
-			if cur.Flag == prev.Flag {
+			if cur.VFlag == prev.VFlag {
 				// already cleared
 				return nil
 			}
@@ -128,7 +128,7 @@ func (vvs RVVS) ReadModifyWriteKey(_ context.Context, key string, version uint64
 				pipe.ZRemRangeByScore(key, versionDesc, versionDesc)
 				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] removed version %d of key '%s'", version, key)
 				pipe.ZAdd(key, vvs.encodeRedis(version, cur))
-				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] modified version %d of key '%s', new value: '%s'(flag: %d)", version, key, string(cur.V), cur.DBMeta.Flag)
+				glog.V(DebugLevel).Infof("[ReadModifyWriteKey] modified version %d of key '%s', new value: '%s'(flag: %d)", version, key, string(cur.V), cur.DBMeta.VFlag)
 				return nil
 			})
 			return err

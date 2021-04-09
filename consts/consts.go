@@ -3,6 +3,8 @@ package consts
 import (
 	"math"
 	"time"
+
+	"github.com/leisurelyrcxf/spermwhale/assert"
 )
 
 const (
@@ -21,7 +23,6 @@ const (
 	DefaultTxnManagerWriterNumber               = 32
 	DefaultTxnManagerReaderNumber               = 32
 	DefaultTxnManagerMaxBufferedJobPerPartition = 10000
-	DefaultSnapshotBackwardPeriod               = time.Second
 )
 
 const (
@@ -40,8 +41,6 @@ const (
 )
 
 const (
-	KVKVCCWriteOptOptBitMaskTxnRecord = 1
-
 	KVCCWriteOptBitMaskReadModifyWrite = 1 << 2
 
 	CommonKVCCOpsOptBitMaskOperatedByDifferentTxn = 1
@@ -67,31 +66,71 @@ const (
 	TxnStateBitMaskStaging     = 1 << 1
 	TxnStateBitMaskCommitted   = 1 << 2
 	TxnStateBitMaskAborted     = 1 << 3
-	TxnStateBitMaskDone        = 1 << 4
+	TxnStateBitMaskCleared     = 1 << 4
+	TxnStateBitMaskInvalid     = 1 << 5
 
-	TxnStateTerminatedMask = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
+	txnStateBitMaskTerminated = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
+
+	txnStateCheckBitMaskCommitted = TxnStateBitMaskCommitted | TxnStateBitMaskInvalid
+	txnStateCheckBitMaskAborted   = TxnStateBitMaskAborted | TxnStateBitMaskInvalid
+	txnStateCheckBitMaskCleared   = TxnStateBitMaskCleared | TxnStateBitMaskInvalid
 )
+
+func IsCommitted(flag uint8) bool {
+	return flag&txnStateCheckBitMaskCommitted == TxnStateBitMaskCommitted
+}
+
+func IsAborted(flag uint8) bool {
+	return flag&txnStateCheckBitMaskAborted == TxnStateBitMaskAborted
+}
+
+func IsCleared(flag uint8) bool {
+	return flag&txnStateCheckBitMaskCleared == TxnStateBitMaskCleared
+}
+
+// IsTerminated indicate either IsCommitted() or IsAborted()
+func IsTerminated(flag uint8) bool {
+	terminatedFlags := flag & txnStateBitMaskTerminated
+	assert.Must(terminatedFlags != txnStateBitMaskTerminated) // can't be both committed and aborted
+	return terminatedFlags > 0 && flag&TxnStateBitMaskInvalid == 0
+}
 
 const (
 	ValueMetaBitMaskHasWriteIntent       = 1
 	ValueMetaBitMaskCommitted            = TxnStateBitMaskCommitted // 1 << 2
 	ValueMetaBitMaskAborted              = TxnStateBitMaskAborted   // 1 << 3
-	ValueMetaBitMaskDone                 = TxnStateBitMaskDone      // 1 << 4
+	ValueMetaBitMaskCleared              = TxnStateBitMaskCleared   // 1 << 4
+	ValueMetaBitMaskInvalidKeyState      = TxnStateBitMaskInvalid   // 1 << 5
+	ValueMetaBitMaskTxnRecord            = 1 << 6
 	ValueMetaBitMaskPreventedFutureWrite = 1 << 7
 
-	ValueMetaBitMaskTerminated = ValueMetaBitMaskCommitted | ValueMetaBitMaskAborted
+	valueMetaBitMaskCommittedCleared  = ValueMetaBitMaskCommitted | ValueMetaBitMaskCleared
+	valueMetaBitMaskRollbackedCleared = ValueMetaBitMaskAborted | ValueMetaBitMaskCleared
 
-	clearWriteIntent = (^ValueMetaBitMaskHasWriteIntent) & 0xff
+	ValueMetaBitMaskClearWriteIntent     = (^ValueMetaBitMaskHasWriteIntent) & 0xff
+	ValueMetaBitMaskClearInvalidKeyState = (^ValueMetaBitMaskInvalidKeyState) & 0xff
+
+	valueMetaTxnBits = ValueMetaBitMaskCommitted | ValueMetaBitMaskAborted | ValueMetaBitMaskCleared | ValueMetaBitMaskInvalidKeyState
+
+	valueKeyStateCheckCommittedCleared  = valueMetaBitMaskCommittedCleared | ValueMetaBitMaskInvalidKeyState
+	valueKeyStateCheckRollbackedCleared = valueMetaBitMaskRollbackedCleared | ValueMetaBitMaskInvalidKeyState
+	valueKeyStateCheckUncommitted       = valueMetaTxnBits | ValueMetaBitMaskHasWriteIntent
 )
 
-func IsDirty(flag uint8) bool {
-	return flag&ValueMetaBitMaskHasWriteIntent == ValueMetaBitMaskHasWriteIntent
+func IsCommittedClearedValue(flag uint8) bool {
+	return flag&valueKeyStateCheckCommittedCleared == valueMetaBitMaskCommittedCleared
 }
 
-func WithCommitted(flag uint8) uint8 {
-	flag &= clearWriteIntent
-	flag |= ValueMetaBitMaskCommitted
-	return flag
+func IsRollbackedClearedValue(flag uint8) bool {
+	return flag&valueKeyStateCheckRollbackedCleared == valueMetaBitMaskRollbackedCleared
+}
+
+func IsUncommittedValue(flag uint8) bool {
+	return flag&valueKeyStateCheckUncommitted == ValueMetaBitMaskHasWriteIntent
+}
+
+func ExtractTxnBits(state uint8) uint8 {
+	return state & valueMetaTxnBits
 }
 
 const (
@@ -117,12 +156,12 @@ const (
 
 const (
 	DefaultReadTimeout = time.Second * 10
-	MinTxnLifeSpan     = time.Second * 2
+	MinTxnLifeSpan     = time.Second
 )
 
 const (
 	MaxReadModifyWriteQueueCapacityPerKey             = 500
-	ReadModifyWriteQueueMaxReadersRatio               = 0.3333
+	ReadModifyWriteQueueMaxReadersRatio               = 0.7
 	ReadModifyWriteTxnMinSupportedStaleWriteThreshold = 400 * time.Millisecond
 
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
@@ -136,4 +175,10 @@ const (
 
 func GetTimestampCacheMaxBufferedWritersLower(timestampCacheMaxBufferedWriters int, lowerRatio float64) int {
 	return int(float64(timestampCacheMaxBufferedWriters) * lowerRatio)
+}
+
+func init() {
+	assert.Must(ValueMetaBitMaskCommitted > ValueMetaBitMaskHasWriteIntent)
+	assert.Must(ValueMetaBitMaskInvalidKeyState < ValueMetaBitMaskTxnRecord)
+	assert.Must(ValueMetaBitMaskCleared < ValueMetaBitMaskTxnRecord)
 }

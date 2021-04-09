@@ -2,16 +2,10 @@ package commonpb
 
 import (
 	"fmt"
-
-	"github.com/leisurelyrcxf/spermwhale/consts"
 )
 
 func (x *Error) Error() string {
 	return fmt.Sprintf("%s, code: %d", x.Msg, x.Code)
-}
-
-func (x *ValueMeta) IsDirty() bool {
-	return consts.IsDirty(uint8(x.Flag))
 }
 
 func (x *ValueMeta) GetFlagSafe() uint8 {

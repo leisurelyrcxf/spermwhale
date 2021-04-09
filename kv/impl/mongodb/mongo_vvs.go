@@ -44,7 +44,7 @@ func pkEqualOfKey(key string, version uint64) bson.D {
 
 func encodeValueOfKey(val types.DBValue) bson.D {
 	return bson.D{
-		{Key: attrFlag, Value: val.Flag},
+		{Key: attrFlag, Value: val.VFlag},
 		{Key: keyAttrInternalVersion, Value: val.InternalVersion},
 		{Key: attrValue, Value: val.V},
 	}
@@ -164,7 +164,7 @@ func (m MongoVVS) getOne(res *mongo.SingleResult) (gotKey string, value types.DB
 		case attrFlag:
 			v, ok := val.Int32OK()
 			assert.Must(ok)
-			value.Flag = uint8(v)
+			value.VFlag = types.VFlag(v)
 			gotAttrs++
 		case keyAttrInternalVersion:
 			iVersion, ok := val.Int32OK()

@@ -11,17 +11,143 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/proto/txnpb"
 )
 
+type VFlag uint8
+
+func (m VFlag) GetKeyState() KeyState {
+	return KeyState(consts.ExtractTxnBits(uint8(m)))
+}
+
+func (m VFlag) IsValid() bool {
+	return m != 0 && m&consts.TxnStateBitMaskInvalid == 0 &&
+		(!m.IsCleared() || m.IsTerminated()) &&
+		(!m.IsCommitted() || (!m.IsDirty() && !m.IsAborted())) &&
+		(!m.IsAborted() || (m.IsDirty() && !m.IsCommitted()))
+}
+
+func (m VFlag) AssertValid() {
+	assert.Must(m != 0 && m&consts.TxnStateBitMaskInvalid == 0)
+	assert.Must(!m.IsCleared() || m.IsTerminated())
+	assert.Must(!m.IsCommitted() || (!m.IsDirty() && !m.IsAborted()))
+	assert.Must(!m.IsAborted() || (m.IsDirty() && !m.IsCommitted()))
+}
+
+func (m VFlag) IsDirty() bool {
+	return m&consts.ValueMetaBitMaskHasWriteIntent == consts.ValueMetaBitMaskHasWriteIntent
+}
+
+func (m VFlag) IsCommitted() bool {
+	return consts.IsCommitted(uint8(m))
+}
+
+func (m VFlag) IsUncommitted() bool {
+	return consts.IsUncommittedValue(uint8(m))
+}
+
+func (m VFlag) IsAborted() bool {
+	return consts.IsAborted(uint8(m))
+}
+
+func (m VFlag) IsTerminated() bool {
+	return consts.IsTerminated(uint8(m))
+}
+
+func (m VFlag) IsCleared() bool {
+	cleared := consts.IsCleared(uint8(m))
+	assert.Must(!cleared || m.IsTerminated()) // TODO remove this in product
+	return cleared
+}
+
+func (m VFlag) IsCommittedCleared() bool {
+	return consts.IsCommittedClearedValue(uint8(m))
+}
+
+func (m VFlag) IsRollbackedCleared() bool {
+	return consts.IsRollbackedClearedValue(uint8(m))
+}
+
+func (m VFlag) IsKeyStateInvalid() bool {
+	return m&consts.ValueMetaBitMaskInvalidKeyState == consts.ValueMetaBitMaskInvalidKeyState
+}
+
+func (m VFlag) IsTxnRecord() bool {
+	return m&consts.ValueMetaBitMaskTxnRecord == consts.ValueMetaBitMaskTxnRecord
+}
+
+func (m VFlag) IsFutureWritePrevented() bool {
+	return m&consts.ValueMetaBitMaskPreventedFutureWrite == consts.ValueMetaBitMaskPreventedFutureWrite
+}
+
+func (m VFlag) String() string {
+	return fmt.Sprintf("has_write_intent: %v, committed: %v, aborted: %v, cleared: %v, invalid: %v, txn_record: %v, prevent_future_write: %v",
+		m.IsDirty(), m.IsCommitted(), m.IsAborted(), m.IsCleared(), m.IsKeyStateInvalid(), m.IsTxnRecord(), m.IsFutureWritePrevented())
+}
+
+func (m *VFlag) SetCommitted() {
+	*m &= consts.ValueMetaBitMaskClearWriteIntent
+	*m |= consts.ValueMetaBitMaskCommitted
+}
+
+func (m *VFlag) SetCleared() {
+	*m |= consts.ValueMetaBitMaskCleared
+}
+
+func (m *VFlag) SetInvalidKeyState() {
+	*m |= consts.ValueMetaBitMaskInvalidKeyState
+}
+
+func (m *VFlag) ClearInvalidKeyState() {
+	*m &= consts.ValueMetaBitMaskClearInvalidKeyState
+}
+
+// Deprecated
+func (m *VFlag) updateKeyState(state KeyState) {
+	if state.IsCommitted() {
+		*m &= consts.ValueMetaBitMaskClearWriteIntent
+	}
+	m.UpdateKeyStateUnsafe(state)
+}
+
+// UpdateKeyStateUnsafe only use this when you known what you are doing
+func (m *VFlag) UpdateKeyStateUnsafe(state KeyState) {
+	*m |= state.ToVFlag()
+}
+
+func (m *VFlag) UpdateTxnState(state TxnState) {
+	if state.IsCommitted() {
+		*m &= consts.ValueMetaBitMaskClearWriteIntent
+	}
+	*m |= state.ToVFlag()
+}
+
 type Meta struct {
 	Version         uint64
 	InternalVersion TxnInternalVersion
-	Flag            uint8
+	VFlag
+}
+
+func (m Meta) IsValid() bool {
+	return m.Version != 0 && m.InternalVersion.IsValid() && m.VFlag.IsValid()
+}
+
+func (m Meta) AssertValid() {
+	assert.Must(m.Version != 0)
+	assert.Must(m.InternalVersion.IsValid())
+	m.VFlag.AssertValid()
+}
+
+func (m Meta) IsEmpty() bool {
+	return m.Version == 0
+}
+
+func (m Meta) IsFirstWrite() bool {
+	return m.InternalVersion == TxnInternalVersionMin
 }
 
 func NewMetaFromPB(x *commonpb.ValueMeta) Meta {
 	return Meta{
 		Version:         x.Version,
 		InternalVersion: TxnInternalVersion(x.InternalVersion),
-		Flag:            x.GetFlagSafe(),
+		VFlag:           VFlag(x.GetFlagSafe()),
 	}
 }
 
@@ -29,67 +155,23 @@ func (m Meta) ToPB() *commonpb.ValueMeta {
 	return (&commonpb.ValueMeta{
 		Version:         m.Version,
 		InternalVersion: uint32(m.InternalVersion),
-	}).SetFlag(m.Flag)
+	}).SetFlag(uint8(m.VFlag))
 }
 
 func (m Meta) ToDB() DBMeta {
 	return DBMeta{
 		InternalVersion: m.InternalVersion,
-		Flag:            m.Flag,
+		VFlag:           m.VFlag,
 	}
 }
 
-func (m *Meta) SetCommitted() {
-	m.Flag = consts.WithCommitted(m.Flag)
-}
-
-func (m *Meta) SetAborted() {
-	m.Flag |= consts.ValueMetaBitMaskAborted
-}
-
-func (m Meta) IsEmpty() bool {
-	return m.Version == 0
-}
-
-func (m Meta) IsFirstWriteOfKey() bool {
-	return m.InternalVersion == TxnInternalVersionMin // For txn record, InternalVersion is always 0
-}
-
-func (m Meta) IsWriteOfKey() bool {
-	return m.InternalVersion >= TxnInternalVersionMin // For txn record, InternalVersion is always 0
-}
-
-func (m Meta) IsDirty() bool {
-	return consts.IsDirty(m.Flag)
-}
-
-func (m Meta) IsCommitted() bool {
-	committed := m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
-	assert.Must(!committed || m.Flag&(0b111) == consts.ValueMetaBitMaskCommitted) // TODO remove this in product
-	return committed
-}
-
-func (m Meta) IsAborted() bool {
-	aborted := m.Flag&consts.ValueMetaBitMaskAborted == consts.ValueMetaBitMaskAborted
-	//assert.Must(!aborted || m.Flag&(0b111) == consts.ValueMetaBitMaskAborted|consts.ValueMetaBitMaskHasWriteIntent) // TODO remove this in product
-	return aborted
-}
-
-func (m Meta) IsTerminated() bool {
-	return m.Flag&consts.ValueMetaBitMaskTerminated != 0
-}
-
-func (m *Meta) Update(state TxnState) (isAborted bool) {
-	if state.IsAborted() {
-		m.SetAborted()
-		return true
-	}
-	if state.IsCommitted() {
-		m.SetCommitted()
-		return false
-	}
-	return false
-}
+//func (m *Meta) SetCommitted() {
+//	m.Flag = consts.WithCommitted(m.Flag)
+//}
+//
+//func (m *Meta) SetAborted() {
+//	m.Flag |= consts.ValueMetaBitMaskAborted
+//}
 
 type Value struct {
 	Meta
@@ -104,21 +186,28 @@ func NewValue(val []byte, version uint64) Value {
 	return Value{
 		Meta: Meta{
 			Version: version,
-			Flag:    consts.ValueMetaBitMaskHasWriteIntent,
+			VFlag:   consts.ValueMetaBitMaskHasWriteIntent,
 		},
 		V: val,
 	}
 }
-
+func NewTxnValue(val []byte, version uint64) Value {
+	return Value{
+		Meta: Meta{
+			Version: version,
+			VFlag:   consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskTxnRecord,
+		},
+		V: val,
+	}
+}
+func NewIntValue(i int) Value {
+	return NewValue([]byte(strconv.Itoa(i)), 0) // TODO change coding
+}
 func NewValueFromPB(x *commonpb.Value) Value {
 	return Value{
 		Meta: NewMetaFromPB(x.Meta),
 		V:    x.V,
 	}
-}
-
-func NewIntValue(i int) Value {
-	return NewValue([]byte(strconv.Itoa(i)), 0) // TODO change coding
 }
 
 func (v Value) ToPB() *commonpb.Value {
@@ -132,6 +221,15 @@ func (v Value) ToDB() DBValue {
 		DBMeta: v.Meta.ToDB(),
 		V:      v.V,
 	}
+}
+
+func (v Value) IsValid() bool {
+	return v.Meta.IsValid() && len(v.V) > 0
+}
+
+func (v Value) AssertValid() {
+	v.Meta.AssertValid()
+	assert.Must(len(v.V) > 0)
 }
 
 func (v Value) String() string {
@@ -310,13 +408,9 @@ func (v TValue) IsEmpty() bool {
 
 func (v TValue) CondPreventedFutureWrite(b bool) TValue {
 	if b {
-		v.Flag |= consts.ValueMetaBitMaskPreventedFutureWrite
+		v.VFlag |= consts.ValueMetaBitMaskPreventedFutureWrite
 	}
 	return v
-}
-
-func (v TValue) IsFutureWritePrevented() bool {
-	return v.Flag&consts.ValueMetaBitMaskPreventedFutureWrite == consts.ValueMetaBitMaskPreventedFutureWrite
 }
 
 type TValues []TValue

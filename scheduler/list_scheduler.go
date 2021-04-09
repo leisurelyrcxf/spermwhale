@@ -1,11 +1,7 @@
 package scheduler
 
 import (
-	"context"
 	"sync"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/golang/glog"
 
@@ -176,12 +172,8 @@ func (s *DynamicListScheduler) start() {
 					return
 				}
 				if task, ok := taskObj.(*basic.Task); ok {
-					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled && err != errors.ErrInject {
-							if glog.V(1) {
-								glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
-							}
-						}
+					if err := task.Run(); err != nil && glog.V(101) {
+						glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
 					}
 					continue
 				}
@@ -200,14 +192,13 @@ func (s *DynamicListScheduler) start() {
 
 				assert.Must(firstTask != nil)
 				for task := firstTask; ; {
-					if err := task.Run(); err != nil {
-						if !errors.IsRetryableTransactionErr(err) && err != context.Canceled && status.Code(err) != codes.Canceled && err != errors.ErrInject {
-							glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
-						}
+					if err := task.Run(); err != nil && glog.V(101) {
+						glog.Errorf("task %s(%s) failed: %v", task.ID, task.Name, err)
 					}
 
 					s.lm.Lock(task.ID)
 					if next := task.Next(); next != nil {
+						assert.Must(next.Prev() == task)
 						task = next
 						s.lm.Unlock(task.ID)
 						continue

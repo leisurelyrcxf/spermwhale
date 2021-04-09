@@ -141,7 +141,7 @@ func (pq *readModifyWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readM
 
 	var maxHeadVersion = pq.maxHeadVersion.Get()
 	if pq.Len() > 0 {
-		if success, headChanged := pq.check("check-heap-head-age", 3, func(head *reader) error {
+		if success, headChanged := pq.check("check-heap-head-age", 8, func(head *reader) error {
 			return utils.CheckOldMan(head.addTime, pq.maxQueuedAge)
 		}); success && headChanged {
 			pq.notify()
@@ -199,7 +199,7 @@ func (pq *readModifyWriteQueue) notifyKeyEvent(readModifyWriteTxnId types.TxnId,
 }
 
 func (pq *readModifyWriteQueue) push(r *reader) {
-	defer pq.verifyInvariant() // TODO remove this
+	defer pq.chkInvariant() // TODO remove this
 
 	heap.Push(&pq.readers, r)
 
@@ -226,7 +226,7 @@ func (pq *readModifyWriteQueue) push(r *reader) {
 }
 
 func (pq *readModifyWriteQueue) pop() {
-	defer pq.verifyInvariant() // TODO remove this
+	defer pq.chkInvariant() // TODO remove this
 
 	var r *reader
 	if r = heap.Pop(&pq.readers).(*reader); pq.Len() == 0 {
@@ -242,7 +242,7 @@ func (pq *readModifyWriteQueue) pop() {
 }
 
 func (pq *readModifyWriteQueue) check(desc string, v glog.Level, checker func(head *reader) error) (success bool, headChanged bool) {
-	defer pq.verifyInvariant() // TODO remove this
+	defer pq.chkInvariant() // TODO remove this
 
 	err := checker(pq.head())
 	if err == nil {
@@ -277,7 +277,7 @@ func (pq *readModifyWriteQueue) notify() {
 	glog.V(60).Infof("notified %d, total count: %d, queued: %d", pq.head().ReaderVersion, pq.notified, pq.Len())
 }
 
-func (pq *readModifyWriteQueue) verifyInvariant() {
+func (pq *readModifyWriteQueue) chkInvariant() {
 	return // TODO change this
 	//assert.Must(len(pq.kMaxReaders) <= pq.maxReadersCount)
 	//if len(pq.kMaxReaders) == 0 {

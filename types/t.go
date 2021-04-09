@@ -45,7 +45,7 @@ func (assert *Assertions) EqualIntValue(exp Value, actual Value) (b bool) {
 	if !assert.Equalf(exp.InternalVersion, actual.InternalVersion, "internal versions not same") {
 		return
 	}
-	if !assert.Equal(exp.Flag, actual.Flag, "flags not same") {
+	if !assert.Equal(exp.VFlag, actual.VFlag, "flags not same") {
 		return
 	}
 	expInt, err := exp.Int()
@@ -69,7 +69,7 @@ func (assert *Assertions) EqualValue(exp Value, actual Value) (b bool) {
 	if !assert.Equalf(exp.InternalVersion, actual.InternalVersion, "internal versions not same") {
 		return
 	}
-	if !assert.Equal(exp.Flag, actual.Flag, "flags not same") {
+	if !assert.Equal(exp.VFlag, actual.VFlag, "flags not same") {
 		return
 	}
 	if !assert.Equalf(exp.V, actual.V, "V not the same") {

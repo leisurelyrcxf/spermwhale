@@ -3,6 +3,8 @@ package errors
 import (
 	"fmt"
 
+	"github.com/golang/glog"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
@@ -18,15 +20,16 @@ var (
 		consts.ErrCodeReadModifyWriteQueueFull:  {},
 	}
 
-	mustRollbackCommitErrs = map[int32]struct{}{
+	mustRollbackSetErrs = map[int32]struct{}{
 		consts.ErrCodeWriteReadConflict:                {},
 		consts.ErrCodeStaleWrite:                       {},
 		consts.ErrCodeWriteKeyAfterTabletTxnRollbacked: {},
 		consts.ErrCodeTabletWriteTransactionNotFound:   {},
 		consts.ErrCodeTimestampCacheWriteQueueFull:     {},
+		consts.ErrCodeTabletTxnSetFailedKeyNotFound:    {},
 	}
 
-	retryableTxnErrs = mergeCodeSets(mustRollbackGetErrs, mustRollbackCommitErrs, map[int32]struct{}{
+	retryableTxnErrs = mergeCodeSets(mustRollbackGetErrs, mustRollbackSetErrs, map[int32]struct{}{
 		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
 		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
 		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
@@ -60,7 +63,11 @@ type ErrorKey struct {
 var AllErrors = make(map[ErrorKey]*Error, 256)
 
 func registerErr(e *Error) *Error {
-	AllErrors[e.Key()] = e
+	ek := e.Key()
+	if _, ok := AllErrors[ek]; ok {
+		glog.Fatalf("error %v already registered", e)
+	}
+	AllErrors[ek] = e
 	return e
 }
 
@@ -129,8 +136,8 @@ func IsMustRollbackGetErr(e error) bool {
 	return in(GetErrorCode(e), mustRollbackGetErrs)
 }
 
-func IsMustRollbackCommitErr(e error) bool {
-	return in(GetErrorCode(e), mustRollbackCommitErrs)
+func IsMustRollbackSetErr(e error) bool {
+	return in(GetErrorCode(e), mustRollbackSetErrs)
 }
 
 func IsNotExistsErr(e error) bool {

@@ -10,23 +10,27 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/consts"
 )
 
+type TxnConfig struct {
+	WoundUncommittedTxnThreshold time.Duration
+	ClearTimeout                 time.Duration
+}
+
 type TxnManagerConfig struct {
-	WoundUncommittedTxnThreshold     time.Duration
+	TxnConfig
 	ClearerNum, WriterNum, ReaderNum int
-	ClearTimeout                     time.Duration
 	MaxTaskBufferedPerPartition      int
-	SnapshotBackwardPeriod           time.Duration
 }
 
 func NewTxnManagerConfig(woundUncommittedTxnThreshold time.Duration) TxnManagerConfig {
 	return TxnManagerConfig{
-		WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold,
-		ClearerNum:                   consts.DefaultTxnManagerClearerNumber,
-		ClearTimeout:                 consts.DefaultTxnManagerClearJobTimeout,
-		WriterNum:                    consts.DefaultTxnManagerWriterNumber,
-		ReaderNum:                    consts.DefaultTxnManagerReaderNumber,
-		MaxTaskBufferedPerPartition:  consts.DefaultTxnManagerMaxBufferedJobPerPartition,
-		SnapshotBackwardPeriod:       consts.DefaultSnapshotBackwardPeriod,
+		TxnConfig: TxnConfig{
+			WoundUncommittedTxnThreshold: woundUncommittedTxnThreshold,
+			ClearTimeout:                 consts.DefaultTxnManagerClearJobTimeout,
+		},
+		ClearerNum:                  consts.DefaultTxnManagerClearerNumber,
+		WriterNum:                   consts.DefaultTxnManagerWriterNumber,
+		ReaderNum:                   consts.DefaultTxnManagerReaderNumber,
+		MaxTaskBufferedPerPartition: consts.DefaultTxnManagerMaxBufferedJobPerPartition,
 	}
 }
 

@@ -214,10 +214,6 @@ func (opt KVCCWriteOption) ToKV() KVWriteOption {
 	return KVWriteOption{flag: opt.flag}
 }
 
-func (opt KVCCWriteOption) WithTxnRecord() KVCCWriteOption {
-	opt.flag |= KVKVCCWriteOptOptBitMaskTxnRecord
-	return opt
-}
 func (opt KVCCWriteOption) CondReadModifyWrite(b bool) KVCCWriteOption {
 	if b {
 		opt.flag |= KVCCWriteOptBitMaskReadModifyWrite
@@ -225,9 +221,6 @@ func (opt KVCCWriteOption) CondReadModifyWrite(b bool) KVCCWriteOption {
 	return opt
 }
 
-func (opt KVCCWriteOption) IsTxnRecord() bool {
-	return opt.flag&KVKVCCWriteOptOptBitMaskTxnRecord == KVKVCCWriteOptOptBitMaskTxnRecord
-}
 func (opt KVCCWriteOption) IsReadModifyWrite() bool {
 	return opt.flag&KVCCWriteOptBitMaskReadModifyWrite == KVCCWriteOptBitMaskReadModifyWrite
 }
@@ -268,7 +261,7 @@ func (opt *KVCCOperationOption) CondSetReadModifyWrite(b bool) {
 
 type KVCCUpdateMetaOption struct {
 	KVCCOperationOption
-	TxnInternalVersion
+	TxnInternalVersion // Used for verification
 }
 
 var KVCCClearWriteIntent = KVCCUpdateMetaOption{KVCCOperationOption: KVCCOperationOption{Flag: KVKVCCUpdateMetaOptBitMaskClearWriteIntent}}

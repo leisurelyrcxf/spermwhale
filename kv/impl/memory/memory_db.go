@@ -157,7 +157,7 @@ func (kvvs *KeyVersionedValues) ReadModifyWrite(version uint64, modifyFlag func(
 	if !(*concurrency.ConcurrentTreeMap)(kvvs).Update(version, func(old interface{}) (new interface{}, modified bool) {
 		oldVal := old.(types.DBValue)
 		newVal := modifyFlag(oldVal)
-		return newVal, newVal.Flag != oldVal.Flag
+		return newVal, newVal.VFlag != oldVal.VFlag
 	}) {
 		return onNotExists(errors.ErrKeyOrVersionNotExist)
 	}

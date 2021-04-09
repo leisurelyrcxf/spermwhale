@@ -16,7 +16,9 @@ const (
 	ErrCodeMinAllowedSnapshotVersionViolated       = 20
 	ErrCodeInvalidTxnSnapshotReadOption            = 21
 
-	ErrCodeWriteKeyAfterTabletTxnRollbacked int32 = 23
+	ErrCodeWriteKeyAfterTabletTxnRollbacked        int32 = 23
+	ErrCodeTabletTxnSetFailedKeyNotFound           int32 = 24
+	ErrCodeTabletTxnSetFailedKeyStatusUndetermined int32 = 25
 
 	ErrCodeKeyOrVersionNotExists int32 = 27
 	ErrCodeShardsNotReady              = 28

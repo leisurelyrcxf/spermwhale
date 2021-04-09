@@ -146,8 +146,14 @@ var (
 		Msg:  "transaction retried too many times",
 	})
 	ErrInject = registerErr(&Error{
-		Code: consts.ErrCodeInject,
-		Msg:  "injected error",
+		Code:    consts.ErrCodeInject,
+		SubCode: 0,
+		Msg:     "injected error",
+	})
+	ErrInjectAckLost = registerErr(&Error{
+		Code:    consts.ErrCodeInject,
+		SubCode: 1,
+		Msg:     "injected error: ack lost",
 	})
 	ErrDummy = registerErr(&Error{
 		Code: consts.ErrCodeDummy,
@@ -260,6 +266,14 @@ var (
 	ErrWriteKeyAfterTabletTxnRollbacked = registerErr(&Error{
 		Code: consts.ErrCodeWriteKeyAfterTabletTxnRollbacked,
 		Msg:  "write key after tablet transaction rollbacked",
+	})
+	ErrTabletTxnSetFailedKeyNotFound = registerErr(&Error{
+		Code: consts.ErrCodeTabletTxnSetFailedKeyNotFound,
+		Msg:  "tablet txn set failed and key not found",
+	})
+	ErrTabletTxnSetFailedKeyStatusUndetermined = registerErr(&Error{
+		Code: consts.ErrCodeTabletTxnSetFailedKeyStatusUndetermined,
+		Msg:  "tablet txn set failed and can't determine key status",
 	})
 	ErrRemoveKeyFailed = registerErr(&Error{
 		Code: consts.ErrCodeRemoveKeyFailed,

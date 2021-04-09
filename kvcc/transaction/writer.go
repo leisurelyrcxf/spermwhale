@@ -113,5 +113,5 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 }
 
 func init() {
-	HasMoreWritingWriters.SetTxnStateUnsafe(types.TxnStateCommitted)
+	HasMoreWritingWriters.setTxnStateUnsafe(types.TxnStateCommitted, false, "init HasMoreWritingWriters")
 }

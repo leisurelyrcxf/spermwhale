@@ -117,7 +117,7 @@ func testManagerGC(t types.T) (b bool) {
 					tm.removeTxnPrimitive(transaction)
 				})
 				txnObjectsCount.Add(1)
-				txn.Unref(txn)
+				txn.unref(txn)
 				return txn
 			})
 		}

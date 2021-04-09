@@ -157,12 +157,12 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 						}
 						ts.Equal(values[0].Version, values[2].Version)
 						ts.Equal(values[2].Version, values[4].Version)
-						ts.Equal(values[0].Flag, values[2].Flag)
-						ts.Equal(values[2].Flag, values[4].Flag)
+						ts.Equal(values[0].VFlag, values[2].VFlag)
+						ts.Equal(values[2].VFlag, values[4].VFlag)
 						ts.Equal(values[1].Version, values[3].Version)
 						ts.Equal(values[3].Version, values[5].Version)
-						ts.Equal(values[1].Flag, values[3].Flag)
-						ts.Equal(values[3].Flag, values[5].Flag)
+						ts.Equal(values[1].VFlag, values[3].VFlag)
+						ts.Equal(values[3].VFlag, values[5].VFlag)
 						v0, v1 := ints[0], ints[1]
 						ts.Equal(valueSum, v0+v1)
 						v2, v3 := ints[2], ints[3]

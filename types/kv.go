@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/golang/glog"
-	"github.com/leisurelyrcxf/spermwhale/consts"
+	"github.com/leisurelyrcxf/spermwhale/assert"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvpb"
 )
@@ -26,24 +26,31 @@ var (
 )
 
 type DBMeta struct {
-	Flag            uint8              `json:"F"`
+	VFlag           `json:"F"`
 	InternalVersion TxnInternalVersion `json:"I"`
 }
 
-func (m DBMeta) IsDirty() bool {
-	return consts.IsDirty(m.Flag)
-}
-
-func (m DBMeta) IsCommitted() bool {
-	return m.Flag&consts.ValueMetaBitMaskCommitted == consts.ValueMetaBitMaskCommitted
-}
+var InvalidDBMeta = DBMeta{InternalVersion: TxnInternalVersionPositiveInvalid}
 
 func (m DBMeta) WithVersion(version uint64) Meta {
 	return Meta{
 		Version:         version,
 		InternalVersion: m.InternalVersion,
-		Flag:            m.Flag,
+		VFlag:           m.VFlag,
 	}
+}
+func (m DBMeta) WithInvalidKeyState() DBMeta {
+	m.SetInvalidKeyState()
+	return m
+}
+
+func (m DBMeta) IsValid() bool {
+	return m.VFlag.IsValid() && m.InternalVersion.IsValid()
+}
+
+func (m DBMeta) AssertValid() {
+	m.VFlag.AssertValid()
+	assert.Must(m.InternalVersion.IsValid())
 }
 
 type DBValue struct {
@@ -55,7 +62,7 @@ type DBValue struct {
 var EmptyDBValue = DBValue{}
 
 func (v DBValue) WithCommitted() DBValue {
-	v.Flag = consts.WithCommitted(v.Flag)
+	v.SetCommitted()
 	return v
 }
 
@@ -96,6 +103,13 @@ func NewKVReadOptionWithExactVersion(exactVersion uint64) KVReadOption {
 	}
 }
 
+func NewKVReadCheckVersionOption(exactVersion uint64) KVReadOption {
+	return KVReadOption{
+		Version: exactVersion,
+		Flag:    KVReadOptBitMaskExactVersion | KVReadOptBitMaskMetaOnly,
+	}
+}
+
 func NewKVReadOptionFromPB(x *kvpb.KVReadOption) KVReadOption {
 	return KVReadOption{
 		Version: x.Version,
@@ -107,6 +121,13 @@ func (opt KVReadOption) ToPB() *kvpb.KVReadOption {
 	return (&kvpb.KVReadOption{
 		Version: opt.Version,
 	}).SetFlagSafe(opt.Flag)
+}
+
+func (opt KVReadOption) CondTxnRecord(b bool) KVReadOption {
+	if b {
+		opt.Flag |= KVReadOptBitMaskTxnRecord
+	}
+	return opt
 }
 
 func (opt KVReadOption) WithTxnRecord() KVReadOption {
@@ -147,15 +168,6 @@ func NewKVWriteOptionFromPB(x *kvpb.KVWriteOption) KVWriteOption {
 
 func (opt *KVWriteOption) ToPB() *kvpb.KVWriteOption {
 	return (&kvpb.KVWriteOption{}).SetFlagSafe(opt.flag)
-}
-
-func (opt KVWriteOption) WithTxnRecord() KVWriteOption {
-	opt.flag |= KVKVCCWriteOptOptBitMaskTxnRecord
-	return opt
-}
-
-func (opt KVWriteOption) IsTxnRecord() bool {
-	return opt.flag&KVKVCCWriteOptOptBitMaskTxnRecord == KVKVCCWriteOptOptBitMaskTxnRecord
 }
 
 type KVUpdateMetaOption uint8

@@ -2,6 +2,7 @@ package concurrency
 
 import (
 	"fmt"
+	"hash/crc32"
 	"sync"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -140,4 +141,118 @@ func (lm *AdvancedTxnLockManager) RLock(txnId types.TxnId) {
 
 func (lm *AdvancedTxnLockManager) RUnlock(txnId types.TxnId) {
 	lm.partitions[txnId.Version()&(uint64(len(lm.partitions)-1))].RUnlock(txnId)
+}
+
+type AdvancedLockManagerPartition struct {
+	m map[string]rwCount
+
+	mu     sync.RWMutex
+	rCount sync.Cond
+	wCount sync.Cond
+}
+
+func (p *AdvancedLockManagerPartition) Initialize() {
+	p.m = make(map[string]rwCount)
+	p.rCount.L = &p.mu
+	p.wCount.L = &p.mu
+}
+
+func (p *AdvancedLockManagerPartition) Lock(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for !p.cas(key) {
+		p.wCount.Wait()
+	}
+	for p.m[key].readerCount > 0 {
+		p.rCount.Wait()
+	}
+}
+
+func (p *AdvancedLockManagerPartition) cas(key string) (swapped bool) {
+	if val := p.m[key]; !val.writerCount {
+		val.writerCount = true
+		p.m[key] = val
+		return true
+	}
+	return false
+}
+
+func (p *AdvancedLockManagerPartition) Unlock(key string) {
+	p.mu.Lock()
+	delete(p.m, key)
+	p.mu.Unlock()
+
+	p.wCount.Broadcast()
+}
+
+func (p *AdvancedLockManagerPartition) RLock(key string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for !p.tryRLock(key) {
+		p.wCount.Wait()
+	}
+}
+
+func (p *AdvancedLockManagerPartition) tryRLock(key string) (grabbed bool) {
+	if val := p.m[key]; !val.writerCount {
+		p.m[key] = val.WithIncrReader()
+		return true
+	}
+	return false
+}
+
+func (p *AdvancedLockManagerPartition) RUnlock(key string) {
+	p.mu.Lock()
+	defer func() {
+		p.mu.Unlock()
+
+		p.rCount.Broadcast()
+	}()
+
+	newRW := p.m[key].WithDecrReader()
+	if newRW.IsEmpty() {
+		delete(p.m, key)
+		return
+	}
+	p.m[key] = newRW
+}
+
+type AdvancedLockManager struct {
+	partitions []AdvancedLockManagerPartition
+}
+
+func NewAdvancedLockManager(partitionNum int) *AdvancedLockManager {
+	return (&AdvancedLockManager{}).Initialize(partitionNum)
+}
+
+func (lm *AdvancedLockManager) Initialize(partitionNum int) *AdvancedLockManager {
+	assert.Must(utils.IsPowerOf2(partitionNum))
+
+	lm.partitions = make([]AdvancedLockManagerPartition, partitionNum)
+	for i := range lm.partitions {
+		lm.partitions[i].Initialize()
+	}
+	return lm
+}
+
+func (lm *AdvancedLockManager) Lock(key string) {
+	lm.partitions[lm.hash(key)].Lock(key)
+}
+
+func (lm *AdvancedLockManager) Unlock(key string) {
+	lm.partitions[lm.hash(key)].Unlock(key)
+}
+
+func (lm *AdvancedLockManager) RLock(key string) {
+	lm.partitions[lm.hash(key)].RLock(key)
+}
+
+func (lm *AdvancedLockManager) RUnlock(key string) {
+	lm.partitions[lm.hash(key)].RUnlock(key)
+}
+
+func (lm *AdvancedLockManager) hash(key string) uint32 {
+	return crc32.ChecksumIEEE([]byte(key)) & uint32(len(lm.partitions)-1)
 }

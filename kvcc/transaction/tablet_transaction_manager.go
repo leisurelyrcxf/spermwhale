@@ -17,7 +17,7 @@ const (
 	EstimatedMaxQPS = 1000000
 	TxnPartitionNum = 256
 
-	TxnVerboseLevel = 150
+	TabletTransactionVerboseLevel = 150
 )
 
 type Manager struct {
@@ -29,6 +29,7 @@ type Manager struct {
 }
 
 func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
+	assert.Must(cfg.ReadModifyWriteQueueCfg.MaxQueuedAge < cfg.StaleWriteThreshold)
 	tm := &Manager{cfg: cfg, db: db}
 
 	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.cfg.TxnLifeSpan) / float64(time.Second)))
@@ -74,7 +75,7 @@ func (tm *Manager) ClearWriteIntent(ctx context.Context, key string, version uin
 		return err
 	}
 	if inserted {
-		glog.V(TxnVerboseLevel).Infof("[Manager::ClearWriteIntent] created new txn-%d", version)
+		glog.V(TabletTransactionVerboseLevel).Infof("[Manager::ClearWriteIntent] created new txn-%d", version)
 	}
 	return txn.ClearWriteIntent(ctx, key, opt)
 }
@@ -87,7 +88,7 @@ func (tm *Manager) RollbackKey(ctx context.Context, key string, version uint64, 
 		return err
 	}
 	if inserted {
-		glog.V(TxnVerboseLevel).Infof("[Manager::RollbackKey] created new txn-%d", version)
+		glog.V(TabletTransactionVerboseLevel).Infof("[Manager::RollbackKey] created new txn-%d", version)
 	}
 	return txn.RollbackKey(ctx, key, opt)
 }
@@ -105,7 +106,7 @@ func (tm *Manager) RemoveTxnRecord(ctx context.Context, version uint64, opt type
 		return removeTxnRecord(ctx, version, action, tm.db)
 	}
 	if inserted {
-		glog.V(TxnVerboseLevel).Infof("[Manager::RemoveTxnRecord] created new txn-%d", version)
+		glog.V(TabletTransactionVerboseLevel).Infof("[Manager::RemoveTxnRecord] created new txn-%d", version)
 	}
 	return txn.RemoveTxnRecord(ctx, opt)
 }

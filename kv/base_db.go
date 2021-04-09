@@ -70,9 +70,9 @@ func (db *DB) Get(ctx context.Context, key string, opt types.KVReadOption) (type
 	return val.WithVersion(version), nil
 }
 
-func (db *DB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+func (db *DB) Set(ctx context.Context, key string, val types.Value, _ types.KVWriteOption) error {
 	var (
-		isTxnRecord = opt.IsTxnRecord()
+		isTxnRecord = val.IsTxnRecord()
 	)
 	assert.Must((isTxnRecord && key == "") || (!isTxnRecord && key != ""))
 	if isTxnRecord {

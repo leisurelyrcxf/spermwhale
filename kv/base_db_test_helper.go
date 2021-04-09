@@ -186,8 +186,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 
 	{
 		if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-			value.Flag &= ClearValueMetaBitMaskCommitted
-			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+			value.VFlag &= ClearValueMetaBitMaskCommitted
+			value.VFlag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
 			return
@@ -200,8 +200,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 		}
 		utils.WithLogLevel(0, func() {
 			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-				value.Flag &= ClearValueMetaBitMaskCommitted
-				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+				value.VFlag &= ClearValueMetaBitMaskCommitted
+				value.VFlag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return
@@ -211,8 +211,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 
 	{
 		if err := db.updateFlagOfKey(ctx, key, 1, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-			value.Flag &= ClearValueMetaBitMaskCommitted
-			value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+			value.VFlag &= ClearValueMetaBitMaskCommitted
+			value.VFlag |= consts.ValueMetaBitMaskHasWriteIntent
 			return value
 		}); !assert.NoError(err) {
 			return
@@ -222,8 +222,8 @@ func testKeyStore(t types.T, db *DB) (b bool) {
 		}
 		utils.WithLogLevel(0, func() {
 			if err := db.updateFlagOfKey(ctx, key, 2, consts.ValueMetaBitMaskHasWriteIntent, func(value types.DBValue) types.DBValue {
-				value.Flag &= ClearValueMetaBitMaskCommitted
-				value.Flag |= consts.ValueMetaBitMaskHasWriteIntent
+				value.VFlag &= ClearValueMetaBitMaskCommitted
+				value.VFlag |= consts.ValueMetaBitMaskHasWriteIntent
 				return value
 			}); !errors.AssertIsKeyOrVersionNotExistsErr(assert, err) {
 				return
@@ -257,7 +257,7 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 		valueOfVersion = func(version uint64) types.Value {
 			obj, ok := versions[version]
 			assert.True(ok)
-			return types.NewValue(obj.V, version)
+			return types.NewTxnValue(obj.V, version)
 		}
 		assertValueOfVersion = func(val types.Value, err error, expVersion uint64) bool {
 			expObj, ok := versions[expVersion]
@@ -266,16 +266,16 @@ func testTxnRecordStore(t types.T, db *DB) (b bool) {
 				assert.Equal(expVersion, val.Version) &&
 				assert.Equal(expObj.V, val.V)
 		}
-		writeOpt   = types.NewKVWriteOption().WithTxnRecord()
+		writeOpt   = types.NewKVWriteOption()
 		newReadOpt = func(version uint64) types.KVReadOption {
-			return types.NewKVReadOptionWithExactVersion(version).WithTxnRecord()
+			return types.NewKVReadOptionWithExactVersion(version).CondTxnRecord(true)
 		}
 	)
 
 	{
 		// Prepare test
 		for version := range versions {
-			if err := db.Set(ctx, "", types.NewValue(nil, version), writeOpt); !assert.NoError(err) {
+			if err := db.Set(ctx, "", types.NewTxnValue(nil, version), writeOpt); !assert.NoError(err) {
 				return
 			}
 			if err := db.RemoveTxnRecord(ctx, version); !errors.AssertNilOrErr(assert, err, errors.ErrKeyOrVersionNotExist) {

@@ -152,7 +152,7 @@ func (m *TransactionManager) Close() error {
 }
 
 func (m *TransactionManager) newTxn(id types.TxnId, typ types.TxnType) *Txn {
-	return NewTxn(id, typ, m.kv, m.cfg, m.store, m.s, func(txn *Txn, force bool) {
+	return NewTxn(id, typ, m.kv, m.cfg.TxnConfig, m.store, m.s, func(txn *Txn, force bool) {
 		m.RemoveTxn(txn, force)
 	})
 }
@@ -164,7 +164,7 @@ func (m *TransactionManager) createStore() *TransactionManager {
 		retryWaitPeriod: consts.DefaultRetryWaitPeriod,
 
 		txnInitializer: func(record *Txn) {
-			record.cfg = m.cfg
+			record.cfg = m.cfg.TxnConfig
 			record.kv = m.kv
 			record.store = m.store
 			record.s = m.s

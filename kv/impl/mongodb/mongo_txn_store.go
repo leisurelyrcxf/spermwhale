@@ -39,7 +39,7 @@ func pkEqualOfTxnRecord(version uint64) bson.D {
 func encodeTxnRecord(val types.DBValue) bson.D {
 	assert.Must(val.InternalVersion == 0)
 	return bson.D{
-		{Key: attrFlag, Value: val.Flag},
+		{Key: attrFlag, Value: val.VFlag},
 		{Key: attrValue, Value: val.V},
 	}
 }
@@ -71,7 +71,7 @@ func (m MTxnStore) GetTxnRecord(ctx context.Context, version uint64) (value type
 		case attrFlag:
 			v, ok := val.Int32OK()
 			assert.Must(ok)
-			value.Flag = uint8(v)
+			value.VFlag = types.VFlag(v)
 			gotAttrs++
 		case attrValue:
 			switch val.Type {
