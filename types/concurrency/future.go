@@ -13,7 +13,7 @@ import (
 type Future struct {
 	sync.RWMutex
 
-	keys           map[string]types.DBMeta
+	keys           map[types.TxnKeyUnion]types.DBMeta
 	flyingKeyCount int
 	addedKeyCount  int
 
@@ -27,7 +27,7 @@ func NewFuture() *Future {
 }
 
 func (s *Future) Initialize() {
-	s.keys = make(map[string]types.DBMeta, 10)
+	s.keys = make(map[types.TxnKeyUnion]types.DBMeta, 10)
 }
 
 func (s *Future) GetAddedKeyCountUnsafe() int {
@@ -43,7 +43,7 @@ func (s *Future) IsDone() bool {
 	return s.done
 }
 
-func (s *Future) IsKeyDone(key string) bool {
+func (s *Future) IsKeyDone(key types.TxnKeyUnion) bool {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -52,7 +52,7 @@ func (s *Future) IsKeyDone(key string) bool {
 	return info.IsCleared()
 }
 
-func (s *Future) MustAdd(key string, meta types.DBMeta) (insertedNewKey bool) {
+func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -71,7 +71,7 @@ func (s *Future) MustAdd(key string, meta types.DBMeta) (insertedNewKey bool) {
 	return true
 }
 
-func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(key string, meta *types.DBMeta)) {
+func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(key types.TxnKeyUnion, meta *types.DBMeta)) {
 	assert.Must(state.IsTerminated() && !s.txnTerminated && !s.done)
 	s.Lock()
 	defer s.Unlock()
@@ -90,7 +90,7 @@ func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(k
 	s.txnTerminated = true
 }
 
-func (s *Future) DoneKey(key string, state types.KeyState) (doneOnce bool) {
+func (s *Future) DoneKey(key types.TxnKeyUnion, state types.KeyState) (doneOnce bool) {
 	assert.Must(s.txnTerminated)
 
 	s.Lock()
@@ -101,7 +101,7 @@ func (s *Future) DoneKey(key string, state types.KeyState) (doneOnce bool) {
 	return !oldDone && newDone
 }
 
-func (s *Future) doneKeyUnsafe(key string, state types.KeyState) (futureDone bool) {
+func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (futureDone bool) {
 	assert.Must(!s.done || state.IsAborted())
 	if old, ok := s.keys[key]; ok {
 		if assert.Must(old.IsValid()); !old.IsCleared() {
@@ -123,7 +123,7 @@ func (s *Future) doneKeyUnsafe(key string, state types.KeyState) (futureDone boo
 	return s.done
 }
 
-func (s *Future) MustGetDBMeta(key string) types.DBMeta {
+func (s *Future) MustGetDBMeta(key types.TxnKeyUnion) types.DBMeta {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -132,7 +132,7 @@ func (s *Future) MustGetDBMeta(key string) types.DBMeta {
 	return meta
 }
 
-func (s *Future) GetDBMeta(key string) (types.DBMeta, bool) {
+func (s *Future) GetDBMeta(key types.TxnKeyUnion) (types.DBMeta, bool) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -140,14 +140,14 @@ func (s *Future) GetDBMeta(key string) (types.DBMeta, bool) {
 	return meta, ok
 }
 
-func (s *Future) GetDBMetaUnsafe(key string) types.DBMeta {
+func (s *Future) GetDBMetaUnsafe(key types.TxnKeyUnion) types.DBMeta {
 	s.RLock()
 	defer s.RUnlock()
 
 	return s.keys[key]
 }
 
-func (s *Future) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
+func (s *Future) HasPositiveInternalVersion(key types.TxnKeyUnion, version types.TxnInternalVersion) bool {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -166,14 +166,14 @@ func (s *Future) AssertAllKeysOfState(state types.KeyState) {
 	}
 }
 
-func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done bool) {
+func (s *Future) doneUnsafeEx(key types.TxnKeyUnion, state types.KeyState) (doneOnce, done bool) {
 	oldFlyingKeyCount := s.flyingKeyCount
 	done = s.doneKeyUnsafe(key, state)
 	return s.flyingKeyCount < oldFlyingKeyCount, done
 }
 
 // Deprecated
-func (s *Future) add(key string, meta types.DBMeta) (insertedNewKey bool, keyDone bool) {
+func (s *Future) add(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool, keyDone bool) {
 	s.Lock()
 	defer s.Unlock()
 

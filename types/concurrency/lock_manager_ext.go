@@ -256,3 +256,79 @@ func (lm *AdvancedLockManager) RUnlock(key string) {
 func (lm *AdvancedLockManager) hash(key string) uint32 {
 	return crc32.ChecksumIEEE([]byte(key)) & uint32(len(lm.partitions)-1)
 }
+
+type AdvancedTxnKeyUnionManagerPartition struct {
+	m map[types.TxnKeyUnion]rwCount
+
+	mu     sync.RWMutex
+	rCount sync.Cond
+	wCount sync.Cond
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) Initialize() {
+	p.m = make(map[types.TxnKeyUnion]rwCount)
+	p.rCount.L = &p.mu
+	p.wCount.L = &p.mu
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) Lock(key types.TxnKeyUnion) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for !p.cas(key) {
+		p.wCount.Wait()
+	}
+	for p.m[key].readerCount > 0 {
+		p.rCount.Wait()
+	}
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) cas(key types.TxnKeyUnion) (swapped bool) {
+	if val := p.m[key]; !val.writerCount {
+		val.writerCount = true
+		p.m[key] = val
+		return true
+	}
+	return false
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) Unlock(key types.TxnKeyUnion) {
+	p.mu.Lock()
+	delete(p.m, key)
+	p.mu.Unlock()
+
+	p.wCount.Broadcast()
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) RLock(key types.TxnKeyUnion) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for !p.tryRLock(key) {
+		p.wCount.Wait()
+	}
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) tryRLock(key types.TxnKeyUnion) (grabbed bool) {
+	if val := p.m[key]; !val.writerCount {
+		p.m[key] = val.WithIncrReader()
+		return true
+	}
+	return false
+}
+
+func (p *AdvancedTxnKeyUnionManagerPartition) RUnlock(key types.TxnKeyUnion) {
+	p.mu.Lock()
+	defer func() {
+		p.mu.Unlock()
+
+		p.rCount.Broadcast()
+	}()
+
+	newRW := p.m[key].WithDecrReader()
+	if newRW.IsEmpty() {
+		delete(p.m, key)
+		return
+	}
+	p.m[key] = newRW
+}

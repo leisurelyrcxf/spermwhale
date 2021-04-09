@@ -465,7 +465,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 		return err
 	}
-	err = txn.SetRLocked(ctx, key, key, val, opt)
+	err = txn.SetRLocked(ctx, types.NewTxnKeyUnionKey(key), val, opt)
 	w.SetResult(err)
 	w.Done()
 	txn.Unlock()

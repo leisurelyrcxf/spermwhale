@@ -33,7 +33,7 @@ type Transaction struct {
 	txnRecordMaxReadVersion uint64
 	terminated              chan struct{}
 
-	lm concurrency.AdvancedLockManagerPartition
+	lm concurrency.AdvancedTxnKeyUnionManagerPartition
 
 	unref    func(*Transaction)
 	maxRetry int
@@ -59,13 +59,14 @@ func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt type
 	// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed TODO needs test against kv.db.Set() failed.
 	t.Lock() // NOTE: Lock is must though seems not needed
 	t.setCommittedUnsafe(false, "clear write intent of key '%s' by upper layer", key)
-	meta := t.future.MustGetDBMeta(key)
+	futureKey := types.NewTxnKeyUnionKey(key)
+	meta := t.future.MustGetDBMeta(futureKey)
 	assert.Must(meta.InternalVersion == opt.TxnInternalVersion && meta.IsCommitted())
 	t.Unlock()
 
 	var readonly bool
 	if readonly, err = clearWriteIntent(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
-		t.doneKey(key, types.KeyStateCommittedCleared, opt.IsOperatedByDifferentTxn())
+		t.doneKey(futureKey, types.KeyStateCommittedCleared, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -90,14 +91,15 @@ func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVC
 	// TODO skip if already cleared
 	t.Lock()
 	t.SetAbortedUnsafe(false, "rollback key '%s' by upper layer", key)
-	meta, ok := t.future.GetDBMeta(key)
+	futureKey := types.NewTxnKeyUnionKey(key)
+	meta, ok := t.future.GetDBMeta(futureKey)
 	assert.Must(!ok || meta.IsAborted())
 	t.Unlock()
 
 	// TODO maybe skip if key not written?
 	var readonly bool
 	if readonly, err = rollbackKey(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
-		t.doneKey(key, types.KeyStateRollbackedCleared, opt.IsOperatedByDifferentTxn())
+		t.doneKey(futureKey, types.KeyStateRollbackedCleared, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -119,15 +121,16 @@ func rollbackKey(ctx context.Context, key string, version uint64, opt types.KVCC
 }
 
 // Deprecated
-func (t *Transaction) IsKeyDoneUnsafe(futureKey string) (b bool) {
-	return t.future.IsKeyDone(futureKey)
+func (t *Transaction) IsKeyDoneUnsafe(key string) (b bool) {
+	return t.future.IsKeyDone(types.NewTxnKeyUnionKey(key))
 }
 
-func (t *Transaction) MustGetMetaWeak(futureKey string) types.Meta {
-	return t.future.MustGetDBMeta(futureKey).WithVersion(t.ID.Version())
+func (t *Transaction) MustGetMetaWeak(key string) types.Meta {
+	return t.future.MustGetDBMeta(types.NewTxnKeyUnionKey(key)).WithVersion(t.ID.Version())
 }
 
-func (t *Transaction) MustGetMetaStrong(futureKey string) types.Meta {
+func (t *Transaction) MustGetMetaStrong(key string) types.Meta {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	t.RLock()
 	t.lm.RLock(futureKey)
 	defer func() {
@@ -138,7 +141,8 @@ func (t *Transaction) MustGetMetaStrong(futureKey string) types.Meta {
 	return t.future.MustGetDBMeta(futureKey).WithVersion(t.ID.Version())
 }
 
-func (t *Transaction) GetMetaWeak(futureKey string) (meta types.Meta, err error, valid bool) {
+func (t *Transaction) GetMetaWeak(key string) (meta types.Meta, err error, valid bool) {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	dbMeta, ok := t.future.GetDBMeta(futureKey)
 	if !ok {
 		assert.Must(!t.IsCommitted())
@@ -148,7 +152,8 @@ func (t *Transaction) GetMetaWeak(futureKey string) (meta types.Meta, err error,
 	return dbMeta.WithVersion(t.ID.Version()), nil, dbMeta.IsValid()
 }
 
-func (t *Transaction) GetMetaStrong(futureKey string) (meta types.Meta, err error, valid bool) {
+func (t *Transaction) GetMetaStrong(key string) (meta types.Meta, err error, valid bool) {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	t.RLock()
 	t.lm.RLock(futureKey)
 	defer func() {
@@ -165,7 +170,8 @@ func (t *Transaction) GetMetaStrong(futureKey string) (meta types.Meta, err erro
 	return dbMeta.WithVersion(t.ID.Version()), nil, dbMeta.IsValid()
 }
 
-func (t *Transaction) GetDBMetaStrongUnsafe(futureKey string) types.DBMeta {
+func (t *Transaction) GetDBMetaStrongUnsafe(key string) types.DBMeta {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	t.RLock()
 	t.lm.RLock(futureKey)
 	defer func() {
@@ -178,14 +184,15 @@ func (t *Transaction) GetDBMetaStrongUnsafe(futureKey string) types.DBMeta {
 }
 
 func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	t.RLock()
-	t.lm.RLock(key)
+	t.lm.RLock(futureKey)
 	defer func() {
-		t.lm.RUnlock(key)
+		t.lm.RUnlock(futureKey)
 		t.RUnlock()
 	}()
 
-	return t.future.HasPositiveInternalVersion(key, version)
+	return t.future.HasPositiveInternalVersion(futureKey, version)
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
@@ -204,12 +211,11 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 
 	// TODO if txn is aborted or committed, then needn't read txn record from db
 	val, err := t.db.Get(ctx, "", opt.ToKV())
-	val.UpdateKeyState(t.future.GetDBMetaUnsafe(t.ID.String()).GetKeyState())
+	val.UpdateKeyState(t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionTxnRecord(t.ID)).GetKeyState())
 	return val.WithMaxReadVersion(maxReadVersion), err
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {
-	var txnKey = t.ID.String()
 	t.Lock() // TODO use RLock instead
 	defer t.Unlock()
 
@@ -226,19 +232,19 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteReadConflict
 	}
 
-	if err = t.SetRLocked(ctx, "", txnKey, val, opt); err == nil && glog.V(60) {
+	if err = t.SetRLocked(ctx, types.NewTxnKeyUnionTxnRecord(t.ID), val, opt); err == nil && glog.V(60) {
 		glog.Infof("[Transaction::SetTxnRecord] txn-%d set txn-record succeeded, cost %s", val.Version, bench.Elapsed())
 	}
 	return err
 }
 
-func (t *Transaction) SetRLocked(ctx context.Context, key string, futureKey string, val types.Value, opt types.KVCCWriteOption) error {
+func (t *Transaction) SetRLocked(ctx context.Context, futureKey types.TxnKeyUnion, val types.Value, opt types.KVCCWriteOption) error {
 	t.lm.Lock(futureKey)
 	defer t.lm.Unlock(futureKey)
 
 	var setErr error
-	if setErr = t.db.Set(ctx, key, val, opt.ToKV()); setErr != nil {
-		exists, chkErr := t.checkVersion(ctx, key, types.NewKVReadCheckVersionOption(val.Version).CondTxnRecord(key != futureKey), t.maxRetry)
+	if setErr = t.db.Set(ctx, futureKey.Key, val, opt.ToKV()); setErr != nil {
+		exists, chkErr := t.checkVersion(ctx, futureKey, t.maxRetry)
 		if chkErr != nil {
 			t.future.MustAdd(futureKey, val.Meta.ToDB().WithInvalidKeyState())
 			if chkErr != errors.ErrDummy {
@@ -262,11 +268,11 @@ func (t *Transaction) SetRLocked(ctx context.Context, key string, futureKey stri
 	return nil
 }
 
-func (t *Transaction) checkVersion(ctx context.Context, key string, opt types.KVReadOption, maxRetry int) (exists bool, err error) {
+func (t *Transaction) checkVersion(ctx context.Context, futureKey types.TxnKeyUnion, maxRetry int) (exists bool, err error) {
 	for i := 0; i < maxRetry && ctx.Err() == nil; i++ {
 		var newVal types.Value
-		if newVal, err = t.db.Get(ctx, key, opt); err == nil || errors.IsNotExistsErr(err) {
-			assert.Must(newVal.Version == opt.Version)
+		if newVal, err = t.db.Get(ctx, futureKey.Key, types.NewKVReadCheckVersionOption(t.ID.Version()).CondTxnRecord(futureKey.IsTxnRecord())); err == nil || errors.IsNotExistsErr(err) {
+			assert.Must(newVal.Version == t.ID.Version())
 			return err == nil, nil
 		}
 		if i < 10 {
@@ -303,7 +309,7 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveT
 	}
 
 	if err = removeTxnRecord(ctx, t.ID.Version(), action, t.db); err == nil {
-		t.doneKey(t.ID.String(), keyStateAfterDone, opt.IsOperatedByDifferentTxn())
+		t.doneKey(types.NewTxnKeyUnionTxnRecord(t.ID), keyStateAfterDone, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -321,7 +327,7 @@ func removeTxnRecord(ctx context.Context, version uint64, action string, db type
 	return nil
 }
 
-func (t *Transaction) doneKey(futureKey string, keyStateAfterDone types.KeyState, isOperatedByDifferentTxn bool) (doneOnce bool) {
+func (t *Transaction) doneKey(futureKey types.TxnKeyUnion, keyStateAfterDone types.KeyState, isOperatedByDifferentTxn bool) (doneOnce bool) {
 	if isOperatedByDifferentTxn {
 		return false
 	}
@@ -366,22 +372,13 @@ func (t *Transaction) setTxnStateUnsafe(state types.TxnState, assertValidAndTerm
 		assert.Must(!assertValidAndTerminated)
 		close(t.terminated)
 
-		t.future.NotifyTerminated(state, func(futureKey string, meta *types.DBMeta) {
+		t.future.NotifyTerminated(state, func(futureKey types.TxnKeyUnion, meta *types.DBMeta) {
 			assert.Must(meta.IsKeyStateInvalid() && !assertValidAndTerminated)
 			if state.IsAborted() {
 				meta.ClearInvalidKeyState() // Allowed to clear positive invalid flag if is rollback, 1. prev exists-> version removed 2. prev not exists -> rollback is no op
 				return
 			}
-			var (
-				exists bool
-				chkErr error
-			)
-			if meta.IsTxnRecord() {
-				exists, chkErr = t.checkVersion(context.Background(), "", types.NewKVReadCheckVersionOption(t.ID.Version()).WithTxnRecord(), 100)
-			} else {
-				exists, chkErr = t.checkVersion(context.Background(), futureKey, types.NewKVReadCheckVersionOption(t.ID.Version()), 100)
-			}
-			if !exists || chkErr != nil {
+			if exists, chkErr := t.checkVersion(context.Background(), futureKey, 100); !exists || chkErr != nil {
 				if !exists {
 					glog.Fatalf("commit a non-exists key '%s'", futureKey)
 				}

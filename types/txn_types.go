@@ -94,9 +94,22 @@ func (v TxnInternalVersion) AsUint32() uint32 {
 	return uint32(v)
 }
 
+// TODO encode to reduce memory usage
 type TxnKeyUnion struct {
 	Key   string
 	TxnId TxnId
+}
+
+func NewTxnKeyUnionKey(key string) TxnKeyUnion {
+	return TxnKeyUnion{Key: key}
+}
+
+func NewTxnKeyUnionTxnRecord(id TxnId) TxnKeyUnion {
+	return TxnKeyUnion{TxnId: id}
+}
+
+func (tk TxnKeyUnion) IsTxnRecord() bool {
+	return tk.Key == ""
 }
 
 func (tk TxnKeyUnion) Hash() uint64 {
