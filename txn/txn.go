@@ -262,7 +262,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		return vv, nil
 	}
 	if writeTxn.IsAborted() {
-		if writeTxn.IsWrittenKeyRollbacked(key) {
+		if writeTxn.GetKeyStateUnsafe(key).IsRollbackedCleared() { // TODO change dbReadVersion
 			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
 		}
 		assert.Must(writeTxn.TxnState == types.TxnStateRollbacking)
@@ -330,7 +330,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			if _, isKeyWithWriteIntent := keysWithWriteIntent[key]; isKeyWithWriteIntent {
 				continue
 			}
-			vv, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, true, maxRetry)
+			vv, exists, notExistsErrSubCode, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, callerTxn, preventFutureWrite, true, maxRetry)
 			assert.Must(!vv.IsAborted() || (!exists && err == nil))
 			if err != nil {
 				return
@@ -352,7 +352,7 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 			// TODO evaluate the performance gain
 			if vv.IsAborted() || vv.MaxReadVersion > txn.ID.Version() /* this include '!exits and preventFutureWrite' */ {
 				if !exists { // not exists and won't exist
-					txn.MarkWrittenKeyRollbacked(key)
+					txn.MarkWrittenKeyAborted(key, notExistsErrSubCode)
 				}
 				txn.TxnState = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, callerTxn.ID, true,
@@ -633,7 +633,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	}
 	for _, c := range writtenKeyChildren {
 		if err := c.Err(); err == nil {
-			txn.MarkWrittenKeyRollbacked(c.ID.Key)
+			txn.MarkWrittenKeyRollbackedCleared(c.ID.Key)
 		}
 	}
 	if err := root.Err(); err != nil {
@@ -686,7 +686,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 			if consts.BuildOption.IsDebug() { // TODO remove this in product
 				assert.Must(root.AllChildrenSuccess())
 				txn.ForEachWrittenKey(func(key string, _ ttypes.WriteKeyInfo) {
-					val, exists, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
+					val, exists, _, err := txn.store.getValueWrittenByTxnWithRetry(ctx, key, txn.ID, txn, false, false, 1)
 					if !(err == nil && exists && val.IsCommitted() && !val.IsAborted()) {
 						_ = root
 						glog.Fatalf("txn-%d cleared write key '%s' not exists", txn.ID, key)
@@ -735,10 +735,11 @@ func (txn *Txn) getToClearKeys(rollback bool) map[string]bool /* key->isWrittenK
 		}
 	}
 	txn.ForEachWrittenKey(func(writtenKey string, info ttypes.WriteKeyInfo) {
-		assert.Must(!info.IsEmpty() && !info.CommittedCleared) // TODO should support this after bug fixed
-		if (rollback && !info.Rollbacked) || (!rollback && !info.CommittedCleared) {
-			assert.Must((rollback && !info.CommittedCleared && !info.Committed) || (!rollback && !info.Rollbacked))
+		assert.Must(!info.IsEmpty()) // TODO should support this after bug fixed
+		if !info.IsCleared() {
 			m[writtenKey] = true
+		} else {
+			assert.Must(info.IsAborted() == rollback)
 		}
 	})
 	return m

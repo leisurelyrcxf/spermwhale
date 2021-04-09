@@ -1,7 +1,8 @@
 package consts
 
 const (
-	ErrCodeUnknown int32 = 0
+	ErrCodeUnknown    int32 = 0
+	ErrSubCodeUnknown       = 0
 
 	ErrCodeWriteReadConflict                           int32 = 1
 	ErrCodeStaleWrite                                        = 2
@@ -20,10 +21,13 @@ const (
 	ErrCodeTabletTxnSetFailedKeyNotFound           int32 = 24
 	ErrCodeTabletTxnSetFailedKeyStatusUndetermined int32 = 25
 
-	ErrCodeKeyOrVersionNotExists int32 = 27
-	ErrCodeShardsNotReady              = 28
-	ErrCodeEmptyKey                    = 29
-	ErrCodeEmptyKeys                   = 30
+	ErrCodeKeyOrVersionNotExists                           int32 = 27
+	ErrKeyOrVersionNotExistsSubCodeNotExistsInDB                 = 1
+	ErrKeyOrVersionNotExistsSubCodeExistsButToBeRollbacked       = 2
+
+	ErrCodeShardsNotReady = 28
+	ErrCodeEmptyKey       = 29
+	ErrCodeEmptyKeys      = 30
 
 	ErrCodeVersionAlreadyExists int32 = 50
 

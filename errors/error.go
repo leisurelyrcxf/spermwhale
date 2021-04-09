@@ -63,6 +63,8 @@ type ErrorKey struct {
 var AllErrors = make(map[ErrorKey]*Error, 256)
 
 func registerErr(e *Error) *Error {
+	assert.Must(e.Code != consts.ErrCodeUnknown)
+	assert.Must(e.SubCode != consts.ErrSubCodeUnknown)
 	ek := e.Key()
 	if _, ok := AllErrors[ek]; ok {
 		glog.Fatalf("error %v already registered", e)
@@ -144,6 +146,21 @@ func IsNotExistsErr(e error) bool {
 	return GetErrorCode(e) == consts.ErrCodeKeyOrVersionNotExists
 }
 
+func IsNotExistsErrEx(e error, subCode *int32) bool {
+	var code int32
+	code, *subCode = GetErrorCodes(e)
+	//assert.Must(!notExists || sub != 0)
+	return code == consts.ErrCodeKeyOrVersionNotExists
+}
+
+func GetNotExistsErrForAborted(cleared bool) error {
+	if cleared {
+		return ErrKeyOrVersionNotExist
+	}
+	// Rollbacking...
+	return ErrKeyOrVersionNotExistExistsButToBeRollbacked
+}
+
 func IsRetryableTransactionErr(e error) bool {
 	return in(GetErrorCode(e), retryableTxnErrs)
 }
@@ -205,6 +222,16 @@ func GetErrorCode(e error) int32 {
 		return ce.Code
 	}
 	return consts.ErrCodeUnknown
+}
+
+func GetErrorCodes(e error) (code int32, subCode int32) {
+	if ve, ok := e.(*Error); ok && ve != nil {
+		return ve.Code, ve.SubCode
+	}
+	if ce, ok := e.(*commonpb.Error); ok && ce != nil {
+		return ce.Code, ce.SubCode
+	}
+	return consts.ErrCodeUnknown, consts.ErrSubCodeUnknown
 }
 
 func SetErrorCode(e error, code int32) {

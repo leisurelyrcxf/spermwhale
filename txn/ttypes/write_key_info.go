@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/consts"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/scheduler"
@@ -28,15 +30,16 @@ func (kvs KeyVersions) MustFirstKey() string {
 }
 
 type WriteKeyInfo struct {
+	types.KeyState
+
 	LastWrittenVersion types.TxnInternalVersion
 	LastTask           *types.ListTask
-
-	CommittedCleared, Committed, Rollbacked bool
 }
 
 func NewWriteKeyInfo(lastWrittenVersion types.TxnInternalVersion) WriteKeyInfo {
 	assert.Must(lastWrittenVersion > 0)
 	return WriteKeyInfo{
+		KeyState:           types.KeyStateUncommitted,
 		LastWrittenVersion: lastWrittenVersion,
 	}
 }
@@ -143,7 +146,7 @@ func (ks WriteKeyInfos) GetWrittenKeyCount() int {
 
 func (ks WriteKeyInfos) GetCommittedVersion(key string) types.TxnInternalVersion {
 	v, ok := ks.keys[key]
-	assert.Must(ok && v.Committed) // not sure key may not exist
+	assert.Must(ok && v.IsCommitted()) // not sure key may not exist
 	assert.Must(v.LastTask == nil || v.LastTask.Data.(types.TxnInternalVersion) == v.LastWrittenVersion)
 
 	return v.LastWrittenVersion
@@ -155,6 +158,16 @@ func (ks WriteKeyInfos) MustGetInternalVersion(key string) types.TxnInternalVers
 	return v.LastWrittenVersion
 }
 
+func (ks WriteKeyInfos) MustGetKeyState(key string) types.KeyState {
+	v, ok := ks.keys[key]
+	assert.Must(ok)
+	return v.KeyState
+}
+
+func (ks WriteKeyInfos) GetKeyStateUnsafe(key string) types.KeyState {
+	return ks.keys[key].KeyState
+}
+
 func (ks WriteKeyInfos) AreWrittenKeysCompleted() bool {
 	return ks.completed
 }
@@ -162,12 +175,6 @@ func (ks WriteKeyInfos) AreWrittenKeysCompleted() bool {
 func (ks WriteKeyInfos) ContainsWrittenKey(key string) bool {
 	_, ok := ks.keys[key]
 	return ok
-}
-
-func (ks WriteKeyInfos) IsWrittenKeyRollbacked(key string) bool {
-	v := ks.keys[key]
-	assert.Must(!v.Committed)
-	return v.Rollbacked
 }
 
 func (ks WriteKeyInfos) MatchWrittenKeys(keysWithWriteIntent KeyVersions) bool {
@@ -185,42 +192,34 @@ func (ks WriteKeyInfos) MatchWrittenKeys(keysWithWriteIntent KeyVersions) bool {
 
 func (ks WriteKeyInfos) MarkAllWrittenKeysCommitted() {
 	for k, v := range ks.keys {
-		assert.Must(!v.Rollbacked)
-		v.Committed = true
+		v.SetCommitted()
 		ks.keys[k] = v
 	}
 }
 
-func (ks WriteKeyInfos) MarkWrittenKeyRollbacked(key string) {
-	v, ok := ks.keys[key]
-	assert.Must(ok && !v.Committed && !v.CommittedCleared)
-	v.Rollbacked = true
-
+func (ks WriteKeyInfos) MarkWrittenKeyCommitted(key string, val types.Value) {
+	v := ks.keys[key]
+	assert.Must(!ks.completed || v.LastWrittenVersion == val.InternalVersion)
+	v.LastWrittenVersion = val.InternalVersion
+	v.KeyState = val.GetKeyState()
 	ks.keys[key] = v
 }
 
-func (ks WriteKeyInfos) MarkWrittenKeyCommitted(key string, value types.Value) {
+func (ks WriteKeyInfos) MarkWrittenKeyAborted(key string, notExistsErrSubCode int32) {
 	v := ks.keys[key]
-	assert.Must(!ks.completed || v.LastWrittenVersion == value.InternalVersion)
-	v.LastWrittenVersion = value.InternalVersion
-	v.Committed = true
-
+	if notExistsErrSubCode == consts.ErrKeyOrVersionNotExistsSubCodeNotExistsInDB {
+		v.KeyState = types.KeyStateRollbackedCleared
+	} else if notExistsErrSubCode == consts.ErrKeyOrVersionNotExistsSubCodeExistsButToBeRollbacked {
+		v.KeyState = types.KeyStateRollbacking
+	} else {
+		panic(errors.UnreachableCode)
+	}
 	ks.keys[key] = v
 }
 
-func (ks WriteKeyInfos) MarkWrittenKeyCommittedCleared(key string, value types.Value) {
-	assert.Must(value.IsCommitted())
-	//v, ok := ks.keys[key]
-	//assert.Must(ok) // key may not exist
-	//assert.Must(v.LastWrittenVersion == consts. == value.InternalVersion)
-	//assert.Must(v.LastTask == nil || v.LastTask.Data.(uint8) == value.InternalVersion)
-
+func (ks WriteKeyInfos) MarkWrittenKeyRollbackedCleared(key string) {
 	v := ks.keys[key]
-	assert.Must(!ks.completed || v.LastWrittenVersion == value.InternalVersion)
-	v.LastWrittenVersion = value.InternalVersion
-	v.Committed = true
-	v.CommittedCleared = true
-
+	v.KeyState = types.KeyStateRollbackedCleared
 	ks.keys[key] = v
 }
 

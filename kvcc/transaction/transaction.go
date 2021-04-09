@@ -65,7 +65,7 @@ func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt type
 
 	var readonly bool
 	if readonly, err = clearWriteIntent(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
-		t.doneOnce(key, types.KeyStateCommittedCleared, opt.IsOperatedByDifferentTxn())
+		t.doneKey(key, types.KeyStateCommittedCleared, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -97,7 +97,7 @@ func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVC
 	// TODO maybe skip if key not written?
 	var readonly bool
 	if readonly, err = rollbackKey(ctx, key, t.ID.Version(), opt, t.db); err == nil && !readonly {
-		t.doneOnce(key, types.KeyStateRollbackedCleared, opt.IsOperatedByDifferentTxn())
+		t.doneKey(key, types.KeyStateRollbackedCleared, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -144,6 +144,7 @@ func (t *Transaction) GetMetaWeak(futureKey string) (meta types.Meta, err error,
 		assert.Must(!t.IsCommitted())
 		return types.Meta{}, errors.ErrKeyOrVersionNotExist, true
 	}
+	// Don't transform error here if IsAborted() because will do that later
 	return dbMeta.WithVersion(t.ID.Version()), nil, dbMeta.IsValid()
 }
 
@@ -160,6 +161,7 @@ func (t *Transaction) GetMetaStrong(futureKey string) (meta types.Meta, err erro
 		assert.Must(!t.IsCommitted())
 		return types.Meta{}, errors.ErrKeyOrVersionNotExist, true
 	}
+	// Don't transform error here if IsAborted() because will do that later
 	return dbMeta.WithVersion(t.ID.Version()), nil, dbMeta.IsValid()
 }
 
@@ -200,11 +202,9 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 	}
 	t.RUnlock()
 
+	// TODO if txn is aborted or committed, then needn't read txn record from db
 	val, err := t.db.Get(ctx, "", opt.ToKV())
-	if val.UpdateTxnState(t.GetTxnState()); val.IsAborted() {
-		assert.Must(opt.ReadExactVersion)
-		val.V, err = nil, errors.ErrKeyOrVersionNotExist
-	}
+	val.UpdateTxnState(t.GetTxnState())
 	return val.WithMaxReadVersion(maxReadVersion), err
 }
 
@@ -303,7 +303,7 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveT
 	}
 
 	if err = removeTxnRecord(ctx, t.ID.Version(), action, t.db); err == nil {
-		t.doneOnce(t.ID.String(), keyStateAfterDone, opt.IsOperatedByDifferentTxn())
+		t.doneKey(t.ID.String(), keyStateAfterDone, opt.IsOperatedByDifferentTxn())
 	}
 	return err
 }
@@ -321,19 +321,19 @@ func removeTxnRecord(ctx context.Context, version uint64, action string, db type
 	return nil
 }
 
-func (t *Transaction) doneOnce(futureKey string, keyStateAfterDone types.KeyState, isOperatedByDifferentTxn bool) (doneOnce bool) {
+func (t *Transaction) doneKey(futureKey string, keyStateAfterDone types.KeyState, isOperatedByDifferentTxn bool) (doneOnce bool) {
 	if isOperatedByDifferentTxn {
 		return false
 	}
 
 	t.Lock()
-	if doneOnce = t.future.DoneOnce(futureKey, keyStateAfterDone); doneOnce {
+	if doneOnce = t.future.DoneKey(futureKey, keyStateAfterDone); doneOnce {
 		t.future.AssertAllKeysOfState(keyStateAfterDone)
 		t.setTxnStateUnsafe(types.TxnState(keyStateAfterDone), true, "assert failed")
 		t.Unlock()
 
 		if glog.V(60) {
-			glog.Infof("[Transaction::%s][doneOnce] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", trace.CallerFunc(), t.ID, t.GetTxnState(), t.future.GetAddedKeyCountUnsafe(), futureKey)
+			glog.Infof("[Transaction::%s][doneKey] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", trace.CallerFunc(), t.ID, t.GetTxnState(), t.future.GetAddedKeyCountUnsafe(), futureKey)
 		}
 
 		t.unref(t)

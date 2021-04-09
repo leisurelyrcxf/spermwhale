@@ -7,7 +7,8 @@ import (
 
 var (
 	ErrPrevExists = &errors.Error{
-		Code: consts.ErrCodePrevExists,
-		Msg:  "prev exists",
+		Code:    consts.ErrCodePrevExists,
+		SubCode: 1,
+		Msg:     "prev exists",
 	}
 )

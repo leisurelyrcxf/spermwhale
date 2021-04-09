@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/leisurelyrcxf/spermwhale/proto/commonpb"
+
 	"github.com/leisurelyrcxf/spermwhale/utils/trace"
 )
 
@@ -102,8 +104,16 @@ func Annotatef(err error, format string, args ...interface{}) error {
 	}
 	if ve, ok := err.(*Error); ok {
 		return &Error{
-			Code: ve.Code,
-			Msg:  trimMsg(ve.Msg) + ": " + fmt.Sprintf(format, args...),
+			Code:    ve.Code,
+			SubCode: ve.SubCode,
+			Msg:     trimMsg(ve.Msg) + ": " + fmt.Sprintf(format, args...),
+		}
+	}
+	if ce, ok := err.(*commonpb.Error); ok {
+		return &commonpb.Error{
+			Code:    ce.Code,
+			SubCode: ce.SubCode,
+			Msg:     trimMsg(ce.Msg) + ": " + fmt.Sprintf(format, args...),
 		}
 	}
 	return errors.New(trimMsg(err.Error()) + ": " + fmt.Sprintf(format, args...))

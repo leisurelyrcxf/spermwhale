@@ -165,14 +165,6 @@ func (m Meta) ToDB() DBMeta {
 	}
 }
 
-//func (m *Meta) SetCommitted() {
-//	m.Flag = consts.WithCommitted(m.Flag)
-//}
-//
-//func (m *Meta) SetAborted() {
-//	m.Flag |= consts.ValueMetaBitMaskAborted
-//}
-
 type Value struct {
 	Meta
 

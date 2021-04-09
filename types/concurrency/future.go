@@ -90,19 +90,19 @@ func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(k
 	s.txnTerminated = true
 }
 
-func (s *Future) DoneOnce(key string, state types.KeyState) (doneOnce bool) {
+func (s *Future) DoneKey(key string, state types.KeyState) (doneOnce bool) {
 	assert.Must(s.txnTerminated)
 
 	s.Lock()
 	defer s.Unlock()
 
-	if s.done {
-		return false
-	}
-	return s.doneUnsafe(key, state)
+	oldDone := s.done
+	newDone := s.doneKeyUnsafe(key, state)
+	return !oldDone && newDone
 }
 
-func (s *Future) doneUnsafe(key string, state types.KeyState) (futureDone bool) {
+func (s *Future) doneKeyUnsafe(key string, state types.KeyState) (futureDone bool) {
+	assert.Must(!s.done || state.IsAborted())
 	if old, ok := s.keys[key]; ok {
 		if assert.Must(old.IsValid()); !old.IsCleared() {
 			old.SetCleared()
@@ -161,7 +161,7 @@ func (s *Future) AssertAllKeysOfState(state types.KeyState) {
 
 func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done bool) {
 	oldFlyingKeyCount := s.flyingKeyCount
-	done = s.doneUnsafe(key, state)
+	done = s.doneKeyUnsafe(key, state)
 	return s.flyingKeyCount < oldFlyingKeyCount, done
 }
 

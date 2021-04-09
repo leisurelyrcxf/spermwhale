@@ -61,7 +61,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 	return cc
 }
 
-func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (types.ValueCC, error) {
+func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (x types.ValueCC, e error) {
 	opt.AssertFlags() // TODO remove in product
 	assert.Must((!opt.IsTxnRecord && key != "") || (opt.IsTxnRecord && key == "" && opt.ReadExactVersion && opt.GetMaxReadVersion))
 	assert.Must(opt.ReadExactVersion || opt.UpdateTimestampCache)
@@ -71,11 +71,21 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		return val.WithMaxReadVersion(0), err
 	}
 
+	//defer func() {
+	//	if e == nil && !opt.IsMetaOnly {
+	//		x.AssertValid()
+	//	}
+	//}()
+
 	if opt.IsTxnRecord {
 		if !utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold) {
 			txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion))
 			if err == nil {
-				return txn.GetTxnRecord(ctx, opt)
+				valCC, getErr := txn.GetTxnRecord(ctx, opt)
+				if getErr == nil && valCC.IsAborted() {
+					valCC.V, getErr = nil, errors.GetNotExistsErrForAborted(valCC.IsCleared())
+				}
+				return valCC, getErr
 			}
 			glog.V(OCCVerboseLevel).Infof("[KVCC:Get] can't find txn-%d", opt.ExactVersion)
 		}
@@ -195,7 +205,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 	if valCC.IsAborted() {
 		valCC.V = nil
 		if opt.ReadExactVersion {
-			return valCC, errors.ErrKeyOrVersionNotExist, false, 0
+			return valCC, errors.GetNotExistsErrForAborted(valCC.IsCleared()), false, 0
 		}
 		//assert.Must(err == nil && valCC.Version != 0 && opt.IsUpdateTimestampCache())
 		assert.Must(try >= consts.MaxRetryTxnGet)
@@ -236,7 +246,6 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 				return types.Value{Meta: meta}, nil, meta.IsAborted() && !opt.ReadExactVersion, utils.SafeDecr(meta.Version)
 			}
 		}
-		//defer func() { val.V = nil }() // low level should guarantee this
 	}
 
 	if !opt.IsSnapshotRead || w != nil {

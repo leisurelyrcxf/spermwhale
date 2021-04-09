@@ -25,7 +25,7 @@ type TransactionStore struct {
 }
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
-	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, err error) {
+	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, notExistsErrSubCode int32, err error) {
 	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithCheckVersion(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
@@ -39,30 +39,31 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 		readOpt = readOpt.WithNotGetMaxReadVersion()
 	}
 	for i := 0; ; {
-		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErr(err) {
-			return val, err == nil, nil
+		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
+			return val, err == nil, notExistsErrSubCode, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 		if i++; i >= maxRetry || ctx.Err() != nil {
-			return val, false, err
+			return val, false, 0, err
 		}
 		time.Sleep(s.retryWaitPeriod)
 	}
 }
 
-func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, keys ttypes.KeyVersions, txnId types.TxnId, callTxn *Txn, maxRetry int) (key string, val types.ValueCC, exists bool, err error) {
+func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context, keys ttypes.KeyVersions,
+	txnId types.TxnId, callTxn *Txn, maxRetry int) (key string, val types.ValueCC, exists bool, notExistsErrSubCode int32, err error) {
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for key := range keys {
 			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithCheckVersion(txnId.Version()).
 				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
-			if err == nil || errors.IsNotExistsErr(err) {
-				return key, val, err == nil, nil
+			if err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
+				return key, val, err == nil, notExistsErrSubCode, nil
 			}
 			glog.Warningf("[getAnyValueWrittenByTxn] kv.Get conflicted key %s returns unexpected error: %v", key, err)
 			if i += 1; i >= maxRetry || ctx.Err() != nil {
 				glog.Errorf("[getAnyValueWrittenByTxn] txn.kv.Get returns unexpected error: %v", err)
-				return "", types.EmptyValueCC, false, err
+				return "", types.EmptyValueCC, false, 0, err
 			}
 			time.Sleep(s.retryWaitPeriod)
 		}
@@ -140,19 +141,20 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// Transaction record not exists, get key to find out the truth.
 	assert. /* do not remove this*/ Must(preventedFutureTxnRecordWrite || (len(keysWithWriteIntent) == len(allWrittenKey2LastVersion) && len(keysWithWriteIntent) == 1))
 	var (
-		key       string
-		vv        types.ValueCC
-		keyExists bool
-		keyErr    error
+		key                 string
+		vv                  types.ValueCC
+		keyExists           bool
+		notExistsErrSubCode int32
+		keyErr              error
 	)
 	if len(keysWithWriteIntent) == 1 {
 		assert.Must(len(allWrittenKey2LastVersion) == 1)
 		conflictedKey := allWrittenKey2LastVersion.MustFirstKey()
 		assert.Must(keysWithWriteIntent.Contains(conflictedKey))
-		vv, keyExists, keyErr = s.getValueWrittenByTxnWithRetry(ctx, conflictedKey, txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
+		vv, keyExists, notExistsErrSubCode, keyErr = s.getValueWrittenByTxnWithRetry(ctx, conflictedKey, txnId, callerTxn, false /*no need*/, false /*no need*/, maxRetry)
 		key = conflictedKey
 	} else {
-		key, vv, keyExists, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allWrittenKey2LastVersion, txnId, callerTxn, maxRetry)
+		key, vv, keyExists, notExistsErrSubCode, keyErr = s.getAnyValueWrittenByTxnWithRetry(ctx, allWrittenKey2LastVersion, txnId, callerTxn, maxRetry)
 	}
 	assert.Must(!vv.IsAborted() || (!keyExists && keyErr == nil))
 	if keyErr != nil {
@@ -180,7 +182,7 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// 2. preventedFutureTxnRecordWrite && key exists & vv.IsDirty(), since we've prevented write txn record,
 	//	  guaranteed commit won't succeed in the future, hence safe to rollback.
 	if txn = s.partialTxnConstructor(txnId, types.TxnStateRollbacking, allWrittenKey2LastVersion); !keyExists {
-		txn.MarkWrittenKeyRollbacked(key)
+		txn.MarkWrittenKeyAborted(key, notExistsErrSubCode)
 	}
 	if vv.IsAborted() {
 		txn.err = errors.ErrTransactionRecordNotFoundAndFoundAbortedValue

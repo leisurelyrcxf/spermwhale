@@ -161,6 +161,14 @@ func (s KeyState) IsCleared() bool {
 	return cleared
 }
 
+func (s KeyState) IsCommittedCleared() bool {
+	return s == KeyStateCommittedCleared
+}
+
+func (s KeyState) IsRollbackedCleared() bool {
+	return s == KeyStateRollbackedCleared
+}
+
 func (s KeyState) AsInt32() int32 {
 	return int32(s)
 }
@@ -173,6 +181,18 @@ func (s KeyState) String() string {
 
 func (s KeyState) ToVFlag() VFlag {
 	return VFlag(consts.ExtractTxnBits(uint8(s)))
+}
+
+func (s *KeyState) SetCommitted() {
+	assert.Must(!s.IsAborted())
+	if !s.IsCommitted() {
+		*s = KeyStateCommitted
+	}
+}
+
+func (s *KeyState) SetCleared() {
+	assert.Must(s.IsTerminated())
+	*s |= consts.TxnStateBitMaskCleared
 }
 
 type TxnState uint8
