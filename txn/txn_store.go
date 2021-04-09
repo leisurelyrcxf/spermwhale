@@ -106,14 +106,14 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	txnId types.TxnId, callerTxn *Txn,
 	keysWithWriteIntent basic.Set, allWrittenKey2LastVersion ttypes.KeyVersions,
 	preventFutureTxnRecordWrite bool,
-	maxRetry int) (txn *Txn, err error) {
+	maxRetry int) (txn *Txn, committedKey string, err error) {
 	// TODO maybe get from txn manager first?
 	var (
 		preventedFutureTxnRecordWrite bool
 		isCommitted                   bool
 	)
 	if txn, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, allWrittenKey2LastVersion, preventFutureTxnRecordWrite, &isCommitted, maxRetry); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if txn != nil {
 		assert.Must(txn.ID == txnId)
@@ -123,9 +123,12 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		if isCommitted && txn.AreWrittenKeysCompleted() { // TODO this is not necessary, only used for assertions, 'txn.AreWrittenKeysCompleted()' can be removed in product.
 			assert.Must(txn.IsStaging())
 			txn.MarkAllWrittenKeysCommitted()
+			txn.TxnState = types.TxnStateCommitted
+			return txn, "txn-record", nil
 		}
-		return txn, nil
+		return txn, "", nil
 	}
+	// Txn record not exists
 	assert.Must(!preventFutureTxnRecordWrite || preventedFutureTxnRecordWrite)
 
 	// Transaction record not exists, thus must be one among the 3 cases:
@@ -154,19 +157,21 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	assert.Must(!vv.IsAborted() || (!keyExists && keyErr == nil))
 	if keyErr != nil {
 		glog.Errorf("[loadTransactionRecord] s.getAnyValueWrittenByTxnWithRetry(txnId(%d), callerTxn(%d), keys(%v)) returns unexpected error: %v", txnId, callerTxn.ID, allWrittenKey2LastVersion, keyErr)
-		return nil, keyErr
+		return nil, "", keyErr
 	}
 	if keyExists {
 		if vv.IsCommitted() {
 			// case 1
 			txn := s.partialTxnConstructor(txnId, types.TxnStateCommitted, allWrittenKey2LastVersion)
 			txn.MarkWrittenKeyCommitted(key, vv.Value)
-			//txn.MarkWrittenKeyCommittedCleared(key, vv.Value) // TODO this is unsafe
-			return txn, nil
+			//if preventedFutureTxnRecordWrite { // TODO test against this
+			//	txn.MarkWrittenKeyCommitted(key, vv.Value)
+			//}
+			return txn, key, nil
 		}
 		// Must haven't committed.
 		if !preventedFutureTxnRecordWrite {
-			return nil, errors.Annotatef(errors.ErrKeyOrVersionNotExist, "txn record of %d not exists", txnId)
+			return nil, "", errors.Annotatef(errors.ErrKeyOrVersionNotExist, "txn record of %d not exists", txnId)
 		}
 	}
 	// 1. key not exists
@@ -186,5 +191,5 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		// nothing to rollback
 		//_ = txn.rollback(ctx, callerTxn.ID, true, fmt.Sprintf("write intent of key %s disappeared", key)) // help rollback if original txn coordinator was gone
 	}
-	return txn, nil
+	return txn, "", nil
 }
