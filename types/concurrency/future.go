@@ -140,6 +140,13 @@ func (s *Future) GetDBMeta(key string) (types.DBMeta, bool) {
 	return meta, ok
 }
 
+func (s *Future) GetDBMetaUnsafe(key string) types.DBMeta {
+	s.RLock()
+	defer s.RUnlock()
+
+	return s.keys[key]
+}
+
 func (s *Future) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
 	s.RLock()
 	defer s.RUnlock()

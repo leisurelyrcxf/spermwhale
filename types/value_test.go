@@ -45,7 +45,7 @@ func TestMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := Meta{InternalVersion: 1, Version: 111, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateCommittedCleared)
+		m.UpdateKeyState(KeyStateCommittedCleared)
 		assert.True(m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -74,7 +74,7 @@ func TestMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := Meta{InternalVersion: 1, Version: 111, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateCommitted)
+		m.UpdateKeyState(KeyStateCommitted)
 		assert.True(m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -104,7 +104,7 @@ func TestMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := Meta{InternalVersion: 1, Version: 111, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateRollbackedCleared)
+		m.UpdateKeyState(KeyStateRollbackedCleared)
 		assert.True(!m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -134,7 +134,7 @@ func TestMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := Meta{InternalVersion: 1, Version: 111, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateRollbacking)
+		m.UpdateKeyState(KeyStateRollbacking)
 		assert.True(!m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())

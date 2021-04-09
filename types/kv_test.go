@@ -52,7 +52,7 @@ func TestDBMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := DBMeta{InternalVersion: 1, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateCommittedCleared)
+		m.UpdateKeyState(KeyStateCommittedCleared)
 		assert.True(m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.False(m.IsTxnRecord())
@@ -77,7 +77,7 @@ func TestDBMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := DBMeta{InternalVersion: 1, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateCommitted)
+		m.UpdateKeyState(KeyStateCommitted)
 		assert.True(m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -101,7 +101,7 @@ func TestDBMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := DBMeta{InternalVersion: 1, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateRollbackedCleared)
+		m.UpdateKeyState(KeyStateRollbackedCleared)
 		assert.True(!m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -125,7 +125,7 @@ func TestDBMeta_UpdateTxnState(t *testing.T) {
 
 	{
 		m := DBMeta{InternalVersion: 1, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite}
-		m.updateKeyState(KeyStateRollbacking)
+		m.UpdateKeyState(KeyStateRollbacking)
 		assert.True(!m.IsCommitted())
 		assert.True(m.IsTerminated())
 		assert.True(m.IsFutureWritePrevented())
@@ -143,12 +143,12 @@ func TestDBValue_WithCommitted(t *testing.T) {
 			DBMeta: DBMeta{InternalVersion: 1, VFlag: consts.ValueMetaBitMaskHasWriteIntent | consts.ValueMetaBitMaskPreventedFutureWrite},
 			V:      []byte{'1', '2', '3'},
 		}
-		v = v.WithCommitted()
+		v = v.WithCommittedCleared()
 		assert.Equal([]byte{'1', '2', '3'}, v.V)
 		assert.Equal(TxnInternalVersion(1), v.InternalVersion)
 		assert.True(!v.IsDirty())
 		assert.True(v.IsCommitted())
 		assert.True(v.IsTerminated())
-		assert.False(v.IsCleared())
+		assert.True(v.IsCleared())
 	}
 }

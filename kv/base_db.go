@@ -88,11 +88,11 @@ func (db *DB) KeyVersionCount(ctx context.Context, key string) (int64, error) {
 
 func (db *DB) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVUpdateMetaOption) error {
 	if !opt.IsClearWriteIntent() {
-		return errors.ErrNotSupported
+		return errors.Annotatef(errors.ErrNotSupported, "DB::UpdateMeta")
 	}
 	if utils.IsDebug() {
-		return db.updateFlagOfKeyRaw(ctx, key, version, consts.ValueMetaBitMaskCommitted /* TODO if there are multi bits, this is dangerous */, func(value types.DBValue) types.DBValue {
-			return value.WithCommitted()
+		return db.updateFlagOfKeyRaw(ctx, key, version, consts.ValueMetaBitMaskCommitted|consts.ValueMetaBitMaskCleared /* TODO if there are multi bits, this is dangerous */, func(value types.DBValue) types.DBValue {
+			return value.WithCommittedCleared()
 		}, func(err error) error {
 			if !test {
 				_, _ = key, version
@@ -108,10 +108,10 @@ func (db *DB) UpdateMeta(ctx context.Context, key string, version uint64, opt ty
 		}
 		return errors.Annotatef(err, "key: %s", key)
 	}
-	if oldVal.IsCommitted() {
+	if oldVal.IsCommittedCleared() {
 		return nil
 	}
-	return db.vvs.Upsert(ctx, key, version, oldVal.WithCommitted())
+	return db.vvs.Upsert(ctx, key, version, oldVal.WithCommittedCleared())
 }
 
 func (db *DB) RollbackKey(ctx context.Context, key string, version uint64) error {

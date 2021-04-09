@@ -71,7 +71,7 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 }
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId, allWrittenKey2LastVersion ttypes.KeyVersions,
-	preventFutureWrite bool, isCommitted *bool, maxRetryTimes int) (txn *Txn, preventedFutureWrite bool, err error) {
+	preventFutureWrite bool, txnRecordFlag *types.VFlag, maxRetryTimes int) (txn *Txn, preventedFutureWrite bool, err error) {
 	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithExactVersion(txnID.Version()).WithTxnRecord()
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
@@ -79,7 +79,7 @@ func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, t
 	for i := 0; ; {
 		var txnRecordData types.ValueCC
 		txnRecordData, err = s.kv.Get(ctx, "", readOpt)
-		*isCommitted = txnRecordData.IsCommitted()
+		*txnRecordFlag = txnRecordData.VFlag
 		if txnRecordData.IsAborted() {
 			return s.partialTxnConstructor(txnID, types.TxnStateRollbacking, allWrittenKey2LastVersion).setErr(errors.ErrTransactionRecordNotFoundAndFoundAbortedValue), false, nil
 		}
@@ -111,17 +111,20 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 	// TODO maybe get from txn manager first?
 	var (
 		preventedFutureTxnRecordWrite bool
-		isCommitted                   bool
+		txnRecordFlag                 types.VFlag
 	)
-	if txn, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, allWrittenKey2LastVersion, preventFutureTxnRecordWrite, &isCommitted, maxRetry); err != nil {
+	if txn, preventedFutureTxnRecordWrite, err = s.loadTransactionRecordWithRetry(ctx, txnId, allWrittenKey2LastVersion, preventFutureTxnRecordWrite, &txnRecordFlag, maxRetry); err != nil {
 		return nil, "", err
 	}
 	if txn != nil {
+		if txn.txnRecordRemoved = txnRecordFlag.IsCleared(); txn.txnRecordRemoved {
+			glog.V(30).Infof("[TransactionStore::inferTransactionRecordWithRetry] txn-%d txn record cleared, set txn.txnRecordRemoved => true", txn.ID)
+		}
 		assert.Must(txn.ID == txnId)
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key)) // TODO remove this in product
 		}
-		if isCommitted && txn.AreWrittenKeysCompleted() { // TODO this is not necessary, only used for assertions, 'txn.AreWrittenKeysCompleted()' can be removed in product.
+		if txnRecordFlag.IsCommitted() && txn.AreWrittenKeysCompleted() { // TODO this is not necessary, only used for assertions, 'txn.AreWrittenKeysCompleted()' can be removed in product.
 			assert.Must(txn.IsStaging())
 			txn.MarkAllWrittenKeysCommitted()
 			txn.TxnState = types.TxnStateCommitted

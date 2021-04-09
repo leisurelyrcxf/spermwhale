@@ -61,8 +61,8 @@ type DBValue struct {
 
 var EmptyDBValue = DBValue{}
 
-func (v DBValue) WithCommitted() DBValue {
-	v.SetCommitted()
+func (v DBValue) WithCommittedCleared() DBValue {
+	v.SetCommittedCleared()
 	return v
 }
 

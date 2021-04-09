@@ -575,6 +575,7 @@ func (ts *TestCase) CheckCleared() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
+	// Check committed txn are cleared
 	keyVersionCount := make(map[string]int64)
 	for _, txn := range ts.allExecutedTxns {
 		for key, writeVal := range txn.WriteValues {
@@ -586,14 +587,24 @@ func (ts *TestCase) CheckCleared() bool {
 			if !ts.NoError(err) {
 				return false
 			}
+			writeVal.SetCleared()
 			if !ts.EqualValue(writeVal, val) {
 				return false
 			}
 		}
 	}
+
+	// Check rollbacked txn are cleared
 	for key, versionCount := range keyVersionCount {
 		if actualVersionCount, err := ts.KV.KeyVersionCount(ctx, key); !ts.NoError(err) ||
 			!ts.PresqueEqual(versionCount, actualVersionCount, 1) {
+			return false
+		}
+	}
+
+	// Check txn record are cleared
+	for _, txn := range ts.allExecutedTxns {
+		if _, err := ts.KV.Get(ctx, "", types.NewKVReadCheckVersionOption(txn.ID).WithTxnRecord()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
 			return false
 		}
 	}

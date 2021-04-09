@@ -87,6 +87,11 @@ func (m *VFlag) SetCommitted() {
 	*m |= consts.ValueMetaBitMaskCommitted
 }
 
+func (m *VFlag) SetCommittedCleared() {
+	*m &= consts.ValueMetaBitMaskClearWriteIntent
+	*m |= consts.ValueMetaBitMaskCommitted | consts.ValueMetaBitMaskCleared
+}
+
 func (m *VFlag) SetCleared() {
 	*m |= consts.ValueMetaBitMaskCleared
 }
@@ -99,8 +104,7 @@ func (m *VFlag) ClearInvalidKeyState() {
 	*m &= consts.ValueMetaBitMaskClearInvalidKeyState
 }
 
-// Deprecated
-func (m *VFlag) updateKeyState(state KeyState) {
+func (m *VFlag) UpdateKeyState(state KeyState) {
 	if state.IsCommitted() {
 		*m &= consts.ValueMetaBitMaskClearWriteIntent
 	}
