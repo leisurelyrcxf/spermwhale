@@ -78,3 +78,21 @@ func (o *Oracle) alloc(counter uint64) {
 	}
 	panic("unreachable code")
 }
+
+type BasicOracle struct {
+	counter basic.AtomicUint64
+}
+
+func NewBasicOracle() *BasicOracle {
+	return &BasicOracle{}
+}
+
+func (o *BasicOracle) FetchTimestamp(_ context.Context) (uint64, error) {
+	return o.counter.Add(1), nil
+}
+
+func (o *BasicOracle) MustFetchTimestamp() uint64 {
+	return o.counter.Add(1)
+}
+
+func (o *BasicOracle) Close() error { return nil }
