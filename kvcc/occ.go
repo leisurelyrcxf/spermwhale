@@ -99,22 +99,22 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 	}
 
 	if opt.IsReadModifyWrite {
-		assert.Must(key != "")
+		assert.Must(opt.GetMaxReadVersion && /* Safe add max reader version condition */ !opt.IsCheckVersion /* && val.Version == 0 this is used to guarantee no more internal version will be written after seen */)
 		if !kv.SupportReadModifyWriteTxn() {
 			return types.EmptyValueCC, errors.Annotatef(errors.ErrInvalidConfig, "can't support read for write transaction with current config: %v", kv.TabletTxnConfig)
 		}
 		//assert.Must(!opt.IsReadExactVersion())
 		if opt.ReaderVersion < kv.tsCache.GetMaxReaderVersion(key) {
-			return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReaderVersion(key: '%s')", key)
+			return types.EmptyValue.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)), errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReaderVersion(key: '%s')", key)
 		}
 		if opt.IsReadModifyWriteFirstReadOfKey {
 			w, err := kv.txnManager.PushReadModifyWriteReaderOnKey(key, opt)
 			if err != nil {
-				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), err
+				return types.EmptyValue.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)), err
 			}
 			if waitErr := w.Wait(ctx, kv.StaleWriteThreshold/2); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
-				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
+				return types.EmptyValue.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}
 			if glog.V(60) {
 				glog.Infof("txn-%d key '%s' get enter, cost %s, time since notified: %s", opt.ReaderVersion, key, bench.Elapsed(), time.Duration(time.Now().UnixNano()-(w.NotifyTime)))
@@ -446,7 +446,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		}
 	}
 
-	txn.Lock() // TODO use RLock instead
+	txn.RLock()
 	if txn.GetTxnState() != types.TxnStateUncommitted {
 		if txn.IsCommitted() {
 			glog.Fatalf("txn-%d write key '%s' after committed", txnId, key)
@@ -454,21 +454,22 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 		assert.Must(txn.IsAborted())
 		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] want to insert key '%s' to txn-%d after rollbacked", key, txnId)
 		err := errors.ErrWriteKeyAfterTabletTxnRollbacked
-		txn.Unlock()
+		txn.RUnlock()
 
 		return err
 	}
 
 	w, err := kv.tsCache.AddWriter(key, txn)
 	if err != nil {
-		txn.Unlock()
+		txn.RUnlock()
 
 		return err
 	}
-	err = txn.SetRLocked(ctx, types.NewTxnKeyUnionKey(key), val, opt)
+
+	err = txn.SetRLocked(ctx, key, val, opt)
 	w.SetResult(err)
 	w.Done()
-	txn.Unlock()
+	txn.RUnlock()
 
 	if err != nil {
 		if glog.V(10) {
@@ -490,11 +491,4 @@ func (kv *KVCC) Close() error {
 	kv.tsCache.m.Clear()
 	kv.txnManager.Close()
 	return kv.db.Close()
-}
-
-func (kv *KVCC) addMaxReadVersionForceFetchLatest(key string, val types.Value, getMaxReadVersion, readExactVersion bool) types.ValueCC {
-	if !getMaxReadVersion || readExactVersion {
-		return val.WithMaxReadVersion(0)
-	}
-	return val.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key))
 }

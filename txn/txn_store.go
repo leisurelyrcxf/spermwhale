@@ -26,7 +26,7 @@ type TransactionStore struct {
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
 	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, notExistsErrSubCode int32, err error) {
-	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithCheckVersion(txnId.Version())
+	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithCheckKey(txnId.Version())
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	} else {
@@ -55,7 +55,7 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for key := range keys {
-			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithCheckVersion(txnId.Version()).
+			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithCheckKey(txnId.Version()).
 				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
 			if err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
 				return key, val, err == nil, notExistsErrSubCode, nil
@@ -72,7 +72,7 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId, allWrittenKey2LastVersion ttypes.KeyVersions,
 	preventFutureWrite bool, txnRecordFlag *types.VFlag, maxRetryTimes int) (txn *Txn, preventedFutureWrite bool, err error) {
-	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithExactVersion(txnID.Version()).WithTxnRecord()
+	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(txnID)
 	if !preventFutureWrite {
 		readOpt = readOpt.WithNotUpdateTimestampCache()
 	}

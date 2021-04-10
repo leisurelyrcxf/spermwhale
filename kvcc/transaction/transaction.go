@@ -131,14 +131,14 @@ func (t *Transaction) MustGetMetaWeak(key string) types.Meta {
 
 func (t *Transaction) MustGetMetaStrong(key string) types.Meta {
 	futureKey := types.NewTxnKeyUnionKey(key)
+
 	t.RLock()
 	t.lm.RLock(futureKey)
-	defer func() {
-		t.lm.RUnlock(futureKey)
-		t.RUnlock()
-	}()
+	meta := t.future.MustGetDBMeta(futureKey).WithVersion(t.ID.Version())
+	t.lm.RUnlock(futureKey)
+	t.RUnlock()
 
-	return t.future.MustGetDBMeta(futureKey).WithVersion(t.ID.Version())
+	return meta
 }
 
 func (t *Transaction) GetMetaWeak(key string) (meta types.Meta, err error, valid bool) {
@@ -153,15 +153,7 @@ func (t *Transaction) GetMetaWeak(key string) (meta types.Meta, err error, valid
 }
 
 func (t *Transaction) GetMetaStrong(key string) (meta types.Meta, err error, valid bool) {
-	futureKey := types.NewTxnKeyUnionKey(key)
-	t.RLock()
-	t.lm.RLock(futureKey)
-	defer func() {
-		t.lm.RUnlock(futureKey)
-		t.RUnlock()
-	}()
-
-	dbMeta, ok := t.future.GetDBMeta(futureKey)
+	dbMeta, ok := t.getDBMetaStrong(key)
 	if !ok {
 		assert.Must(!t.IsCommitted())
 		return types.Meta{}, errors.ErrKeyOrVersionNotExist, true
@@ -171,43 +163,45 @@ func (t *Transaction) GetMetaStrong(key string) (meta types.Meta, err error, val
 }
 
 func (t *Transaction) GetDBMetaStrongUnsafe(key string) types.DBMeta {
+	dbMeta, _ := t.getDBMetaStrong(key)
+	return dbMeta
+}
+
+func (t *Transaction) getDBMetaStrong(key string) (dbMeta types.DBMeta, ok bool) {
 	futureKey := types.NewTxnKeyUnionKey(key)
+
 	t.RLock()
 	t.lm.RLock(futureKey)
-	defer func() {
-		t.lm.RUnlock(futureKey)
-		t.RUnlock()
-	}()
+	dbMeta, ok = t.future.GetDBMeta(futureKey)
+	t.lm.RUnlock(futureKey)
+	t.RUnlock()
 
-	dbMeta, _ := t.future.GetDBMeta(futureKey)
-	return dbMeta
+	return dbMeta, ok
 }
 
 func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
 	futureKey := types.NewTxnKeyUnionKey(key)
+
 	t.RLock()
 	t.lm.RLock(futureKey)
-	defer func() {
-		t.lm.RUnlock(futureKey)
-		t.RUnlock()
-	}()
+	b := t.future.HasPositiveInternalVersion(futureKey, version)
+	t.lm.RUnlock(futureKey)
+	t.RUnlock()
 
-	return t.future.HasPositiveInternalVersion(futureKey, version)
+	return b
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
 	var maxReadVersion uint64
 
-	// NOTE: the lock is must though seems no needed
-	t.RLock()
-	if opt.UpdateTimestampCache {
+	futureKey := types.NewTxnKeyUnionTxnRecord(t.ID)
+	t.lm.RLock(futureKey) // guarantee mutual exclusion with Transaction::SetTxnRecord()
+	if maxReadVersion = atomic.LoadUint64(&t.txnRecordMaxReadVersion); opt.UpdateTimestampCache && maxReadVersion < opt.ReaderVersion {
 		assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
 		atomic.StoreUint64(&t.txnRecordMaxReadVersion, opt.ReaderVersion)
 		maxReadVersion = opt.ReaderVersion
-	} else {
-		maxReadVersion = atomic.LoadUint64(&t.txnRecordMaxReadVersion)
 	}
-	t.RUnlock()
+	t.lm.RUnlock(futureKey)
 
 	// TODO if txn is aborted or committed, then needn't read txn record from db
 	val, err := t.db.Get(ctx, "", opt.ToKV())
@@ -216,8 +210,8 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {
-	t.Lock() // TODO use RLock instead
-	defer t.Unlock()
+	t.RLock()
+	defer t.RUnlock()
 
 	if t.GetTxnState() != types.TxnStateUncommitted {
 		if t.IsCommitted() {
@@ -228,41 +222,50 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
 
-	if val.Version < t.txnRecordMaxReadVersion {
+	futureKey := types.NewTxnKeyUnionTxnRecord(t.ID)
+	t.lm.Lock(futureKey)
+	defer t.lm.Unlock(futureKey)
+
+	if val.Version < t.txnRecordMaxReadVersion { // TODO has a bug here
 		return errors.ErrWriteReadConflict
 	}
 
-	if err = t.SetRLocked(ctx, types.NewTxnKeyUnionTxnRecord(t.ID), val, opt); err == nil && glog.V(60) {
+	if err = t.setRLockedUnsafe(ctx, types.NewTxnKeyUnionTxnRecord(t.ID), val, opt); err == nil && glog.V(60) {
 		glog.Infof("[Transaction::SetTxnRecord] txn-%d set txn-record succeeded, cost %s", val.Version, bench.Elapsed())
 	}
 	return err
 }
 
-func (t *Transaction) SetRLocked(ctx context.Context, futureKey types.TxnKeyUnion, val types.Value, opt types.KVCCWriteOption) error {
+func (t *Transaction) SetRLocked(ctx context.Context, key string, val types.Value, opt types.KVCCWriteOption) error {
+	futureKey := types.NewTxnKeyUnionKey(key)
 	t.lm.Lock(futureKey)
 	defer t.lm.Unlock(futureKey)
 
+	return t.setRLockedUnsafe(ctx, futureKey, val, opt)
+}
+
+func (t *Transaction) setRLockedUnsafe(ctx context.Context, futureKey types.TxnKeyUnion, val types.Value, opt types.KVCCWriteOption) error {
 	var setErr error
 	if setErr = t.db.Set(ctx, futureKey.Key, val, opt.ToKV()); setErr != nil {
 		exists, chkErr := t.checkVersion(ctx, futureKey, t.maxRetry)
 		if chkErr != nil {
 			t.future.MustAdd(futureKey, val.Meta.ToDB().WithInvalidKeyState())
 			if chkErr != errors.ErrDummy {
-				glog.Errorf("[Transaction::SetRLocked] failed to check key '%s' on set error '%v' of version %d : '%v'", futureKey, setErr, val.Version, chkErr)
+				glog.Errorf("[Transaction::setRLockedUnsafe] failed to check key '%s' on set error '%v' of version %d : '%v'", futureKey, setErr, val.Version, chkErr)
 			}
 			return errors.Annotatef(errors.ErrTabletTxnSetFailedKeyStatusUndetermined, "key: '%s', version: %d, set_error: '%v', get_err: '%v'", futureKey, val.Version, setErr, chkErr)
 		}
 		if !exists {
-			glog.V(10).Infof("[Transaction::SetRLocked] check version %d exists for key '%s' on set error: '%v', and then found key not exists error", val.Version, futureKey, setErr)
+			glog.V(10).Infof("[Transaction::setRLockedUnsafe] check version %d exists for key '%s' on set error: '%v', and then found key not exists error", val.Version, futureKey, setErr)
 			return errors.Annotatef(errors.ErrTabletTxnSetFailedKeyNotFound, "set_err: %v", setErr)
 		}
 		// assert.Must(checkErr == nil && exists) error pruning
 	}
 	if t.future.MustAdd(futureKey, val.Meta.ToDB()) && bool(glog.V(60)) {
 		if setErr == nil {
-			glog.Infof("[KVCC::%s][SetRLocked] added new key '%s' to txn-%d", trace.CallerFunc(), futureKey, t.ID)
+			glog.Infof("[KVCC::%s][setRLockedUnsafe] added new key '%s' to txn-%d", trace.CallerFunc(), futureKey, t.ID)
 		} else {
-			glog.Infof("[KVCC::%s][SetRLocked] added new key '%s' to txn-%d, got set error '%v' but checked ok", trace.CallerFunc(), futureKey, t.ID, setErr)
+			glog.Infof("[KVCC::%s][setRLockedUnsafe] added new key '%s' to txn-%d, got set error '%v' but checked ok", trace.CallerFunc(), futureKey, t.ID, setErr)
 		}
 	}
 	return nil

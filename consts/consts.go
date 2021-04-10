@@ -34,6 +34,7 @@ const (
 	KVCCReadOptBitMaskSnapshotRead                  = 1 << 5
 	KVCCReadOptBitMaskWaitWhenReadDirty             = 1 << 6
 	KVCCReadOptBitMaskMetaOnly                      = 1 << 7
+	KVCCReadOptBitMaskCheckVersion                  = 1 << 8
 
 	KVReadOptBitMaskTxnRecord    = 1
 	KVReadOptBitMaskExactVersion = 1 << 1

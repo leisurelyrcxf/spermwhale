@@ -18,6 +18,10 @@ func TestTxnReadModifyWrite2KeysDeadlockMGetMSet(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlockMGetMSet).Run()
 }
 
+func TestTxnReadModifyWriteNKeys(t *testing.T) {
+	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWriteNKeys).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
+}
+
 func TestTxnLostUpdate(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).Run()
 }
@@ -86,10 +90,6 @@ func TestTxnReadModifyWrite2KeysDeadlockMGetMSetWaitWhenReadDirty(t *testing.T) 
 }
 func TestTxnReadModifyWrite2KeysDeadlockMGetMSetReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWrite2KeysDeadlockMGetMSet).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
-}
-
-func TestTxnReadModifyWriteNKeys(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnReadModifyWriteNKeys).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
 func TestTxnLostUpdateModAdd(t *testing.T) {
