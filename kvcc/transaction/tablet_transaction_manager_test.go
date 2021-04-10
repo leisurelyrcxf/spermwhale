@@ -73,11 +73,11 @@ func testManagerInsert(t types.T) (b bool) {
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
 
 			insertTxnIfNotExists(txnIds[i&1])
-		}()
+		}(i)
 	}
 
 	wg.Wait()

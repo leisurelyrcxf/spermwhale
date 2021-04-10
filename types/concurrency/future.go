@@ -165,28 +165,3 @@ func (s *Future) AssertAllKeysOfState(state types.KeyState) {
 		assert.Must(info.GetKeyState() == state)
 	}
 }
-
-func (s *Future) doneUnsafeEx(key types.TxnKeyUnion, state types.KeyState) (doneOnce, done bool) {
-	oldFlyingKeyCount := s.flyingKeyCount
-	done = s.doneKeyUnsafe(key, state)
-	return s.flyingKeyCount < oldFlyingKeyCount, done
-}
-
-// Deprecated
-func (s *Future) add(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool, keyDone bool) {
-	s.Lock()
-	defer s.Unlock()
-
-	if old, ok := s.keys[key]; ok {
-		// Previous false -> already inserted
-		// Previous true -> already done
-		if !old.IsCleared() && meta.InternalVersion > old.InternalVersion {
-			s.keys[key] = old
-		}
-		return false, old.IsCleared()
-	}
-	s.keys[key] = meta
-	s.flyingKeyCount++
-	s.addedKeyCount++
-	return true, false
-}

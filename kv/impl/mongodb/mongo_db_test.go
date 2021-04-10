@@ -3,14 +3,12 @@ package mongodb
 import (
 	"testing"
 
-	"github.com/leisurelyrcxf/spermwhale/types"
-
 	"github.com/leisurelyrcxf/spermwhale/kv"
 )
 
 const rounds = 1000
 
-func newDB() (*types.DB, error) {
+func newDB() (*kv.DB, error) {
 	//return NewDB("localhost:37037", nil)
 	return NewDB("localhost:27017", nil)
 }

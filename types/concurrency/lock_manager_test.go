@@ -40,8 +40,8 @@ func testAdvancedTxnLockManagerLock(t types.T) (b bool) {
 	}
 	wg.Wait()
 
-	for _, partition := range lm.partitions {
-		if !assert.Empty(partition.m) {
+	for idx := range lm.partitions {
+		if !assert.Empty(lm.partitions[idx].m) {
 			return
 		}
 	}
@@ -116,8 +116,8 @@ func testAdvancedTxnLockManagerRLock(t types.T) (b bool) {
 			return
 		}
 	}
-	for _, partition := range lm.partitions {
-		if !assert.Empty(partition.m) {
+	for idx := range lm.partitions {
+		if !assert.Empty(lm.partitions[idx].m) {
 			return
 		}
 	}
@@ -206,8 +206,8 @@ func benchTxnLockManager(t types.T, lm TxnLockManager, readerTaskLen time.Durati
 
 	assert := types.NewAssertion(t)
 	if lm, ok := lm.(*AdvancedTxnLockManager); ok {
-		for _, partition := range lm.partitions {
-			if !assert.Empty(partition.m) {
+		for idx := range lm.partitions {
+			if !assert.Empty(lm.partitions[idx].m) {
 				return
 			}
 		}

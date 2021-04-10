@@ -314,15 +314,13 @@ func (v ValueCC) IsEmpty() bool {
 }
 
 // Hide Value::WithMaxReadVersion
-func (v ValueCC) WithMaxReadVersion(maxReadVersion uint64) ValueCC {
+func (v ValueCC) WithMaxReadVersion() ValueCC {
 	panic(errors.ErrNotSupported)
-	return v
 }
 
 // Hide Value::WithMaxReadVersion
-func (v ValueCC) WithSnapshotVersion(ssVersion uint64) ValueCC {
+func (v ValueCC) WithSnapshotVersion() ValueCC {
 	panic(errors.ErrNotSupported)
-	return v
 }
 
 func (v ValueCC) ToTValue() TValue {

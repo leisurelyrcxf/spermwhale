@@ -8,15 +8,41 @@ import (
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/consts"
 	testifyassert "github.com/stretchr/testify/assert"
 
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
+	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
+
+func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done bool) {
+	oldFlyingKeyCount := s.flyingKeyCount
+	done = s.doneKeyUnsafe(types.NewTxnKeyUnionKey(key), state)
+	return s.flyingKeyCount < oldFlyingKeyCount, done
+}
+
+// Deprecated
+func (s *Future) add(key string, meta types.DBMeta) (insertedNewKey bool, keyDone bool) {
+	futureKey := types.NewTxnKeyUnionKey(key)
+	s.Lock()
+	defer s.Unlock()
+
+	if old, ok := s.keys[futureKey]; ok {
+		// Previous false -> already inserted
+		// Previous true -> already done
+		if !old.IsCleared() && meta.InternalVersion > old.InternalVersion {
+			s.keys[futureKey] = old
+		}
+		return false, old.IsCleared()
+	}
+	s.keys[futureKey] = meta
+	s.flyingKeyCount++
+	s.addedKeyCount++
+	return true, false
+}
 
 type TestTxn struct {
 	sync.Mutex
@@ -57,10 +83,10 @@ func (txn *TestTxn) Done(key string) bool {
 	//if txn.IsTerminated() {
 	//	return true
 	//}
-	doneOnce, done := txn.Future.doneUnsafeEx(key)
+	doneOnce, done := txn.Future.doneUnsafeEx(key, types.KeyStateCommittedCleared)
 	if done {
 		for key, done := range txn.Future.keys {
-			assert.Failf(done.Done, "'%s' not done yet", key)
+			assert.Mustf(done.IsCleared(), "'%s' not done yet", key)
 		}
 		glog.V(120).Infof("[TestTxn::Done] txn done after done key '%s'", key)
 	}
@@ -137,7 +163,7 @@ func testDoneSetFunc(t *testing.T, sleep bool) (b bool) {
 
 	wg.Wait()
 	for key, done := range txn.Future.keys {
-		if !ts.Truef(done.Done, "'%s' not done yet", key) {
+		if !ts.Truef(done.IsCleared(), "'%s' not done yet", key) {
 			return
 		}
 	}

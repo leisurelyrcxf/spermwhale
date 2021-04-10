@@ -81,7 +81,7 @@ func main() {
 						if parts[2] != "exact-version" {
 							fmt.Println("invalid command, use 'get key [version] [exact_version]'")
 						}
-						readOpt = readOpt.WithExactVersion()
+						readOpt = types.NewKVReadOptionWithExactVersion(version)
 					}
 					val, err := kvClient.Get(ctx, key, readOpt)
 					if err != nil {
