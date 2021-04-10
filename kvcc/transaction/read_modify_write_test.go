@@ -93,7 +93,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 
 	ctx := context.Background()
 	o := physical.NewOracle()
-	tm := NewManager(types.DefaultTableTxnManagerCfg, nil)
+	tm := NewManager(types.TestTableTxnManagerCfg, nil)
 	defer tm.Close()
 
 	var (
@@ -129,9 +129,7 @@ func TestPriorityQueue_Timeouted(t *testing.T) {
 				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						KVCCReadOption: types.KVCCReadOption{
-							ReaderVersion: txnId.Version(),
-						},
+						ReaderVersion:       txnId.Version(),
 						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
@@ -158,7 +156,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(types.DefaultTableTxnManagerCfg, nil)
+	tm := NewManager(types.TestTableTxnManagerCfg, nil)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -197,7 +195,7 @@ func TestPriorityQueue_PushNotify(t *testing.T) {
 				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						KVCCReadOption:      types.NewKVCCReadOption(txnId.Version()),
+						ReaderVersion:       txnId.Version(),
 						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,
@@ -226,7 +224,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 
 	ctx := context.Background()
 
-	tm := NewManager(types.DefaultTableTxnManagerCfg, nil)
+	tm := NewManager(types.TestTableTxnManagerCfg, nil)
 	defer tm.Close()
 
 	txnIds := make([]int, txnNum)
@@ -261,7 +259,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				if cond.NotifyTime > 0 {
 					executedTxns.infos[i] = ExecuteInfo{
 						reader: reader{
-							KVCCReadOption:      types.NewKVCCReadOption(txnId.Version()),
+							ReaderVersion:       txnId.Version(),
 							readModifyWriteCond: *cond,
 						},
 						retryTimes: retryTimes,
@@ -277,9 +275,7 @@ func TestPriorityQueue_HeadNonTerminate(t *testing.T) {
 				tm.SignalReadModifyWriteKeyEvent(txnId, NewReadModifyWriteKeyEvent(key1, ReadModifyWriteKeyEventTypeWriteIntentCleared))
 				executedTxns.infos[i] = ExecuteInfo{
 					reader: reader{
-						KVCCReadOption: types.KVCCReadOption{
-							ReaderVersion: txnId.Version(),
-						},
+						ReaderVersion:       txnId.Version(),
 						readModifyWriteCond: *cond,
 					},
 					retryTimes: retryTimes,

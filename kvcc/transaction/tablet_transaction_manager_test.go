@@ -49,7 +49,7 @@ func TestManagerInsert(t *testing.T) {
 func testManagerInsert(t types.T) (b bool) {
 	var (
 		txnIds = []types.TxnId{types.TxnId(1111), types.TxnId(2222)}
-		tm     = NewManager(types.DefaultTableTxnManagerCfg, nil)
+		tm     = NewManager(types.TestTableTxnManagerCfg, nil)
 	)
 	defer tm.Close()
 
@@ -89,7 +89,7 @@ func TestManagerGC(t *testing.T) {
 }
 
 func testManagerGC(t types.T) (b bool) {
-	cfg := types.DefaultTableTxnManagerCfg
+	cfg := types.TestTableTxnManagerCfg
 	cfg.TxnLifeSpan = 100 * time.Millisecond
 	var (
 		oracle = physical.NewOracle()

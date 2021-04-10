@@ -27,6 +27,7 @@ func main() {
 	flagTestMode := flag.Bool("test", false, "test mode, won't sleep at start")
 	flagTxnConfigStaleWriteThreshold := flag.Duration("txn-stale-write-threshold", consts.DefaultStaleWriteThreshold, "transaction stale write threshold")
 	flagTxnConfigMaxClockDrift := flag.Duration("max-clock-drift", consts.DefaultMaxClockDrift, "max clock drift")
+	flagReadModifyWriteMaxQueuedTxnPerKey := flag.Int("read-modify-write-max-queued-txn-per-key", consts.DefaultMaxReadModifyWriteQueueCapacityPerKey, "max queued txn per key for read-modify-write txn type")
 	cmd.RegisterStoreFlags()
 	cmd.ParseFlags()
 
@@ -47,17 +48,14 @@ func main() {
 		glog.Fatalf("unknown db type '%s'", *flagDBType)
 	}
 
-	store := cmd.NewStore()
-	cfg := types.NewTabletTxnConfig(*flagTxnConfigStaleWriteThreshold).WithMaxClockDrift(*flagTxnConfigMaxClockDrift)
+	cfg := types.NewTabletTxnManagerConfig(
+		types.NewTabletTxnConfig(*flagTxnConfigStaleWriteThreshold).WithMaxClockDrift(*flagTxnConfigMaxClockDrift),
+		types.NewReadModifyWriteQueueCfg(*flagReadModifyWriteMaxQueuedTxnPerKey)).CondTest(*flagTestMode)
 	if err := cfg.Validate(); err != nil {
 		glog.Fatalf("invalid config: %v", err)
 	}
-	var server *kvcc.Server
-	if *flagTestMode {
-		server = kvcc.NewServerForTesting(*cmd.FlagPort, db, cfg, *flagGid, store)
-	} else {
-		server = kvcc.NewServer(*cmd.FlagPort, db, cfg, *flagGid, store)
-	}
+	store := cmd.NewStore()
+	server := kvcc.NewServer(*cmd.FlagPort, db, cfg, *flagGid, store)
 	if err := server.Start(); err != nil {
 		glog.Fatalf("failed to start kvcc server: %v", err)
 	}

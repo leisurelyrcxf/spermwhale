@@ -29,9 +29,7 @@ type Manager struct {
 }
 
 func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
-	assert.Must(cfg.ReadModifyWriteQueueCfg.MaxQueuedAge < cfg.StaleWriteThreshold)
 	tm := &Manager{cfg: cfg, db: db}
-
 	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.cfg.TxnLifeSpan) / float64(time.Second)))
 	tm.writeTxns.InitializeWithGCThreads(TxnPartitionNum, utils.MaxInt(estimateMaxBufferedTxn/TxnPartitionNum, 100))
 	tm.readModifyWriteQueues.Initialize(64)
@@ -40,7 +38,7 @@ func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
 
 func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
 	return tm.readModifyWriteQueues.GetLazy(key, func() interface{} {
-		return newReadModifyWriteQueue(key, tm.cfg.ReadModifyWriteQueueCfg)
+		return newReadModifyWriteQueue(key, tm.cfg.StaleWriteThreshold, tm.cfg.ReadModifyWriteQueueCfg)
 	}).(*readModifyWriteQueue).pushReader(readOpt)
 }
 

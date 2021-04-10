@@ -35,8 +35,11 @@ const (
 )
 
 var (
-	defaultTxnManagerConfig = types.NewTxnManagerConfig(time.Millisecond * 10000)
-	defaultTabletTxnConfig  = types.NewTabletTxnConfig(time.Millisecond * 10000).WithMaxClockDrift(0)
+	defaultTxnManagerConfig       = types.NewTxnManagerConfig(time.Millisecond * 10000)
+	defaultTabletTxnManagerConfig = types.NewTabletTxnManagerConfig(
+		types.NewTabletTxnConfig(time.Second*10).WithMaxClockDrift(0),
+		types.NewReadModifyWriteQueueCfg(500),
+	).WithTest()
 )
 
 type FailurePattern int
@@ -353,8 +356,8 @@ type TestCase struct {
 	DBType                   types.DBType
 	TxnType, ReadOnlyTxnType types.TxnType
 
-	TxnManagerCfg types.TxnManagerConfig
-	TableTxnCfg   types.TabletTxnConfig
+	TxnManagerCfg      types.TxnManagerConfig
+	TableTxnManagerCfg types.TabletTxnManagerConfig
 
 	GoRoutineNum                     int
 	TxnNumPerGoRoutine               int
@@ -405,8 +408,8 @@ func NewTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase
 		TxnType:            types.TxnTypeDefault,
 		ReadOnlyTxnType:    types.TxnTypeDefault,
 
-		TxnManagerCfg: defaultTxnManagerConfig,
-		TableTxnCfg:   defaultTabletTxnConfig,
+		TxnManagerCfg:      defaultTxnManagerConfig,
+		TableTxnManagerCfg: defaultTabletTxnManagerConfig,
 
 		timeoutPerRound: defaultTimeoutPerRound,
 	}).initialGoRoutineRelatedFields()
@@ -502,8 +505,8 @@ func (ts *TestCase) GenTestEnv() bool {
 			ts.Close()
 			return false
 		}
-		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.ReadFailureProb, ts.WriteFailureProb).
-			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnCfg)
+		kvc := kvcc.NewKVCC(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.ReadFailureProb, ts.WriteFailureProb).
+			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnManagerCfg)
 		ts.KVCC = kvc
 		ts.KV = titan
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
@@ -518,7 +521,7 @@ func (ts *TestCase) GenTestEnv() bool {
 
 	var clientTxnManagers []*ClientTxnManager
 	if ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.Assertions, ts.DBType, ts.TxnManagerCfg,
-		ts.TableTxnCfg); !ts.Len(ts.txnServers, 2) {
+		ts.TableTxnManagerCfg); !ts.Len(ts.txnServers, 2) {
 		return false
 	}
 	ts.KVCC = ts.txnServers[0].tm.kv
@@ -662,8 +665,8 @@ func (ts *TestCase) SetSkipRoundCheck(goRoutineIndex int) *TestCase {
 	return ts
 }
 func (ts *TestCase) SetStaleWriteThreshold(thr time.Duration) *TestCase {
-	ts.TxnManagerCfg = defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(thr)
-	ts.TableTxnCfg = defaultTabletTxnConfig.WithStaleWriteThreshold(thr)
+	ts.TxnManagerCfg = ts.TxnManagerCfg.WithWoundUncommittedTxnThreshold(thr)
+	ts.TableTxnManagerCfg = ts.TableTxnManagerCfg.WithStaleWriteThreshold(thr)
 	return ts
 }
 func (ts *TestCase) SetWoundUncommittedTxnThreshold(thr time.Duration) *TestCase {
@@ -723,7 +726,7 @@ func (ts *TestCase) LogParameters() {
 		"go routine number: %d, txn number per go routine: %d, log level: %d",
 		ts.t.Name(),
 		ts.DBType, ts.TxnType, ts.ReadOnlyTxnType,
-		ts.TableTxnCfg.StaleWriteThreshold, ts.TxnManagerCfg.WoundUncommittedTxnThreshold,
+		ts.TableTxnManagerCfg.StaleWriteThreshold, ts.TxnManagerCfg.WoundUncommittedTxnThreshold,
 		ts.GoRoutineNum, ts.TxnNumPerGoRoutine, ts.LogLevel)
 }
 
@@ -757,7 +760,7 @@ func (ts *TestCase) initialGoRoutineRelatedFields() *TestCase {
 	return ts
 }
 
-func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnManagerConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
 	gates, stopTablets, stopGates := createTabletsGates(assert, dbType, tabletCfg)
 	if !assert.Len(gates, 2) || !assert.NotNil(stopTablets) || !assert.NotNil(stopGates) {
 		return nil, nil, nil
@@ -844,7 +847,7 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 	return txnServers, clientTxnManagers, stop
 }
 
-func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
+func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnManagerConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
 		return nil, nil, nil
 	}
@@ -926,59 +929,7 @@ func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg
 	return gates, stopTablets, stopGates
 }
 
-func createGate(assert *types.Assertions, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
-	return createGateEx(assert, types.DBTypeMemory, tabletCfg)
-}
-
-func createGateEx(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnConfig) (g *gate.Gate, _ func()) {
-	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
-		return nil, nil
-	}
-
-	const (
-		tablet1Port = 20000
-		tablet2Port = 30000
-	)
-	stopper := func() {}
-	defer func() {
-		if g == nil {
-			stopper()
-		}
-	}()
-	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
-	if !assert.NotNil(tablet1) {
-		return nil, nil
-	}
-	if !assert.NoError(tablet1.Start()) {
-		return nil, nil
-	}
-	stopper = func() {
-		_ = tablet1.Close()
-	}
-	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
-	if !assert.NotNil(tablet2) {
-		return nil, nil
-	}
-	if !assert.NoError(tablet2.Start()) {
-		return nil, nil
-	}
-	oldStopper := stopper
-	stopper = func() {
-		oldStopper()
-		_ = tablet2.Close()
-	}
-
-	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
-	if !assert.NoError(err) {
-		return nil, nil
-	}
-	if g, err = gate.NewGate(topo.NewStore(cli, defaultClusterName)); !assert.NoError(err) {
-		return nil, nil
-	}
-	return g, stopper
-}
-
-func createTabletServer(assert *types.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnConfig) (server *kvcc.Server) {
+func createTabletServer(assert *types.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnManagerConfig) (server *kvcc.Server) {
 	cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 	if !assert.NoError(err) {
 		return nil
@@ -987,7 +938,7 @@ func createTabletServer(assert *types.Assertions, port int, dbType types.DBType,
 	if !assert.NotNil(db) {
 		return nil
 	}
-	return kvcc.NewServerForTesting(port, db, cfg, gid, topo.NewStore(cli, defaultClusterName))
+	return kvcc.NewServer(port, db, cfg, gid, topo.NewStore(cli, defaultClusterName))
 }
 
 func createOracleServer(assert *types.Assertions, port int, dbType types.DBType) *impl.Server {

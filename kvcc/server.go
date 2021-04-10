@@ -69,17 +69,9 @@ type Server struct {
 }
 
 // readOnly indicate this is outer service
-func NewServer(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store) *Server {
-	return newServer(port, db, cfg, gid, store, false)
-}
-
-func NewServerForTesting(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store) *Server {
-	return newServer(port, db, cfg, gid, store, true)
-}
-
-func newServer(port int, db types.KV, cfg types.TabletTxnConfig, gid int, store *topo.Store, testing bool) *Server {
+func NewServer(port int, db types.KV, cfg types.TabletTxnManagerConfig, gid int, store *topo.Store) *Server {
 	grpcServer := grpc.NewServer()
-	kvcc := newKVCC(db, cfg, testing)
+	kvcc := NewKVCC(db, cfg)
 	stub := &Stub{kvcc: kvcc}
 
 	kvccpb.RegisterKVCCServer(grpcServer, stub)

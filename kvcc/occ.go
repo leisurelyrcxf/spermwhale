@@ -32,30 +32,19 @@ type KVCC struct {
 	tsCache    *TimestampCache
 }
 
-func NewKVCC(db types.KV, cfg types.TabletTxnConfig) *KVCC {
-	return newKVCC(db, cfg, false)
-}
-
-func NewKVCCForTesting(db types.KV, cfg types.TabletTxnConfig) *KVCC {
-	return newKVCC(db, cfg, true)
-}
-
-func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
+func NewKVCC(db types.KV, cfg types.TabletTxnManagerConfig) *KVCC {
 	// Wait until uncertainty passed because timestamp cache is
 	// invalid during starting (lost last stored values),
 	// this is to prevent stale write violating stabilizability
-	if !testing {
+	if !cfg.Test {
 		time.Sleep(cfg.GetWaitTimestampCacheInvalidTimeout())
 	}
 
 	cc := &KVCC{
-		TabletTxnConfig: cfg,
+		TabletTxnConfig: cfg.TabletTxnConfig,
 		db:              db,
-		txnManager: transaction.NewManager(types.NewTabletTxnManagerConfig(
-			cfg,
-			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(cfg.StaleWriteThreshold*4/5),
-		), db),
-		tsCache: NewTimestampCache(),
+		txnManager:      transaction.NewManager(cfg, db),
+		tsCache:         NewTimestampCache(),
 	}
 	cc.lm.Initialize(128)
 	return cc

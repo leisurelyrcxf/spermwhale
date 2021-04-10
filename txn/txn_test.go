@@ -162,7 +162,7 @@ func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 		panic("goRoutineNumber&1 != 0")
 	}
 	db := memory.NewMemoryDB()
-	kvc := kvcc.NewKVCCForTesting(db, defaultTabletTxnConfig.WithStaleWriteThreshold(time.Second))
+	kvc := kvcc.NewKVCC(db, defaultTabletTxnManagerConfig.WithStaleWriteThreshold(time.Second))
 	m := NewTransactionManager(kvc, defaultTxnManagerConfig.WithWoundUncommittedTxnThreshold(time.Second))
 	sc := smart_txn_client.NewSmartClient(m, 0)
 	defer sc.Close()
@@ -195,7 +195,7 @@ func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {
 func TestTxnEncode(t *testing.T) {
 	assert := types.NewAssertion(t)
 
-	txn := NewTxn(123, types.TxnTypeReadModifyWrite, kvcc.NewKVCCForTesting(memory.NewMemoryDB(), defaultTabletTxnConfig), defaultTxnManagerConfig.TxnConfig, &TransactionStore{}, nil, nil)
+	txn := NewTxn(123, types.TxnTypeReadModifyWrite, kvcc.NewKVCC(memory.NewMemoryDB(), defaultTabletTxnManagerConfig), defaultTxnManagerConfig.TxnConfig, &TransactionStore{}, nil, nil)
 	txn.TxnState = types.TxnStateRollbacking
 	txn.InitializeWrittenKeys(ttypes.KeyVersions{"k1": 111, "k2": 222}, true)
 	bytes := txn.Encode()

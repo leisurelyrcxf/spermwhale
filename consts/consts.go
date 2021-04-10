@@ -161,8 +161,9 @@ const (
 )
 
 const (
-	MaxReadModifyWriteQueueCapacityPerKey             = 500
+	DefaultMaxReadModifyWriteQueueCapacityPerKey      = 500
 	ReadModifyWriteQueueMaxReadersRatio               = 0.7
+	ReadModifyWriteQueueMaxQueuedAgeRatio             = 0.8 // divide by staleWriteThreshold
 	ReadModifyWriteTxnMinSupportedStaleWriteThreshold = 400 * time.Millisecond
 
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40

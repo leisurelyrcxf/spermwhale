@@ -124,38 +124,50 @@ func (cfg TabletTxnConfig) SupportReadModifyWriteTxn() bool {
 	return cfg.StaleWriteThreshold >= consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold
 }
 
-var DefaultReadModifyWriteQueueCfg = NewReadModifyWriteQueueCfg(
-	consts.MaxReadModifyWriteQueueCapacityPerKey,
-	consts.ReadModifyWriteQueueMaxReadersRatio,
-	consts.DefaultStaleWriteThreshold)
+var DefaultReadModifyWriteQueueCfg = NewReadModifyWriteQueueCfg(consts.DefaultMaxReadModifyWriteQueueCapacityPerKey)
 
 type ReadModifyWriteQueueCfg struct {
-	CapacityPerKey  int
-	MaxReadersRatio float64
-	MaxQueuedAge    time.Duration
+	CapacityPerKey    int
+	MaxReadersRatio   float64
+	MaxQueuedAgeRatio float64 // StaleWriteThreshold
 }
 
-func NewReadModifyWriteQueueCfg(
-	capacityPerKey int,
-	maxReadersRatio float64,
-	maxQueuedAge time.Duration) ReadModifyWriteQueueCfg {
+func NewReadModifyWriteQueueCfg(capacityPerKey int) ReadModifyWriteQueueCfg {
 	return ReadModifyWriteQueueCfg{
-		CapacityPerKey:  capacityPerKey,
-		MaxReadersRatio: maxReadersRatio,
-		MaxQueuedAge:    maxQueuedAge,
+		CapacityPerKey:    capacityPerKey,
+		MaxReadersRatio:   consts.ReadModifyWriteQueueMaxReadersRatio,
+		MaxQueuedAgeRatio: consts.ReadModifyWriteQueueMaxQueuedAgeRatio,
 	}
 }
 
-func (cfg ReadModifyWriteQueueCfg) WithMaxQueuedAge(maxQueuedAge time.Duration) ReadModifyWriteQueueCfg {
-	cfg.MaxQueuedAge = maxQueuedAge
-	return cfg
+func (c ReadModifyWriteQueueCfg) Validate() error {
+	if c.CapacityPerKey <= 0 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::CapacityPerKey <= 0")
+	}
+	if c.MaxReadersRatio <= 0 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxReadersRatio <= 0")
+	}
+	if c.MaxReadersRatio >= 0.9 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxReadersRatio >= 0.9")
+	}
+	if c.MaxQueuedAgeRatio <= 0 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxQueuedAgeRatio <= 0")
+	}
+	if c.MaxQueuedAgeRatio >= 0.9 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxQueuedAgeRatio >= 0.9")
+	}
+	return nil
 }
 
-var DefaultTableTxnManagerCfg = NewTabletTxnManagerConfig(DefaultTableTxnCfg, DefaultReadModifyWriteQueueCfg)
+var (
+	DefaultTableTxnManagerCfg = NewTabletTxnManagerConfig(DefaultTableTxnCfg, DefaultReadModifyWriteQueueCfg)
+	TestTableTxnManagerCfg    = DefaultTableTxnManagerCfg.WithTest()
+)
 
 type TabletTxnManagerConfig struct {
 	TabletTxnConfig
 	ReadModifyWriteQueueCfg
+	Test bool
 
 	// outputs
 	TxnLifeSpan        time.Duration
@@ -165,14 +177,45 @@ type TabletTxnManagerConfig struct {
 func NewTabletTxnManagerConfig(
 	tabletCfg TabletTxnConfig,
 	readModifyWriteQueueCfg ReadModifyWriteQueueCfg) TabletTxnManagerConfig {
-	return TabletTxnManagerConfig{
+	cfg := TabletTxnManagerConfig{
 		TabletTxnConfig:         tabletCfg,
 		ReadModifyWriteQueueCfg: readModifyWriteQueueCfg,
-	}.Sanitize()
+	}
+	cfg.Sanitize()
+	return cfg
 }
 
-func (c TabletTxnManagerConfig) Sanitize() TabletTxnManagerConfig {
+func (c TabletTxnManagerConfig) Validate() error {
+	if err := c.TabletTxnConfig.Validate(); err != nil {
+		return err
+	}
+	return c.ReadModifyWriteQueueCfg.Validate()
+}
+
+func (c *TabletTxnManagerConfig) Sanitize() *TabletTxnManagerConfig {
 	c.TxnLifeSpan = c.TabletTxnConfig.GetWaitTimestampCacheInvalidTimeout()
 	c.TxnInsertThreshold = c.StaleWriteThreshold / 10 * 9
+	return c
+}
+
+func (c TabletTxnManagerConfig) WithStaleWriteThreshold(staleWriteThr time.Duration) TabletTxnManagerConfig {
+	c.StaleWriteThreshold = staleWriteThr
+	c.Sanitize()
+	return c
+}
+
+func (c TabletTxnManagerConfig) WithMaxClockDrift(maxClockDrift time.Duration) TabletTxnManagerConfig {
+	c.MaxClockDrift = maxClockDrift
+	c.Sanitize()
+	return c
+}
+
+func (c TabletTxnManagerConfig) WithTest() TabletTxnManagerConfig {
+	c.Test = true
+	return c
+}
+
+func (c TabletTxnManagerConfig) CondTest(b bool) TabletTxnManagerConfig {
+	c.Test = b
 	return c
 }

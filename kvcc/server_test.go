@@ -22,8 +22,11 @@ func newTestServer(assert *testifyassert.Assertions, port int) (server *Server) 
 	if !assert.NoError(err) {
 		return nil
 	}
-	return NewServerForTesting(port, memory.NewMemoryDB(),
-		types.NewTabletTxnConfig(time.Second).WithMaxClockDrift(time.Nanosecond),
+	return NewServer(port, memory.NewMemoryDB(),
+		types.NewTabletTxnManagerConfig(
+			types.NewTabletTxnConfig(time.Second).WithMaxClockDrift(time.Nanosecond),
+			types.DefaultReadModifyWriteQueueCfg,
+		).WithTest(),
 		1, topo.NewStore(cli, "test_cluster"))
 }
 
