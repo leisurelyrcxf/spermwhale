@@ -124,6 +124,10 @@ func (g *Gate) MustRoute(key types.TxnKeyUnion) *Shard {
 	return s
 }
 
+func (g *Gate) GetShards() []*Shard {
+	return g.shards
+}
+
 func (g *Gate) watchShards() error {
 	watchFuture, err := g.store.Client().WatchOnce(g.store.GroupDir())
 	if err != nil && !errors.IsNotSupportedErr(err) {

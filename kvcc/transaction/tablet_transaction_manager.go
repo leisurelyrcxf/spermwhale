@@ -39,6 +39,7 @@ func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
 func (tm *Manager) newTransaction(id types.TxnId) *Transaction {
 	return newTransaction(id, tm.db, func(transaction *Transaction) {
 		tm.removeWhen(transaction)
+		transaction.Unreffed.Set(true)
 	})
 }
 
@@ -70,14 +71,11 @@ func (tm *Manager) InsertTxnIfNotExists(id types.TxnId) (inserted bool, txn *Tra
 }
 
 func (tm *Manager) ClearWriteIntent(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption) error {
-	inserted, txn, insertErr := tm.InsertTxnIfNotExists(types.TxnId(version))
-	if insertErr != nil {
-		glog.V(4).Infof("[Manager::ClearWriteIntent] failed to insert txn-%d", version)
+	txn, getErr := tm.GetTxn(types.TxnId(version))
+	if getErr != nil {
+		glog.V(4).Infof("[Manager::ClearWriteIntent] can't get txn-%d", version)
 		_, err := clearWriteIntent(ctx, key, version, opt, tm.db)
 		return err
-	}
-	if inserted {
-		glog.V(TabletTransactionVerboseLevel).Infof("[Manager::ClearWriteIntent] created new txn-%d", version)
 	}
 	return txn.ClearWriteIntent(ctx, key, opt)
 }
@@ -96,19 +94,23 @@ func (tm *Manager) RollbackKey(ctx context.Context, key string, version uint64, 
 }
 
 func (tm *Manager) RemoveTxnRecord(ctx context.Context, version uint64, opt types.KVCCRemoveTxnRecordOption) error {
-	inserted, txn, insertErr := tm.InsertTxnIfNotExists(types.TxnId(version)) // TODO not insert if too stale
-	if insertErr != nil {
-		glog.V(4).Infof("[Manager::RemoveTxnRecord] failed to insert txn-%d", version)
-		var action string
-		if !opt.IsRollback() {
-			action = "clear txn record on commit"
-		} else {
-			action = "rollback txn record"
+	var (
+		txn *Transaction
+		err error
+	)
+	if !opt.IsRollback() {
+		if txn, err = tm.GetTxn(types.TxnId(version)); err != nil {
+			return removeTxnRecord(ctx, version, "clear txn record on commit", tm.db)
 		}
-		return removeTxnRecord(ctx, version, action, tm.db)
-	}
-	if inserted {
-		glog.V(TabletTransactionVerboseLevel).Infof("[Manager::RemoveTxnRecord] created new txn-%d", version)
+	} else {
+		var inserted bool
+		if inserted, txn, err = tm.InsertTxnIfNotExists(types.TxnId(version)); err != nil {
+			glog.V(6).Infof("[Manager::RemoveTxnRecord] failed to insert txn-%d", version)
+			return removeTxnRecord(ctx, version, "rollback txn record", tm.db)
+		}
+		if inserted {
+			glog.V(TabletTransactionVerboseLevel).Infof("[Manager::RemoveTxnRecord] created new txn-%d", version)
+		}
 	}
 	return txn.RemoveTxnRecord(ctx, opt)
 }
@@ -119,6 +121,10 @@ func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 		return nil, errors.ErrTabletWriteTransactionNotFound
 	}
 	return i.(*Transaction), nil
+}
+
+func (tm *Manager) GetWriteTxns() *concurrency.ConcurrentTxnMap {
+	return &tm.writeTxns
 }
 
 func (tm *Manager) removeWhen(txn *Transaction) {

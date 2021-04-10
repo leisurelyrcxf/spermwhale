@@ -122,10 +122,25 @@ func (cmp *concurrentTxnMapPartition) del(key types.TxnId) {
 	cmp.mutex.Unlock()
 }
 
-func (cmp *concurrentTxnMapPartition) forEachLocked(cb func(types.TxnId, interface{})) {
+func (cmp *concurrentTxnMapPartition) forEachLocked(cb func(types.TxnId, interface{}) (kontinue bool)) (kontinue bool) {
 	for key, val := range cmp.m {
-		cb(key, val)
+		if !cb(key, val) {
+			return false
+		}
 	}
+	return true
+}
+
+func (cmp *concurrentTxnMapPartition) findOne(f func(i interface{}) bool) interface{} {
+	cmp.mutex.RLock()
+	defer cmp.mutex.RUnlock()
+
+	for _, val := range cmp.m {
+		if f(val) {
+			return val
+		}
+	}
+	return nil
 }
 
 type ConcurrentTxnMap struct {
@@ -134,8 +149,9 @@ type ConcurrentTxnMap struct {
 	quit chan struct{}
 	wg   sync.WaitGroup
 
-	TotalTransactionInserted basic.AtomicInt64
-	CurrentTransactionCount  basic.AtomicInt64
+	TotalTransactionInserted  basic.AtomicInt64
+	ContainedTransactionCount basic.AtomicInt64
+	AliveTransactionCount     basic.AtomicInt64
 }
 
 func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
@@ -152,7 +168,7 @@ func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, chSizePer
 
 	cmp.quit = make(chan struct{})
 	for _, p := range cmp.partitions {
-		p.startGCThread(chSizePerPartition, minInterrupt, cmp.quit, &cmp.wg, &cmp.CurrentTransactionCount)
+		p.startGCThread(chSizePerPartition, minInterrupt, cmp.quit, &cmp.wg, &cmp.ContainedTransactionCount)
 	}
 }
 
@@ -211,7 +227,8 @@ func (cmp *ConcurrentTxnMap) SetIf(key types.TxnId, val interface{}, pred func(p
 func (cmp *ConcurrentTxnMap) InsertIfNotExists(key types.TxnId, constructor func() interface{}) (inserted bool, newVal interface{}) {
 	if inserted, newVal = cmp.partitions[cmp.hash(key)].insertIfNotExists(key, constructor); inserted {
 		cmp.TotalTransactionInserted.Add(1)
-		cmp.CurrentTransactionCount.Add(1)
+		cmp.ContainedTransactionCount.Add(1)
+		cmp.AliveTransactionCount.Add(1)
 	}
 	return inserted, newVal
 }
@@ -220,7 +237,8 @@ func (cmp *ConcurrentTxnMap) Insert(key types.TxnId, val interface{}) error {
 	err := cmp.partitions[cmp.hash(key)].insert(key, val)
 	if err == nil {
 		cmp.TotalTransactionInserted.Add(1)
-		cmp.CurrentTransactionCount.Add(1)
+		cmp.ContainedTransactionCount.Add(1)
+		cmp.AliveTransactionCount.Add(1)
 	}
 	return err
 }
@@ -231,13 +249,14 @@ func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {
 
 func (cmp *ConcurrentTxnMap) RemoveWhen(txn types.TxnId, scheduleTime time.Time) {
 	cmp.partitions[cmp.hash(txn)].removeWhen(txn, scheduleTime)
+	cmp.AliveTransactionCount.Add(-1)
 }
 
 func (cmp *ConcurrentTxnMap) hash(s types.TxnId) uint64 {
 	return uint64(s) & uint64(len(cmp.partitions)-1)
 }
 
-func (cmp *ConcurrentTxnMap) ForEachLoosed(cb func(types.TxnId, interface{})) {
+func (cmp *ConcurrentTxnMap) ForEachLoosed(cb func(types.TxnId, interface{}) (kontinue bool)) {
 	for _, partition := range cmp.partitions {
 		partition.mutex.RLock()
 		partition.forEachLocked(cb)
@@ -245,12 +264,15 @@ func (cmp *ConcurrentTxnMap) ForEachLoosed(cb func(types.TxnId, interface{})) {
 	}
 }
 
-func (cmp *ConcurrentTxnMap) ForEachStrict(cb func(types.TxnId, interface{})) {
+func (cmp *ConcurrentTxnMap) ForEachStrict(cb func(types.TxnId, interface{}) (kontinue bool)) {
 	cmp.RLock()
+	defer cmp.RUnlock()
+
 	for _, partition := range cmp.partitions {
-		partition.forEachLocked(cb)
+		if !partition.forEachLocked(cb) {
+			return
+		}
 	}
-	cmp.RUnlock()
 }
 
 func (cmp *ConcurrentTxnMap) Close() {
@@ -275,4 +297,13 @@ func (cmp *ConcurrentTxnMap) Size() (sz int) {
 	}
 	cmp.RUnlock()
 	return
+}
+
+func (cmp *ConcurrentTxnMap) FindOne(f func(i interface{}) bool) interface{} {
+	for _, partition := range cmp.partitions {
+		if v := partition.findOne(f); v != nil {
+			return v
+		}
+	}
+	return nil
 }

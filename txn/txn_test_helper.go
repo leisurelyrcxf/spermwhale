@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 
 	"github.com/golang/glog"
@@ -380,6 +382,7 @@ type TestCase struct {
 	txnServers  []*Server
 	txnManagers []types.TxnManager
 	KVCC        types.KVCC
+	tablets     []*kvcc.KVCC
 	KV          types.KV
 	stopper     func()
 
@@ -508,6 +511,7 @@ func (ts *TestCase) GenTestEnv() bool {
 		kvc := kvcc.NewKVCC(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.ReadFailureProb, ts.WriteFailureProb).
 			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnManagerCfg)
 		ts.KVCC = kvc
+		ts.tablets = []*kvcc.KVCC{kvc}
 		ts.KV = titan
 		m := NewTransactionManager(kvc, ts.TxnManagerCfg).SetRecordValuesTxn(true)
 		ts.txnManagers = append(ts.txnManagers, m)
@@ -524,6 +528,11 @@ func (ts *TestCase) GenTestEnv() bool {
 		ts.TableTxnManagerCfg); !ts.Len(ts.txnServers, 2) {
 		return false
 	}
+	shards := ts.txnServers[0].tm.kv.(*gate.Gate).GetShards()
+	if !ts.Len(shards, 2) {
+		return false
+	}
+	ts.tablets = []*kvcc.KVCC{shards[0].KVCC.(*kvcc.KVCC), shards[1].KVCC.(*kvcc.KVCC)}
 	ts.KVCC = ts.txnServers[0].tm.kv
 	ts.KV = gate.NewReadOnlyKV(ts.GetGate1())
 	for _, clientTm := range clientTxnManagers {
@@ -608,6 +617,19 @@ func (ts *TestCase) CheckCleared() bool {
 	// Check txn record are cleared
 	for _, txn := range ts.allExecutedTxns {
 		if _, err := ts.KV.Get(ctx, "", types.NewKVReadCheckVersionOption(txn.ID).WithTxnRecord()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
+			return false
+		}
+	}
+
+	// Check txn gc-ed.
+	if txns := ts.tablets[0].GetTxnManager().GetWriteTxns(); txns.AliveTransactionCount.Get() > 0 {
+		obj := txns.FindOne(func(i interface{}) bool {
+			return !i.(*transaction.Transaction).Unreffed.Get()
+		})
+		if !ts.NotNil(obj) {
+			return false
+		}
+		if tabletTxn := obj.(*transaction.Transaction); !ts.True(tabletTxn.Unreffed.Get()) {
 			return false
 		}
 	}

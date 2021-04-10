@@ -24,7 +24,7 @@ type Writer struct {
 
 func (l Writer) Done() {
 	l.Writer.Unlock()
-	l.KeyInfo.done(l.ID.Version())
+	l.KeyInfo.done(l.Transaction.ID.Version())
 }
 
 type KeyInfo struct {
@@ -84,7 +84,7 @@ func (i *KeyInfo) AddWriter(txn *transaction.Transaction) (writer Writer, err er
 		for iterator.Next() && writersSize > i.maxBufferedLower {
 			if k, w := iterator.Key(), iterator.Value().(*transaction.Writer); !w.IsWriting() {
 				toRemoveKeys = append(toRemoveKeys, k)
-				i.maxRemovedWriterVersion = w.ID.Version()
+				i.maxRemovedWriterVersion = w.Transaction.ID.Version()
 				writersSize--
 			} else {
 				break
@@ -141,12 +141,13 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 			*atomicMaxReadVersion = i.GetMaxReaderVersion()
 		}
 
+		// TODO if w.IsRollbacked(), can back-forward to search other writers
 		if w == nil || opt.ReadExactVersion {
 			i.mu.RUnlock()
 			return
 		}
 
-		if curNode, found := i.writingWriters.Floor(w.ID.Version() - 1); found {
+		if curNode, found := i.writingWriters.Floor(w.Transaction.ID.Version() - 1); found {
 			for j := 0; j < consts.DefaultTimestampCacheMaxSeekedWritingWriters && curNode != nil; j, curNode = j+1, i.prev(curNode) {
 				writingWritersBefore = append(writingWritersBefore, curNode.Value.(*transaction.Writer))
 			}
@@ -178,11 +179,11 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 	for {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		w := node.Value.(*transaction.Writer)
-		if w.IsCommitted() {
-			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriters] found clean writer-%d, max reader version: %d", i.key, node.Value.(*transaction.Writer).ID.Version(), i.maxReaderVersion)
+		if w.Transaction.IsCommitted() {
+			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriters] found clean writer-%d, max reader version: %d", i.key, w.Transaction.ID.Version(), i.maxReaderVersion)
 			return i, w, nil, nil
 		}
-		newReaderVersion := w.ID.Version() - 1
+		newReaderVersion := w.Transaction.ID.Version() - 1
 		if newReaderVersion < opt.MinAllowedSnapshotVersion {
 			*minSnapshotVersionViolated = true
 
@@ -191,8 +192,8 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 			}
 			return i, w, nil, nil
 		}
-		opt.ReaderVersion, node = newReaderVersion, i.prev(node) // hold invariant (node.Version <= opt.ReaderVersion && node is the largest one)
-		if node == nil {
+		if opt.ReaderVersion, node = newReaderVersion, i.prev(node); /* hold invariant:
+		node.Version <= opt.ReaderVersion && node is the largest one */node == nil {
 			return i, nil, nil, nil
 		}
 	}

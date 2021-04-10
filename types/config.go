@@ -195,7 +195,7 @@ func (c TabletTxnManagerConfig) Validate() error {
 }
 
 func (c *TabletTxnManagerConfig) Sanitize() *TabletTxnManagerConfig {
-	c.TxnLifeSpan = c.StaleWriteThreshold*3/2 + c.MaxClockDrift*10 + consts.MinTxnLifeSpan
+	c.TxnLifeSpan = c.StaleWriteThreshold*5/2 + c.MaxClockDrift*10 + consts.MinTxnLifeSpan
 	c.TxnInsertThreshold = c.StaleWriteThreshold / 10 * 9
 	return c
 }

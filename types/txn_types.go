@@ -322,10 +322,6 @@ func (s *AtomicTxnState) SetRollbacking() (abortOnce bool) {
 	}
 }
 
-func (s *AtomicTxnState) IsStaging() bool {
-	return s.GetTxnState().IsStaging()
-}
-
 func (s *AtomicTxnState) IsCommitted() bool {
 	return s.GetTxnState().IsCommitted()
 }

@@ -36,7 +36,7 @@ func TestTxnLostUpdateReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 }
 func TestTxnLostUpdateInjectErr(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).
-		SetGoRoutineNum(1000).SetFailurePattern(FailurePatternAll).SetWriteFailureProb(10).SetLogLevel(-1).Run()
+		SetGoRoutineNum(1000).SetFailurePattern(FailurePatternAll).SetWriteFailureProb(10).SetLogLevel(1000).Run()
 }
 
 func TestTxnLostUpdateWriteAfterWrite(t *testing.T) {

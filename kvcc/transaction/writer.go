@@ -7,14 +7,13 @@ import (
 	"time"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/types"
 	"github.com/leisurelyrcxf/spermwhale/types/basic"
 )
 
 type Writer struct {
-	*Transaction
+	Transaction *Transaction
 
 	writing   basic.AtomicBool
 	succeeded basic.AtomicBool
@@ -54,27 +53,6 @@ func (w *Writer) Succeeded() bool {
 	return w.succeeded.Get()
 }
 
-// Deprecated
-func (w *Writer) waitKeyRemoved(ctx context.Context, key string) error {
-	waiter, keyEvent, err := w.registerKeyEventWaiter(key)
-	if err != nil {
-		return err
-	}
-	if waiter != nil {
-		if keyEvent, err = waiter.Wait(ctx); err != nil {
-			return err
-		}
-	}
-	switch keyEvent.Type {
-	case KeyEventTypeVersionRemoved:
-		return nil
-	case KeyEventTypeRemoveVersionFailed:
-		return errors.ErrRemoveKeyFailed
-	default:
-		panic(fmt.Sprintf("impossible type: '%s'", keyEvent.Type))
-	}
-}
-
 // HasMoreWritingWriters is a dummy writer used to indicate that has
 // more pending writers afterwards, the Next list is not complete
 var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
@@ -92,13 +70,13 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 		if writer == HasMoreWritingWriters {
 			return errors.ErrWriteReadConflictUnsafeRead
 		}
-		if valTxnId >= writer.ID {
+		if valTxnId >= writer.Transaction.ID {
 			return nil
 		}
-		if err := writer.waitTerminate(ctx); err != nil {
+		if err := writer.Transaction.waitTerminate(ctx); err != nil {
 			return errors.Annotatef(errors.ErrWriteReadConflictUnsafeReadWaitTxnTerminateFailed, err.Error())
 		}
-		state := writer.GetTxnState()
+		state := writer.Transaction.GetTxnState()
 		switch {
 		case state.IsCommitted():
 			assert.Must(writer.Succeeded())
@@ -113,5 +91,5 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 }
 
 func init() {
-	HasMoreWritingWriters.setTxnStateUnsafe(types.TxnStateCommitted, false, "init HasMoreWritingWriters")
+	HasMoreWritingWriters.Transaction.setTxnStateUnsafe(types.TxnStateCommitted, false, "init HasMoreWritingWriters")
 }

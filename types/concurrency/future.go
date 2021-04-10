@@ -43,15 +43,6 @@ func (s *Future) IsDone() bool {
 	return s.done
 }
 
-func (s *Future) IsKeyDone(key types.TxnKeyUnion) bool {
-	s.RLock()
-	defer s.RUnlock()
-
-	info := s.keys[key]
-	assert.Must(info.IsValid())
-	return info.IsCleared()
-}
-
 func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
 	s.Lock()
 	defer s.Unlock()
@@ -102,13 +93,13 @@ func (s *Future) DoneKey(key types.TxnKeyUnion, state types.KeyState) (doneOnce 
 }
 
 func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (futureDone bool) {
-	assert.Must(!s.done || state.IsAborted())
+	assert.Must(!s.done || state.IsAborted() || s.keys[key].IsCommittedCleared())
 	if old, ok := s.keys[key]; ok {
 		if assert.Must(old.IsValid()); !old.IsCleared() {
 			old.SetCleared()
 			s.keys[key] = old
-			s.flyingKeyCount-- // !done->done
-		} //else { already done }
+			s.flyingKeyCount-- // !done->done //else { already done }
+		} // else { skip }
 	} else {
 		dbMeta := types.DBMeta{
 			VFlag:           consts.ValueMetaBitMaskHasWriteIntent,

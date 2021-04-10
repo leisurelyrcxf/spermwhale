@@ -59,7 +59,7 @@ func testManagerInsert(t types.T) (b bool) {
 	if !assert.Equal(int64(2), tm.writeTxns.TotalTransactionInserted.Get()) {
 		return
 	}
-	if !assert.Equal(int64(2), tm.writeTxns.CurrentTransactionCount.Get()) {
+	if !assert.Equal(int64(2), tm.writeTxns.ContainedTransactionCount.Get()) {
 		return
 	}
 	return true
@@ -128,11 +128,14 @@ func testManagerGC(t types.T) (b bool) {
 	if !assert.LessOrEqual(tm.writeTxns.TotalTransactionInserted.Get(), int64(2)) {
 		return
 	}
-	for i, count := 0, tm.writeTxns.CurrentTransactionCount.Get(); i < 1000 && count > 0; i, count = i+1, tm.writeTxns.CurrentTransactionCount.Get() {
-		t.Logf("CurrentTransactionCount: %d", count)
+	if !assert.Equal(int64(0), tm.writeTxns.AliveTransactionCount.Get()) {
+		return
+	}
+	for i, count := 0, tm.writeTxns.ContainedTransactionCount.Get(); i < 1000 && count > 0; i, count = i+1, tm.writeTxns.ContainedTransactionCount.Get() {
+		t.Logf("ContainedTransactionCount: %d", count)
 		time.Sleep(time.Millisecond)
 	}
-	if !assert.Equal(int64(0), tm.writeTxns.CurrentTransactionCount.Get()) {
+	if !assert.Equal(int64(0), tm.writeTxns.ContainedTransactionCount.Get()) {
 		return
 	}
 	return true
