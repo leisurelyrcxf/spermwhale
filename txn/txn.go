@@ -78,8 +78,7 @@ type Txn struct {
 	preventFutureWriteKeys  basic.Set
 	readModifyWriteReadKeys basic.Set
 
-	txnRecordTask    *basic.Task
-	txnRecordRemoved bool
+	txnRecordTask *basic.Task
 
 	allWriteTasksFinished bool
 
@@ -560,7 +559,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	assert.Must(!txn.IsStaging() || txn.AreWrittenKeysCompleted())
 	txn.TxnState = types.TxnStateRollbacking
 	var (
-		notRemoveTxnRecord = txn.txnRecordRemoved || !txn.AreWrittenKeysCompleted() || (txn.ID == callerTxn && txn.txnRecordTask == nil)
+		notRemoveTxnRecord = !txn.AreWrittenKeysCompleted() || (txn.ID == callerTxn && txn.txnRecordTask == nil)
 		toClearKeys        = txn.getToClearKeys(true)
 	)
 	if notRemoveTxnRecord && len(toClearKeys) == 0 {
@@ -660,7 +659,7 @@ func (txn *Txn) onCommitted(callerTxn types.TxnId, reason string, args ...interf
 	}
 
 	toClearKeys := txn.getToClearKeys(false)
-	removeTxnRecord := txn.AreWrittenKeysCompleted() && !txn.txnRecordRemoved
+	removeTxnRecord := txn.AreWrittenKeysCompleted()
 
 	if !removeTxnRecord && len(toClearKeys) == 0 {
 		return

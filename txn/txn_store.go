@@ -117,9 +117,6 @@ func (s *TransactionStore) inferTransactionRecordWithRetry(
 		return nil, "", err
 	}
 	if txn != nil {
-		if txn.txnRecordRemoved = txnRecordFlag.IsCleared(); txn.txnRecordRemoved {
-			glog.V(30).Infof("[TransactionStore::inferTransactionRecordWithRetry] txn-%d txn record cleared, set txn.txnRecordRemoved => true", txn.ID)
-		}
 		assert.Must(txn.ID == txnId)
 		for key := range keysWithWriteIntent {
 			assert.Must(txn.ContainsWrittenKey(key)) // TODO remove this in product

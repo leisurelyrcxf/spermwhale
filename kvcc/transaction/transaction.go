@@ -205,7 +205,7 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 
 	// TODO if txn is aborted or committed, then needn't read txn record from db
 	val, err := t.db.Get(ctx, "", opt.ToKV())
-	val.UpdateKeyState(t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionTxnRecord(t.ID)).GetKeyState())
+	val.UpdateTxnState(t.GetTxnState())
 	return val.WithMaxReadVersion(atomicMaxReadVersion), err
 }
 
