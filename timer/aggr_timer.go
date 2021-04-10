@@ -37,18 +37,20 @@ type AggrFunc func([]interface{})
 type AggrTimer struct {
 	input chan AggrTimerTask
 
-	batchSize int
-	aggrFunc  AggrFunc
+	batchSize    int
+	minInterrupt time.Duration
+	aggrFunc     AggrFunc
 
 	quit chan struct{}
 	wg   *sync.WaitGroup
 }
 
-func NewAggrTimer(chSize int, batchSize int, aggrFunc AggrFunc, quit chan struct{}, wg *sync.WaitGroup) *AggrTimer {
+func NewAggrTimer(chSize int, batchSize int, minInterrupt time.Duration, aggrFunc AggrFunc, quit chan struct{}, wg *sync.WaitGroup) *AggrTimer {
 	return &AggrTimer{
-		input:     make(chan AggrTimerTask, chSize),
-		batchSize: batchSize,
-		aggrFunc:  aggrFunc,
+		input:        make(chan AggrTimerTask, chSize),
+		batchSize:    batchSize,
+		minInterrupt: minInterrupt,
+		aggrFunc:     aggrFunc,
 
 		quit: quit,
 		wg:   wg,
@@ -76,7 +78,7 @@ func (timer *AggrTimer) Start() {
 		select {
 		case waitingForTask = <-timer.input:
 			waitingForTaskUntil = waitingForTask.Until()
-			t = time.NewTimer(utils.MaxDuration(waitingForTaskUntil, MININT))
+			t = time.NewTimer(utils.MaxDuration(waitingForTaskUntil, timer.minInterrupt))
 			bufferedValues = make([]interface{}, 0, timer.batchSize+10)
 			break
 		case <-timer.quit:
@@ -116,7 +118,7 @@ func (timer *AggrTimer) Start() {
 				timer.aggrFunc(bufferedValues)
 				bufferedValues = bufferedValues[:0]
 			}
-			t.Reset(utils.MaxDuration(waitingForTaskUntil, MININT))
+			t.Reset(utils.MaxDuration(waitingForTaskUntil, timer.minInterrupt))
 		}
 	}()
 }

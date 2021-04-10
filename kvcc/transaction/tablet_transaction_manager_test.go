@@ -1,33 +1,19 @@
 package transaction
 
 import (
+	"math"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/utils"
-
 	testifyassert "github.com/stretchr/testify/assert"
 
+	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
 	"github.com/leisurelyrcxf/spermwhale/testutils"
 	"github.com/leisurelyrcxf/spermwhale/types"
-	"github.com/leisurelyrcxf/spermwhale/types/basic"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
-
-func (tm *Manager) removeTxnById(txnId types.TxnId) (alreadyRemoved bool) {
-	txn, err := tm.GetTxn(txnId)
-	if err != nil {
-		// already removed
-		return true
-	}
-	tm.removeTxn(txn)
-	return false
-}
-
-func (tm *Manager) removeTxnPrimitive(txn *Transaction) {
-	tm.writeTxns.RemoveWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
-}
 
 func TestInvalidWaiters(t *testing.T) {
 	assert := types.NewAssertion(t)
@@ -51,51 +37,51 @@ func testManagerInsert(t types.T) (b bool) {
 		txnIds = []types.TxnId{types.TxnId(1111), types.TxnId(2222)}
 		tm     = NewManager(types.TestTableTxnManagerCfg, nil)
 	)
+	tm.cfg.TxnInsertThreshold = math.MaxInt64
 	defer tm.Close()
 
 	var (
 		assert = types.NewAssertion(t)
-
-		txnObjectsCount      basic.AtomicInt32
-		insertTxnIfNotExists = func(id types.TxnId) (inserted bool, txn *Transaction) {
-			inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-				txn := newTransaction(id, nil, func(transaction *Transaction) {
-					tm.removeTxnPrimitive(transaction)
-				})
-				txnObjectsCount.Add(1)
-				return txn
-			})
-			return inserted, obj.(*Transaction)
-		}
-
-		wg sync.WaitGroup
+		wg     sync.WaitGroup
 	)
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 
-			insertTxnIfNotExists(txnIds[i&1])
+			_, _, err := tm.InsertTxnIfNotExists(txnIds[i&1])
+			assert.NoError(err)
 		}(i)
 	}
 
 	wg.Wait()
-	return assert.Equal(int32(2), txnObjectsCount.Get())
+	if !assert.Equal(int64(2), tm.writeTxns.TotalTransactionInserted.Get()) {
+		return
+	}
+	if !assert.Equal(int64(2), tm.writeTxns.CurrentTransactionCount.Get()) {
+		return
+	}
+	return true
 }
 
 func TestManagerGC(t *testing.T) {
-	testutils.RunTestForNRounds(t, 1, testManagerGC)
+	testutils.RunTestForNRounds(t, 100, testManagerGC)
 }
 
 func testManagerGC(t types.T) (b bool) {
 	cfg := types.TestTableTxnManagerCfg
+	cfg.MinGCThreadMinInterrupt = 0
 	cfg.TxnLifeSpan = 100 * time.Millisecond
+	cfg.TxnInsertThreshold = cfg.TxnLifeSpan
 	var (
 		oracle = physical.NewOracle()
-		txnIds = []types.TxnId{types.TxnId(oracle.MustFetchTimestamp()), types.TxnId(oracle.MustFetchTimestamp())}
 		tm     = NewManager(cfg, nil)
+		txnIds = []types.TxnId{types.TxnId(oracle.MustFetchTimestamp()), types.TxnId(oracle.MustFetchTimestamp())}
 	)
+	if !testifyassert.True(t, !utils.IsTooOld(txnIds[0].Version(), tm.cfg.TxnInsertThreshold)) {
+		return false
+	}
 	if !testifyassert.NotEqual(t, txnIds[0], txnIds[1]) {
 		return false
 	}
@@ -104,36 +90,50 @@ func testManagerGC(t types.T) (b bool) {
 	var (
 		assert = types.NewAssertion(t)
 
-		txnObjectsCount      basic.AtomicInt32
-		insertTxnIfNotExists = func(id types.TxnId, idx int) {
-			tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-				if utils.IsTooOld(id.Version(), tm.cfg.TxnLifeSpan) {
+		insertTxnIfNotExists = func(id types.TxnId, idx int) (inserted bool, txn *Transaction, err error) {
+			inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
+				if utils.IsTooOld(id.Version(), tm.cfg.TxnInsertThreshold) {
 					return nil
 				}
-				if idx > 10 {
-					time.Sleep(time.Second)
+				{
+					// different
+					if idx > 10 {
+						time.Sleep(time.Second)
+					}
 				}
-				txn := newTransaction(id, nil, func(transaction *Transaction) {
-					tm.removeTxnPrimitive(transaction)
-				})
-				txnObjectsCount.Add(1)
-				txn.unref(txn)
-				return txn
+				return tm.newTransaction(id)
 			})
+			if obj == nil {
+				return false, nil, errors.ErrStaleWriteInsertTooOldTxn
+			}
+			return inserted, obj.(*Transaction), nil
 		}
 
 		wg sync.WaitGroup
 	)
 
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 1000000; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 
-			insertTxnIfNotExists(txnIds[i&1], i)
+			if inserted, txn, _ := insertTxnIfNotExists(txnIds[i&1], i); inserted {
+				txn.SetAbortedUnsafe(false, "dummy")
+				txn.unref(txn)
+			}
 		}(i)
 	}
 
 	wg.Wait()
-	return assert.Equal(int32(2), txnObjectsCount.Get())
+	if !assert.LessOrEqual(tm.writeTxns.TotalTransactionInserted.Get(), int64(2)) {
+		return
+	}
+	for i, count := 0, tm.writeTxns.CurrentTransactionCount.Get(); i < 1000 && count > 0; i, count = i+1, tm.writeTxns.CurrentTransactionCount.Get() {
+		t.Logf("CurrentTransactionCount: %d", count)
+		time.Sleep(time.Millisecond)
+	}
+	if !assert.Equal(int64(0), tm.writeTxns.CurrentTransactionCount.Get()) {
+		return
+	}
+	return true
 }

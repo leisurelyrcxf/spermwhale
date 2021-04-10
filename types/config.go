@@ -107,7 +107,7 @@ func (cfg TabletTxnConfig) Validate() error {
 }
 
 func (cfg TabletTxnConfig) GetWaitTimestampCacheInvalidTimeout() time.Duration {
-	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10 + consts.MinTxnLifeSpan
+	return cfg.StaleWriteThreshold + cfg.MaxClockDrift*10
 }
 
 func (cfg TabletTxnConfig) WithStaleWriteThreshold(val time.Duration) TabletTxnConfig {
@@ -167,7 +167,8 @@ var (
 type TabletTxnManagerConfig struct {
 	TabletTxnConfig
 	ReadModifyWriteQueueCfg
-	Test bool
+	MinGCThreadMinInterrupt time.Duration
+	Test                    bool
 
 	// outputs
 	TxnLifeSpan        time.Duration
@@ -180,6 +181,7 @@ func NewTabletTxnManagerConfig(
 	cfg := TabletTxnManagerConfig{
 		TabletTxnConfig:         tabletCfg,
 		ReadModifyWriteQueueCfg: readModifyWriteQueueCfg,
+		MinGCThreadMinInterrupt: time.Second,
 	}
 	cfg.Sanitize()
 	return cfg
@@ -193,7 +195,7 @@ func (c TabletTxnManagerConfig) Validate() error {
 }
 
 func (c *TabletTxnManagerConfig) Sanitize() *TabletTxnManagerConfig {
-	c.TxnLifeSpan = c.TabletTxnConfig.GetWaitTimestampCacheInvalidTimeout()
+	c.TxnLifeSpan = c.StaleWriteThreshold*3/2 + c.MaxClockDrift*10 + consts.MinTxnLifeSpan
 	c.TxnInsertThreshold = c.StaleWriteThreshold / 10 * 9
 	return c
 }

@@ -15,7 +15,7 @@ import (
 
 const (
 	EstimatedMaxQPS = 1000000
-	TxnPartitionNum = 256
+	TxnPartitionNum = 64
 
 	TabletTransactionVerboseLevel = 150
 )
@@ -31,9 +31,15 @@ type Manager struct {
 func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
 	tm := &Manager{cfg: cfg, db: db}
 	estimateMaxBufferedTxn := int(EstimatedMaxQPS * (float64(tm.cfg.TxnLifeSpan) / float64(time.Second)))
-	tm.writeTxns.InitializeWithGCThreads(TxnPartitionNum, utils.MaxInt(estimateMaxBufferedTxn/TxnPartitionNum, 100))
+	tm.writeTxns.InitializeWithGCThreads(TxnPartitionNum, utils.MaxInt(estimateMaxBufferedTxn/TxnPartitionNum, 100), cfg.MinGCThreadMinInterrupt)
 	tm.readModifyWriteQueues.Initialize(64)
 	return tm
+}
+
+func (tm *Manager) newTransaction(id types.TxnId) *Transaction {
+	return newTransaction(id, tm.db, func(transaction *Transaction) {
+		tm.removeWhen(transaction)
+	})
 }
 
 func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
@@ -52,12 +58,10 @@ func (tm *Manager) SignalReadModifyWriteKeyEvent(readModifyWriteTxnId types.TxnI
 
 func (tm *Manager) InsertTxnIfNotExists(id types.TxnId) (inserted bool, txn *Transaction, err error) {
 	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-		if utils.IsTooOld(id.Version(), tm.cfg.TxnInsertThreshold) { // guarantee no txn inserted after Manager::removeTxn() was called
+		if utils.IsTooOld(id.Version(), tm.cfg.TxnInsertThreshold) { // guarantee no txn inserted after txn removed from Manager
 			return nil
 		}
-		return newTransaction(id, tm.db, func(transaction *Transaction) {
-			tm.removeTxn(transaction)
-		})
+		return tm.newTransaction(id)
 	})
 	if obj == nil {
 		return false, nil, errors.ErrStaleWriteInsertTooOldTxn
@@ -117,7 +121,7 @@ func (tm *Manager) GetTxn(txnId types.TxnId) (*Transaction, error) {
 	return i.(*Transaction), nil
 }
 
-func (tm *Manager) removeTxn(txn *Transaction) {
+func (tm *Manager) removeWhen(txn *Transaction) {
 	assert.Must(txn.IsTerminated())
 	tm.writeTxns.RemoveWhen(txn.ID, txn.ID.After(tm.cfg.TxnLifeSpan))
 }

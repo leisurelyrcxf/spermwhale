@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/types/basic"
+
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/timer"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -17,13 +19,14 @@ type concurrentTxnMapPartition struct {
 	gcThread *timer.AggrTimer
 }
 
-func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, quit chan struct{}, wg *sync.WaitGroup) {
-	cmp.gcThread = timer.NewAggrTimer(channelSize, 64, func(objs []interface{}) {
+func (cmp *concurrentTxnMapPartition) startGCThread(channelSize int, minInterrupt time.Duration, quit chan struct{}, wg *sync.WaitGroup, currentTransactionCount *basic.AtomicInt64) {
+	cmp.gcThread = timer.NewAggrTimer(channelSize, 64, minInterrupt, func(objs []interface{}) {
 		cmp.mutex.Lock()
 		for _, obj := range objs {
 			delete(cmp.m, obj.(types.TxnId))
 		}
 		cmp.mutex.Unlock()
+		currentTransactionCount.Add(-int64(len(objs)))
 	}, quit, wg)
 	cmp.gcThread.Start()
 }
@@ -70,7 +73,7 @@ func (cmp *concurrentTxnMapPartition) setIf(key types.TxnId, val interface{}, pr
 	return false, prev
 }
 
-func (cmp *concurrentTxnMapPartition) insertIfNotExists(key types.TxnId, constructor func() interface{}) (success bool, newVal interface{}) {
+func (cmp *concurrentTxnMapPartition) insertIfNotExists(key types.TxnId, constructor func() interface{}) (inserted bool, newVal interface{}) {
 	cmp.mutex.RLock()
 	old, ok := cmp.m[key]
 	if ok {
@@ -130,6 +133,9 @@ type ConcurrentTxnMap struct {
 
 	quit chan struct{}
 	wg   sync.WaitGroup
+
+	TotalTransactionInserted basic.AtomicInt64
+	CurrentTransactionCount  basic.AtomicInt64
 }
 
 func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
@@ -141,12 +147,12 @@ func (cmp *ConcurrentTxnMap) Initialize(partitionNum int) {
 	}
 }
 
-func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, chSizePerPartition int) {
+func (cmp *ConcurrentTxnMap) InitializeWithGCThreads(partitionNum int, chSizePerPartition int, minInterrupt time.Duration) {
 	cmp.Initialize(partitionNum)
 
 	cmp.quit = make(chan struct{})
 	for _, p := range cmp.partitions {
-		p.startGCThread(chSizePerPartition, cmp.quit, &cmp.wg)
+		p.startGCThread(chSizePerPartition, minInterrupt, cmp.quit, &cmp.wg, &cmp.CurrentTransactionCount)
 	}
 }
 
@@ -202,12 +208,21 @@ func (cmp *ConcurrentTxnMap) SetIf(key types.TxnId, val interface{}, pred func(p
 	return cmp.partitions[cmp.hash(key)].setIf(key, val, pred)
 }
 
-func (cmp *ConcurrentTxnMap) InsertIfNotExists(key types.TxnId, constructor func() interface{}) (success bool, newVal interface{}) {
-	return cmp.partitions[cmp.hash(key)].insertIfNotExists(key, constructor)
+func (cmp *ConcurrentTxnMap) InsertIfNotExists(key types.TxnId, constructor func() interface{}) (inserted bool, newVal interface{}) {
+	if inserted, newVal = cmp.partitions[cmp.hash(key)].insertIfNotExists(key, constructor); inserted {
+		cmp.TotalTransactionInserted.Add(1)
+		cmp.CurrentTransactionCount.Add(1)
+	}
+	return inserted, newVal
 }
 
 func (cmp *ConcurrentTxnMap) Insert(key types.TxnId, val interface{}) error {
-	return cmp.partitions[cmp.hash(key)].insert(key, val)
+	err := cmp.partitions[cmp.hash(key)].insert(key, val)
+	if err == nil {
+		cmp.TotalTransactionInserted.Add(1)
+		cmp.CurrentTransactionCount.Add(1)
+	}
+	return err
 }
 
 func (cmp *ConcurrentTxnMap) Del(key types.TxnId) {
