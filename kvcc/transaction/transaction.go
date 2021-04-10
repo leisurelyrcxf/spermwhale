@@ -192,21 +192,21 @@ func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnIn
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
-	var maxReadVersion uint64
+	var atomicMaxReadVersion uint64
 
 	futureKey := types.NewTxnKeyUnionTxnRecord(t.ID)
 	t.lm.RLock(futureKey) // guarantee mutual exclusion with Transaction::SetTxnRecord()
-	if maxReadVersion = atomic.LoadUint64(&t.txnRecordMaxReadVersion); opt.UpdateTimestampCache && maxReadVersion < opt.ReaderVersion {
+	if atomicMaxReadVersion = atomic.LoadUint64(&t.txnRecordMaxReadVersion); opt.UpdateTimestampCache && atomicMaxReadVersion < opt.ReaderVersion {
 		assert.Must(opt.ReaderVersion == types.MaxTxnVersion)
 		atomic.StoreUint64(&t.txnRecordMaxReadVersion, opt.ReaderVersion)
-		maxReadVersion = opt.ReaderVersion
+		atomicMaxReadVersion = opt.ReaderVersion
 	}
 	t.lm.RUnlock(futureKey)
 
 	// TODO if txn is aborted or committed, then needn't read txn record from db
 	val, err := t.db.Get(ctx, "", opt.ToKV())
 	val.UpdateKeyState(t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionTxnRecord(t.ID)).GetKeyState())
-	return val.WithMaxReadVersion(maxReadVersion), err
+	return val.WithMaxReadVersion(atomicMaxReadVersion), err
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {

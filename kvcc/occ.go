@@ -63,7 +63,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 
 func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (x types.ValueCC, e error) {
 	opt.AssertFlags() // TODO remove in product
-	assert.Must((!opt.IsTxnRecord && key != "") || (opt.IsTxnRecord && key == "" && opt.ReadExactVersion && opt.GetMaxReadVersion))
+	assert.Must((!opt.IsTxnRecord && key != "") || (opt.IsTxnRecord && key == "" && opt.ReadExactVersion && opt.GetMaxReadVersion && opt.IsCheckVersion))
 	assert.Must(opt.ReadExactVersion || opt.UpdateTimestampCache)
 	if !opt.UpdateTimestampCache && !opt.GetMaxReadVersion {
 		assert.Must(opt.ReadExactVersion)
@@ -139,12 +139,13 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 	var (
 		// outputs
 		retriedTooManyTimes, minSnapshotVersionViolated bool
-		maxReadVersion                                  uint64
+		atomicMaxReaderVersion                          uint64
+		keyInfo                                         *KeyInfo
 	)
 
 	{
 		var val types.Value
-		if val, err, retry, retryDBReadVersion = kv.getValue(ctx, key, opt, &maxReadVersion, &retriedTooManyTimes, &minSnapshotVersionViolated); err != nil &&
+		if val, err, retry, retryDBReadVersion = kv.getValue(ctx, key, opt, &atomicMaxReaderVersion, &retriedTooManyTimes, &minSnapshotVersionViolated, &keyInfo); err != nil &&
 			!errors.IsNotExistsErr(err) && err != errors.ErrMinAllowedSnapshotVersionViolated {
 			glog.Errorf("txn-%d get key '%s' failed: '%v', minAllowedSnapshotVersion: %d, cost: %s", opt.ReaderVersion, key, err, opt.MinAllowedSnapshotVersion, bench.Elapsed())
 		} else if glog.V(60) {
@@ -173,11 +174,11 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 		// Erase var val so won't bother to mix it with valueCC
 	}
 
-	if opt.GetMaxReadVersion { // TODO this should be a bug
-		if (opt.ReadExactVersion && maxReadVersion > opt.ExactVersion) || (!opt.ReadExactVersion && maxReadVersion > opt.ReaderVersion) {
-			valCC.MaxReadVersion = maxReadVersion // assez grand
+	if opt.GetMaxReadVersion {
+		if opt.IsCheckVersion /* needs max read version to be atomic */ || atomicMaxReaderVersion > opt.ReaderVersion /* assez grand */ {
+			valCC.MaxReadVersion = atomicMaxReaderVersion
 		} else {
-			valCC.MaxReadVersion = kv.tsCache.GetMaxReaderVersion(key)
+			valCC.MaxReadVersion = keyInfo.GetMaxReaderVersion()
 		}
 	} else {
 		assert.Must(valCC.MaxReadVersion == 0) // TODO remove this in product
@@ -216,15 +217,15 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 }
 
 func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOption,
-	maxReadVersion *uint64, retriedTooManyTimes, minSnapshotVersionViolated *bool) (val types.Value, err error, retry bool, retryVersion uint64) {
+	atomicMaxReadVersion *uint64, retriedTooManyTimes, minSnapshotVersionViolated *bool, keyInfo **KeyInfo) (val types.Value, err error, retry bool, retryVersion uint64) {
 	var (
 		w                    *transaction.Writer
 		writingWritersBefore transaction.WritingWriters
 	)
 
-	w, writingWritersBefore, err = kv.tsCache.FindWriters(key, opt, maxReadVersion, minSnapshotVersionViolated)
+	*keyInfo, w, writingWritersBefore, err = kv.tsCache.FindWriters(key, opt, atomicMaxReadVersion, minSnapshotVersionViolated)
 	if err != nil {
-		assert.Must(opt.IsSnapshotRead && *maxReadVersion == 0 && err == errors.ErrMinAllowedSnapshotVersionViolated)
+		assert.Must(opt.IsSnapshotRead && *atomicMaxReadVersion == 0 && err == errors.ErrMinAllowedSnapshotVersionViolated)
 		return types.NewValue(nil, w.ID.Version()), err, false, 0
 	}
 
@@ -262,7 +263,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 		assert.Must(!errors.IsNotExistsErr(err) || val.Version == 0) // if is not exists error then val.Version == 0
 		if w == nil {
 			assert.Must(!opt.IsSnapshotRead)
-			return kv.checkGotValue(ctx, key, val, err, opt, *maxReadVersion)
+			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
 		}
 
 		if assert.Must(val.Version <= w.ID.Version()); val.Version == w.ID.Version() || opt.ReadExactVersion {
@@ -270,33 +271,33 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 			if val.IsTerminated() {
 				return val, err, false, 0
 			}
-			return kv.checkGotValueWithTxn(ctx, key, val, err, w.Transaction, opt, *maxReadVersion)
+			return kv.checkGotValueWithTxn(ctx, key, val, err, w.Transaction, opt, *atomicMaxReadVersion)
 		}
 		assert.Must(!w.Succeeded() || w.IsAborted()) // Rollbacking was set before remove version in KV::RollbackKey() // TODO what if !w.Succeeded?
 		if chkErr := writingWritersBefore.CheckRead(ctx, val.Version, consts.DefaultReadTimeout/10); chkErr != nil {
 			return types.EmptyValue, chkErr, false, 0
 		}
-		return kv.checkGotValue(ctx, key, val, err, opt, *maxReadVersion)
+		return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
 	}
 
 	for i, readerVersion := 0, uint64(0); ; {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		if val, err = kv.db.Get(ctx, key, opt.ToKV()); err != nil || val.IsCommitted() {
-			return kv.checkGotValue(ctx, key, val, err, opt, *maxReadVersion)
+			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
 		}
 		if readerVersion = val.Version - 1; readerVersion < opt.MinAllowedSnapshotVersion {
 			*minSnapshotVersionViolated = true
-			return kv.checkGotValue(ctx, key, val, err, opt, *maxReadVersion)
+			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
 		}
 		if i == consts.MaxRetrySnapshotRead-1 {
 			*retriedTooManyTimes = true
-			return kv.checkGotValue(ctx, key, val, err, opt, *maxReadVersion)
+			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
 		}
 		i, opt.ReaderVersion = i+1, readerVersion // NOTE: order can't change, guarantee the invariant: val.Version == floor(opt.ReaderVersion)
 	}
 }
 
-func (kv *KVCC) checkGotValue(ctx context.Context, key string, val types.Value, err error, opt *types.KVCCReadOption, maxReadVersion uint64) (_ types.Value, _ error, retry bool, retryVersion uint64) {
+func (kv *KVCC) checkGotValue(ctx context.Context, key string, val types.Value, err error, opt *types.KVCCReadOption, atomicMaxReadVersion uint64) (_ types.Value, _ error, retry bool, retryVersion uint64) {
 	if val.IsTerminated() || (err != nil && (!opt.ReadExactVersion || !errors.IsNotExistsErr(err))) {
 		return val, err, false, 0
 	}
@@ -318,11 +319,11 @@ func (kv *KVCC) checkGotValue(ctx context.Context, key string, val types.Value, 
 			return val, err, false, 0
 		}
 	}
-	return kv.checkGotValueWithTxn(ctx, key, val, err, txn, opt, maxReadVersion)
+	return kv.checkGotValueWithTxn(ctx, key, val, err, txn, opt, atomicMaxReadVersion)
 }
 
 func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.Value, err error,
-	txn *transaction.Transaction, opt *types.KVCCReadOption, maxReadVersion uint64) (_ types.Value, _ error, retry bool, retryDBVersion uint64) {
+	txn *transaction.Transaction, opt *types.KVCCReadOption, atomicMaxReadVersion uint64) (_ types.Value, _ error, retry bool, retryDBVersion uint64) {
 	if opt.WaitWhenReadDirty {
 		if waitErr := txn.WaitTerminateWithTimeout(ctx, consts.DefaultReadTimeout/10); waitErr != nil {
 			glog.V(8).Infof("[KVCC:checkGotValueWithTxnAfterErrChecked][txn-%d][key-'%s'] failed to wait terminate for txn-%d", txn.ID, key, txn.ID.Version())
@@ -333,7 +334,7 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 	dbMeta := txn.GetDBMetaStrongUnsafe(key)
 	if dbMeta.IsCommitted() {
 		assert.Must(err == nil && val.Version != 0 && val.InternalVersion > 0)
-		if maxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
+		if atomicMaxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
 			assert.Must(dbMeta.InternalVersion == val.InternalVersion)
 			val.Meta.VFlag = dbMeta.VFlag
 			return val, err, false, 0
