@@ -180,9 +180,9 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, e
 			txn.TxnState = types.TxnStateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Get: %v", err)
 		}
-		if err == nil {
-			tVal.AssertValid()
-		}
+		//if err == nil {
+		//	tVal.AssertValid()
+		//}
 		assert.Must(err != nil || tVal.Version == txn.ID.Version() || (tVal.Version != 0 && tVal.IsCommitted()))
 	}()
 

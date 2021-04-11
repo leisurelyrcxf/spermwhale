@@ -54,9 +54,9 @@ func (tm *Manager) SignalReadModifyWriteKeyEvent(readModifyWriteTxnId types.TxnI
 
 func (tm *Manager) InsertTxnIfNotExists(id types.TxnId) (inserted bool, txn *Transaction, err error) {
 	inserted, obj := tm.writeTxns.InsertIfNotExists(id, func() interface{} {
-		if utils.IsTooOld(id.Version(), tm.cfg.TxnInsertThreshold) { // guarantee no txn inserted after Manager::removeTxn() was called
-			return nil
-		}
+		//if utils.IsTooOld(id.Version(), tm.cfg.TxnInsertThreshold) { // guarantee no txn inserted after Manager::removeTxn() was called
+		//	return nil
+		//}
 		return newTransaction(id, tm.db, func(transaction *Transaction) {
 			tm.removeTxn(transaction)
 		})

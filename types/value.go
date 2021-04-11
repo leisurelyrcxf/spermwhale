@@ -87,6 +87,10 @@ func (m *VFlag) SetCommitted() {
 	*m |= consts.ValueMetaBitMaskCommitted
 }
 
+func (m *VFlag) SetAborted() {
+	*m |= consts.ValueMetaBitMaskAborted
+}
+
 func (m *VFlag) SetCleared() {
 	*m |= consts.ValueMetaBitMaskCleared
 }

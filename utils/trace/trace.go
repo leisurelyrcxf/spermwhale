@@ -94,6 +94,7 @@ func CallerFunc() string {
 }
 
 func getFrame(skipFrames int) runtime.Frame {
+	return runtime.Frame{}
 	// We need the frame at index skipFrames+2, since we never want runtime.Callers and getFrame
 	targetFrameIndex := skipFrames + 2
 

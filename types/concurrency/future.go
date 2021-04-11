@@ -1,18 +1,13 @@
 package concurrency
 
 import (
-	"sync"
-
 	"github.com/golang/glog"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
 type Future struct {
-	sync.RWMutex
-
 	keys           map[string]types.DBMeta
 	flyingKeyCount int
 	addedKeyCount  int
@@ -31,21 +26,17 @@ func (s *Future) Initialize() {
 }
 
 func (s *Future) GetAddedKeyCountUnsafe() int {
-	s.RLock()
-	defer s.RUnlock()
+
 	return s.addedKeyCount
 }
 
 // IsDone return true if all keys are done
 func (s *Future) IsDone() bool {
-	s.RLock()
-	defer s.RUnlock()
+
 	return s.done
 }
 
 func (s *Future) IsKeyDone(key string) bool {
-	s.RLock()
-	defer s.RUnlock()
 
 	info := s.keys[key]
 	assert.Must(info.IsValid())
@@ -53,8 +44,6 @@ func (s *Future) IsKeyDone(key string) bool {
 }
 
 func (s *Future) MustAdd(key string, meta types.DBMeta) (insertedNewKey bool) {
-	s.Lock()
-	defer s.Unlock()
 
 	assert.Must(!s.txnTerminated && !s.done)
 	assert.Must(meta.VFlag&(consts.ValueMetaBitMaskCommitted|consts.ValueMetaBitMaskAborted|
@@ -73,8 +62,6 @@ func (s *Future) MustAdd(key string, meta types.DBMeta) (insertedNewKey bool) {
 
 func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(key string, meta *types.DBMeta)) {
 	assert.Must(state.IsTerminated() && !s.txnTerminated && !s.done)
-	s.Lock()
-	defer s.Unlock()
 
 	for key, old := range s.keys {
 		if glog.V(210) {
@@ -91,10 +78,7 @@ func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(k
 }
 
 func (s *Future) DoneOnce(key string, state types.KeyState) (doneOnce bool) {
-	assert.Must(s.txnTerminated)
-
-	s.Lock()
-	defer s.Unlock()
+	//assert.Must(s.txnTerminated)
 
 	if s.done {
 		return false
@@ -118,14 +102,12 @@ func (s *Future) doneUnsafe(key string, state types.KeyState) (futureDone bool) 
 		dbMeta.UpdateKeyStateUnsafe(state)
 		s.keys[key] = dbMeta // prevent future inserts
 	}
-	assert.Must(s.keys[key].IsTerminated())
+	//assert.Must(s.keys[key].IsTerminated())
 	s.done = s.flyingKeyCount == 0
 	return s.done
 }
 
 func (s *Future) MustGetDBMeta(key string) types.DBMeta {
-	s.RLock()
-	defer s.RUnlock()
 
 	meta, ok := s.keys[key]
 	assert.Must(ok)
@@ -133,16 +115,12 @@ func (s *Future) MustGetDBMeta(key string) types.DBMeta {
 }
 
 func (s *Future) GetDBMeta(key string) (types.DBMeta, bool) {
-	s.RLock()
-	defer s.RUnlock()
 
 	meta, ok := s.keys[key]
 	return meta, ok
 }
 
 func (s *Future) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
-	s.RLock()
-	defer s.RUnlock()
 
 	info := s.keys[key]
 	assert.Must(info.IsValid() && version > 0)
@@ -150,13 +128,10 @@ func (s *Future) HasPositiveInternalVersion(key string, version types.TxnInterna
 }
 
 func (s *Future) AssertAllKeysOfState(state types.KeyState) {
-	s.RLock()
-	defer s.RUnlock()
-
-	for key, info := range s.keys {
-		_ = key
-		assert.Must(info.GetKeyState() == state)
-	}
+	//for key, info := range s.keys {
+	//	_ = key
+	//	//assert.Must(info.GetKeyState() == state)
+	//}
 }
 
 func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done bool) {
@@ -167,8 +142,6 @@ func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done 
 
 // Deprecated
 func (s *Future) add(key string, meta types.DBMeta) (insertedNewKey bool, keyDone bool) {
-	s.Lock()
-	defer s.Unlock()
 
 	if old, ok := s.keys[key]; ok {
 		// Previous false -> already inserted

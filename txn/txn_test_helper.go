@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 1
+	rounds             = 10
 )
 
 var (
@@ -105,11 +105,11 @@ func (d *testDB) Get(ctx context.Context, key string, opt types.KVReadOption) (t
 	} else {
 		time.Sleep(d.latency)
 	}
-	if d.failurePattern.IsFailed() {
-		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.readFailureProbabilityDenominator) == 0 {
-			return types.EmptyValue, errors.ErrInject
-		}
-	}
+	//if d.failurePattern.IsFailed() {
+	//	if rand.Seed(time.Now().UnixNano()); rand.Intn(d.readFailureProbabilityDenominator) == 0 {
+	//		return types.EmptyValue, errors.ErrInject
+	//	}
+	//}
 	return d.KV.Get(ctx, key, opt)
 }
 

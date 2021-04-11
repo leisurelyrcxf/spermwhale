@@ -156,12 +156,12 @@ const (
 
 const (
 	DefaultReadTimeout = time.Second * 10
-	MinTxnLifeSpan     = time.Second
+	MinTxnLifeSpan     = time.Second * 2
 )
 
 const (
-	MaxReadModifyWriteQueueCapacityPerKey             = 500
-	ReadModifyWriteQueueMaxReadersRatio               = 0.7
+	MaxReadModifyWriteQueueCapacityPerKey             = 10000
+	ReadModifyWriteQueueMaxReadersRatio               = 0.3333
 	ReadModifyWriteTxnMinSupportedStaleWriteThreshold = 400 * time.Millisecond
 
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40

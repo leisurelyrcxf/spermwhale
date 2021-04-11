@@ -33,7 +33,7 @@ type Transaction struct {
 	txnRecordMaxReadVersion uint64
 	terminated              chan struct{}
 
-	lm concurrency.AdvancedLockManagerPartition
+	//lm concurrency.AdvancedLockManagerPartition
 
 	unref    func(*Transaction)
 	maxRetry int
@@ -50,7 +50,7 @@ func newTransaction(id types.TxnId, db types.KV, unref func(*Transaction)) *Tran
 		unref:          unref,
 	}
 	t.future.Initialize()
-	t.lm.Initialize()
+	//t.lm.Initialize()
 	return t
 }
 
@@ -59,8 +59,8 @@ func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt type
 	// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed TODO needs test against kv.db.Set() failed.
 	t.Lock() // NOTE: Lock is must though seems not needed
 	t.setCommittedUnsafe(false, "clear write intent of key '%s' by upper layer", key)
-	meta := t.future.MustGetDBMeta(key)
-	assert.Must(meta.InternalVersion == opt.TxnInternalVersion && meta.IsCommitted())
+	//meta := t.future.MustGetDBMeta(key)
+	//assert.Must(meta.InternalVersion == opt.TxnInternalVersion && meta.IsCommitted())
 	t.Unlock()
 
 	var readonly bool
@@ -90,8 +90,8 @@ func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVC
 	// TODO skip if already cleared
 	t.Lock()
 	t.SetAbortedUnsafe(false, "rollback key '%s' by upper layer", key)
-	meta, ok := t.future.GetDBMeta(key)
-	assert.Must(!ok || meta.IsAborted())
+	//meta, ok := t.future.GetDBMeta(key)
+	//assert.Must(!ok || meta.IsAborted())
 	t.Unlock()
 
 	// TODO maybe skip if key not written?
@@ -129,9 +129,7 @@ func (t *Transaction) MustGetMetaWeak(futureKey string) types.Meta {
 
 func (t *Transaction) MustGetMetaStrong(futureKey string) types.Meta {
 	t.RLock()
-	t.lm.RLock(futureKey)
 	defer func() {
-		t.lm.RUnlock(futureKey)
 		t.RUnlock()
 	}()
 
@@ -149,9 +147,7 @@ func (t *Transaction) GetMetaWeak(futureKey string) (meta types.Meta, err error,
 
 func (t *Transaction) GetMetaStrong(futureKey string) (meta types.Meta, err error, valid bool) {
 	t.RLock()
-	t.lm.RLock(futureKey)
 	defer func() {
-		t.lm.RUnlock(futureKey)
 		t.RUnlock()
 	}()
 
@@ -165,9 +161,7 @@ func (t *Transaction) GetMetaStrong(futureKey string) (meta types.Meta, err erro
 
 func (t *Transaction) GetDBMetaStrongUnsafe(futureKey string) types.DBMeta {
 	t.RLock()
-	t.lm.RLock(futureKey)
 	defer func() {
-		t.lm.RUnlock(futureKey)
 		t.RUnlock()
 	}()
 
@@ -177,9 +171,7 @@ func (t *Transaction) GetDBMetaStrongUnsafe(futureKey string) types.DBMeta {
 
 func (t *Transaction) HasPositiveInternalVersion(key string, version types.TxnInternalVersion) bool {
 	t.RLock()
-	t.lm.RLock(key)
 	defer func() {
-		t.lm.RUnlock(key)
 		t.RUnlock()
 	}()
 
@@ -201,11 +193,8 @@ func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption
 	t.RUnlock()
 
 	val, err := t.db.Get(ctx, "", opt.ToKV())
-	if val.UpdateTxnState(t.GetTxnState()); val.IsAborted() {
-		assert.Must(opt.ReadExactVersion)
-		val.V, err = nil, errors.ErrKeyOrVersionNotExist
-	}
-	return val.WithMaxReadVersion(maxReadVersion), err
+	val.UpdateTxnState(t.GetTxnState())
+	return val.WithMaxReadVersion(maxReadVersion), err // TODO maybe return max reader version to user?
 }
 
 func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt types.KVCCWriteOption) (err error) {
@@ -233,8 +222,6 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 }
 
 func (t *Transaction) SetRLocked(ctx context.Context, key string, futureKey string, val types.Value, opt types.KVCCWriteOption) error {
-	t.lm.Lock(futureKey)
-	defer t.lm.Unlock(futureKey)
 
 	var setErr error
 	if setErr = t.db.Set(ctx, key, val, opt.ToKV()); setErr != nil {
@@ -366,6 +353,7 @@ func (t *Transaction) setTxnStateUnsafe(state types.TxnState, assertValidAndTerm
 		assert.Must(!assertValidAndTerminated)
 		close(t.terminated)
 
+		return
 		t.future.NotifyTerminated(state, func(futureKey string, meta *types.DBMeta) {
 			assert.Must(meta.IsKeyStateInvalid() && !assertValidAndTerminated)
 			if state.IsAborted() {
