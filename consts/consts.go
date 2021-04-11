@@ -70,11 +70,14 @@ const (
 	TxnStateBitMaskCleared     = 1 << 4
 	TxnStateBitMaskInvalid     = 1 << 5
 
-	txnStateBitMaskTerminated = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
+	TxnStateBitMaskClearInvalidKeyState = (^TxnStateBitMaskInvalid) & 0xff
 
-	txnStateCheckBitMaskCommitted = TxnStateBitMaskCommitted | TxnStateBitMaskInvalid
-	txnStateCheckBitMaskAborted   = TxnStateBitMaskAborted | TxnStateBitMaskInvalid
-	txnStateCheckBitMaskCleared   = TxnStateBitMaskCleared | TxnStateBitMaskInvalid
+	TxnStateBitMaskTerminated = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
+
+	txnStateCheckBitMaskCommitted   = TxnStateBitMaskCommitted | TxnStateBitMaskInvalid
+	txnStateCheckBitMaskAborted     = TxnStateBitMaskAborted | TxnStateBitMaskInvalid
+	txnStateCheckBitMaskCleared     = TxnStateBitMaskCleared | TxnStateBitMaskInvalid
+	txnStateCheckBitMaskRollbacking = TxnStateBitMaskAborted | TxnStateBitMaskCleared | TxnStateBitMaskInvalid
 )
 
 func IsCommitted(flag uint8) bool {
@@ -85,14 +88,18 @@ func IsAborted(flag uint8) bool {
 	return flag&txnStateCheckBitMaskAborted == TxnStateBitMaskAborted
 }
 
+func IsRollbacking(flag uint8) bool {
+	return flag&txnStateCheckBitMaskRollbacking == TxnStateBitMaskAborted
+}
+
 func IsCleared(flag uint8) bool {
 	return flag&txnStateCheckBitMaskCleared == TxnStateBitMaskCleared
 }
 
 // IsTerminated indicate either IsCommitted() or IsAborted()
 func IsTerminated(flag uint8) bool {
-	terminatedFlags := flag & txnStateBitMaskTerminated
-	assert.Must(terminatedFlags != txnStateBitMaskTerminated) // can't be both committed and aborted
+	terminatedFlags := flag & TxnStateBitMaskTerminated
+	assert.Must(terminatedFlags != TxnStateBitMaskTerminated) // can't be both committed and aborted
 	return terminatedFlags > 0 && flag&TxnStateBitMaskInvalid == 0
 }
 

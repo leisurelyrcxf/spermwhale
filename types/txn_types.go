@@ -271,6 +271,11 @@ func (s TxnState) ToVFlag() VFlag {
 	return VFlag(consts.ExtractTxnBits(uint8(s)))
 }
 
+func (s *TxnState) SetCleared() {
+	assert.Must(s.IsTerminated())
+	*s |= consts.TxnStateBitMaskCleared
+}
+
 type AtomicTxnState struct {
 	int32
 }
@@ -297,7 +302,7 @@ func (s *AtomicTxnState) SetTxnState(state TxnState) (newState TxnState, termina
 	}
 }
 
-func (s *AtomicTxnState) SetTxnStateUnsafe(state TxnState) (newState TxnState, terminateOnce bool) {
+func (s *AtomicTxnState) SetTxnStateUnsafe(state TxnState) (terminateOnce bool) {
 	old := atomic.LoadInt32(&s.int32)
 	oldState := TxnState(old)
 	assert.Must(oldState != TxnStateInvalid)
@@ -305,7 +310,7 @@ func (s *AtomicTxnState) SetTxnStateUnsafe(state TxnState) (newState TxnState, t
 	assert.Must(!state.IsAborted() || !oldState.IsCommitted())
 	assert.Must(!oldState.IsCleared() || state.IsCleared())
 	atomic.StoreInt32(&s.int32, state.AsInt32())
-	return state, !oldState.IsTerminated() && state.IsTerminated()
+	return !oldState.IsTerminated() && state.IsTerminated()
 }
 
 func (s *AtomicTxnState) SetRollbacking() (abortOnce bool) {

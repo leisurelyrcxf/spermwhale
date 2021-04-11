@@ -350,13 +350,21 @@ func (txn *Txn) checkCommitState(ctx context.Context, callerTxn *Txn, keysWithWr
 				assert.Must(vv.InternalVersion < txnWrittenKeys[key])
 			}
 			// TODO evaluate the performance gain
-			if vv.IsAborted() || vv.MaxReadVersion > txn.ID.Version() /* this include '!exits and preventFutureWrite' */ {
+			if vv.MaxReadVersion > txn.ID.Version() /* this include '!exits and preventFutureWrite' */ {
 				if !exists { // not exists and won't exist
 					txn.MarkWrittenKeyAborted(key, notExistsErrSubCode)
 				}
 				txn.TxnState = types.TxnStateRollbacking
 				_ = txn.rollback(ctx, callerTxn.ID, true,
 					"Txn::checkCommitState (version below latest version or key '%s' not exists) and max read version(%d) > txnId(%d)", key, vv.MaxReadVersion, txn.ID) // help rollback since original txn coordinator may have gone
+				return
+			}
+			if vv.IsAborted() {
+				if !exists { // not exists and won't exist
+					txn.MarkWrittenKeyAborted(key, notExistsErrSubCode)
+				}
+				txn.TxnState = types.TxnStateRollbacking
+				_ = txn.rollback(ctx, callerTxn.ID, true, "Txn::checkCommitState value of key '%s' is aborted", key) // help rollback since original txn coordinator may have gone
 				return
 			}
 			return // unable to determine transaction status

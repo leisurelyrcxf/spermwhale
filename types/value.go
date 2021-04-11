@@ -47,6 +47,10 @@ func (m VFlag) IsAborted() bool {
 	return consts.IsAborted(uint8(m))
 }
 
+func (m VFlag) IsRollbacking() bool {
+	return consts.IsRollbacking(uint8(m))
+}
+
 func (m VFlag) IsTerminated() bool {
 	return consts.IsTerminated(uint8(m))
 }

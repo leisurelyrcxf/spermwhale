@@ -118,7 +118,7 @@ func testManagerGC(t types.T) (b bool) {
 			defer wg.Done()
 
 			if inserted, txn, _ := insertTxnIfNotExists(txnIds[i&1], i); inserted {
-				txn.SetAbortedUnsafe(false, "dummy")
+				txn.setAbortedUnsafe("dummy")
 				txn.unref(txn)
 			}
 		}(i)

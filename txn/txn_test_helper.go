@@ -624,12 +624,12 @@ func (ts *TestCase) CheckCleared() bool {
 	// Check txn gc-ed.
 	if txns := ts.tablets[0].GetTxnManager().GetWriteTxns(); txns.AliveTransactionCount.Get() > 0 {
 		obj := txns.FindOne(func(i interface{}) bool {
-			return !i.(*transaction.Transaction).Unreffed.Get()
+			return !i.(*transaction.Transaction).IsCleared()
 		})
 		if !ts.NotNil(obj) {
 			return false
 		}
-		if tabletTxn := obj.(*transaction.Transaction); !ts.True(tabletTxn.Unreffed.Get()) {
+		if tabletTxn := obj.(*transaction.Transaction); !ts.True(tabletTxn.IsCleared()) {
 			return false
 		}
 	}

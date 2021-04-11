@@ -13,6 +13,24 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
+type TestDB struct {
+	types.KV
+}
+
+func newTestDB() *TestDB {
+	return &TestDB{KV: memory.NewMemoryDB()}
+}
+
+func (db *TestDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
+	time.Sleep(utils.RandomPeriod(time.Microsecond, 20, 30))
+	return db.KV.Get(ctx, key, opt)
+}
+
+func (db *TestDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
+	time.Sleep(utils.RandomPeriod(time.Microsecond, 10, 30))
+	return db.KV.Set(ctx, key, val, opt)
+}
+
 func TestTransaction_SetTxnRecord(t *testing.T) {
 	testutils.RunTestForNRounds(t, 10000, testTransactionSetTxnRecord)
 }
@@ -21,7 +39,7 @@ func testTransactionSetTxnRecord(t types.T) (b bool) {
 	assert := types.NewAssertion(t)
 	ctx := context.Background()
 
-	db := memory.NewMemoryDB()
+	db := newTestDB()
 	txn := newTransaction(1, db, nil)
 
 	var (
@@ -35,6 +53,7 @@ func testTransactionSetTxnRecord(t types.T) (b bool) {
 
 		time.Sleep(utils.RandomPeriod(time.Microsecond, 10, 500))
 		val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+		assert.Equal(types.MaxTxnVersion, val.MaxReadVersion)
 		if errors.IsNotExistsErr(err) {
 			readErr = err
 			return
@@ -67,24 +86,6 @@ func testTransactionSetTxnRecord(t types.T) (b bool) {
 		}
 	}
 	return true
-}
-
-type TestDB struct {
-	types.KV
-}
-
-func newTestDB() *TestDB {
-	return &TestDB{KV: memory.NewMemoryDB()}
-}
-
-func (db *TestDB) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
-	time.Sleep(utils.RandomPeriod(time.Microsecond, 20, 30))
-	return db.KV.Get(ctx, key, opt)
-}
-
-func (db *TestDB) Set(ctx context.Context, key string, val types.Value, opt types.KVWriteOption) error {
-	time.Sleep(utils.RandomPeriod(time.Microsecond, 10, 30))
-	return db.KV.Set(ctx, key, val, opt)
 }
 
 func TestTransaction_SetTxnRecordGetMaxReadVersion(t *testing.T) {
@@ -128,7 +129,8 @@ func testTransactionSetTxnRecordGetMaxReadVersion(t types.T) (b bool) {
 		defer wg.Done()
 
 		time.Sleep(utils.RandomPeriod(time.Microsecond, 500, 600))
-		if _, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1)); !errors.IsNotExistsErr(err) {
+		val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+		if assert.Equal(types.MaxTxnVersion, val.MaxReadVersion); !errors.IsNotExistsErr(err) {
 			assert.NoError(err)
 		}
 	}()

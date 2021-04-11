@@ -397,9 +397,7 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	)
 	defer func() {
 		if txn != nil && errors.IsMustRollbackSetErr(setErr) {
-			txn.Lock()
-			txn.SetAbortedUnsafe(false, "got must rollback error '%v' during setting key '%s'", setErr, key) // don't rollback keys here because we wan't to notify upper layer as soon as possible
-			txn.Unlock()
+			txn.SetAborted("txn-%d got must rollback error '%v' during setting key '%s' or txn-record", txn.ID, setErr, key) // don't rollback keys here because we wan't to notify upper layer as soon as possible
 		}
 	}()
 

@@ -39,7 +39,6 @@ func NewManager(cfg types.TabletTxnManagerConfig, db types.KV) *Manager {
 func (tm *Manager) newTransaction(id types.TxnId) *Transaction {
 	return newTransaction(id, tm.db, func(transaction *Transaction) {
 		tm.removeWhen(transaction)
-		transaction.Unreffed.Set(true)
 	})
 }
 

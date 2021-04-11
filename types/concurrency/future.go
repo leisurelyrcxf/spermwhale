@@ -13,11 +13,10 @@ import (
 type Future struct {
 	sync.RWMutex
 
+	types.TxnState
 	keys           map[types.TxnKeyUnion]types.DBMeta
 	flyingKeyCount int
 	addedKeyCount  int
-
-	txnTerminated, done bool
 }
 
 func NewFuture() *Future {
@@ -36,18 +35,11 @@ func (s *Future) GetAddedKeyCountUnsafe() int {
 	return s.addedKeyCount
 }
 
-// IsDone return true if all keys are done
-func (s *Future) IsDone() bool {
-	s.RLock()
-	defer s.RUnlock()
-	return s.done
-}
-
 func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
 	s.Lock()
 	defer s.Unlock()
 
-	assert.Must(!s.txnTerminated && !s.done)
+	assert.Must(!s.IsTerminated())
 	assert.Must(meta.VFlag&(consts.ValueMetaBitMaskCommitted|consts.ValueMetaBitMaskAborted|
 		consts.ValueMetaBitMaskCleared|consts.ValueMetaBitMaskHasWriteIntent) == consts.ValueMetaBitMaskHasWriteIntent)
 	if old, ok := s.keys[key]; ok {
@@ -62,41 +54,54 @@ func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewK
 	return true
 }
 
-func (s *Future) NotifyTerminated(state types.TxnState, onInvalidKeyState func(key types.TxnKeyUnion, meta *types.DBMeta)) {
-	assert.Must(state.IsTerminated() && !s.txnTerminated && !s.done)
+func (s *Future) NotifyTerminated(state types.TxnState, chkAndClearInvalid func(key types.TxnKeyUnion, meta *types.DBMeta) (exists bool)) (doneOnce bool) {
+	assert.Must(state.IsTerminated() && !state.IsCleared() && !s.IsTerminated())
 	s.Lock()
 	defer s.Unlock()
 
+	s.TxnState = state
 	for key, old := range s.keys {
 		if glog.V(210) {
 			glog.Infof("[Future::NotifyTerminated] update key '%s' to state %s", key, state)
 		}
 		if old.IsKeyStateInvalid() {
-			onInvalidKeyState(key, &old)
+			if exists := chkAndClearInvalid(key, &old); !exists {
+				old.UpdateTxnState(state)
+				old.SetCleared()
+				assert.Must(old.IsRollbackedCleared())
+				s.keys[key] = old
+				s.flyingKeyCount--
+				continue
+			}
 		}
 		old.UpdateTxnState(state)
 		assert.Must(old.IsValid())
 		s.keys[key] = old
 	}
-	s.txnTerminated = true
+	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 {
+		s.TxnState.SetCleared()
+		return true
+	}
+	return false
 }
 
 func (s *Future) DoneKey(key types.TxnKeyUnion, state types.KeyState) (doneOnce bool) {
-	assert.Must(s.txnTerminated)
+	assert.Must(s.IsTerminated())
 
 	s.Lock()
 	defer s.Unlock()
 
-	oldDone := s.done
+	oldDone := s.IsCleared()
 	newDone := s.doneKeyUnsafe(key, state)
 	return !oldDone && newDone
 }
 
-func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (futureDone bool) {
-	assert.Must(!s.done || state.IsAborted() || s.keys[key].IsCommittedCleared())
+func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (done bool) {
+	assert.Must(!s.IsCleared() || state.IsAborted() || s.keys[key].IsCommittedCleared())
 	if old, ok := s.keys[key]; ok {
 		if assert.Must(old.IsValid()); !old.IsCleared() {
 			old.SetCleared()
+			assert.Must(old.GetKeyState() == state)
 			s.keys[key] = old
 			s.flyingKeyCount-- // !done->done //else { already done }
 		} // else { skip }
@@ -109,9 +114,11 @@ func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (fut
 		dbMeta.UpdateKeyStateUnsafe(state)
 		s.keys[key] = dbMeta // prevent future inserts
 	}
-	assert.Must(s.keys[key].IsTerminated())
-	s.done = s.flyingKeyCount == 0
-	return s.done
+	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 {
+		s.TxnState = types.TxnState(state)
+		return true
+	}
+	return false
 }
 
 func (s *Future) MustGetDBMeta(key types.TxnKeyUnion) types.DBMeta {
@@ -147,7 +154,7 @@ func (s *Future) HasPositiveInternalVersion(key types.TxnKeyUnion, version types
 	return info.InternalVersion == version
 }
 
-func (s *Future) AssertAllKeysOfState(state types.KeyState) {
+func (s *Future) AssertAllKeysCleared(state types.KeyState) {
 	s.RLock()
 	defer s.RUnlock()
 
@@ -155,4 +162,5 @@ func (s *Future) AssertAllKeysOfState(state types.KeyState) {
 		_ = key
 		assert.Must(info.GetKeyState() == state)
 	}
+	assert.Must(s.TxnState == types.TxnState(state))
 }

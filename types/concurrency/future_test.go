@@ -20,7 +20,8 @@ import (
 
 func (s *Future) doneUnsafeEx(key string, state types.KeyState) (doneOnce, done bool) {
 	oldFlyingKeyCount := s.flyingKeyCount
-	done = s.doneKeyUnsafe(types.NewTxnKeyUnionKey(key), state)
+	s.doneKeyUnsafe(types.NewTxnKeyUnionKey(key), state)
+	done = s.IsCleared()
 	return s.flyingKeyCount < oldFlyingKeyCount, done
 }
 

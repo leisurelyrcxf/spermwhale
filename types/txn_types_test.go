@@ -73,7 +73,7 @@ func testAtomicTxnStateSetTxnStateUnsafe(t *testing.T) (b bool) {
 			defer wg.Done()
 
 			mu.Lock()
-			if _, terminateOnce := s.SetTxnStateUnsafe(TxnStateRollbacking); terminateOnce {
+			if terminateOnce := s.SetTxnStateUnsafe(TxnStateRollbacking); terminateOnce {
 				terminatedTimes.Add(1)
 			}
 			mu.Unlock()
