@@ -125,6 +125,9 @@ func (i *KeyInfo) AddWriter(txn *transaction.Transaction) (writer Writer, err er
 }
 
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *uint64, minSnapshotVersionViolated *bool) (_ *KeyInfo, w *transaction.Writer, writingWritersBefore transaction.WritingWriters, err error) {
+	var (
+		node *redblacktree.Node
+	)
 	assert.Must(opt.UpdateTimestampCache || (opt.ReadExactVersion && !opt.IsSnapshotRead))
 
 	i.mu.RLock()
@@ -141,10 +144,19 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 			*atomicMaxReadVersion = i.GetMaxReaderVersion()
 		}
 
-		// TODO if w.IsRollbacked(), can back-forward to search other writers
 		if w == nil || opt.ReadExactVersion {
 			i.mu.RUnlock()
 			return
+		}
+
+		for w.Transaction.IsAborted() {
+			opt.DBReadVersion = w.Transaction.ID.Version() - 1
+			if node = i.prev(node); node == nil {
+				w = nil
+				i.mu.RUnlock()
+				return
+			}
+			w = node.Value.(*transaction.Writer)
 		}
 
 		if curNode, found := i.writingWriters.Floor(w.Transaction.ID.Version() - 1); found {
@@ -159,23 +171,21 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 	}()
 
 	if opt.ReadExactVersion {
-		exactNode, found := i.writers.Get(opt.ExactVersion)
-		w, _ := exactNode.(*transaction.Writer)
+		exactWriterObj, found := i.writers.Get(opt.ExactVersion)
+		w, _ := exactWriterObj.(*transaction.Writer)
 		assert.Must(!found || w != nil)
 		return i, w, nil, nil
 	}
 
-	maxBelowOrEqualWriterNode, found := i.writers.Floor(opt.ReaderVersion) // max <=
-	if !found {                                                            //  all writer id > opt.ReaderVersion or empty
+	var found bool
+	if node, found = i.writers.Floor(opt.ReaderVersion); !found { //  all writer id > opt.ReaderVersion or empty
 		return i, nil, nil, nil
 	}
 
 	if !opt.IsSnapshotRead {
-		return i, maxBelowOrEqualWriterNode.Value.(*transaction.Writer), nil, nil
+		return i, node.Value.(*transaction.Writer), nil, nil
 	}
 
-	assert.Must(maxBelowOrEqualWriterNode != nil)
-	var node = maxBelowOrEqualWriterNode
 	for {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		w := node.Value.(*transaction.Writer)
