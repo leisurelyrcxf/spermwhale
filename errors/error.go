@@ -31,8 +31,7 @@ var (
 
 	retryableTxnErrs = mergeCodeSets(mustRollbackGetErrs, mustRollbackSetErrs, map[int32]struct{}{
 		consts.ErrCodeReadUncommittedDataPrevTxnStateUndetermined: {},
-		consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked:     {},
-		consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked:    {},
+		consts.ErrCodeReadUncommittedDataPrevTxnAborted:           {},
 		consts.ErrCodeTxnRollbacking:                              {},
 		consts.ErrCodeTxnRollbacked:                               {},
 		consts.ErrCodeSnapshotReadRetriedTooManyTimes:             {},
@@ -161,6 +160,13 @@ func GetNotExistsErrForAborted(cleared bool) error {
 	return ErrKeyOrVersionNotExistExistsButToBeRollbacked
 }
 
+func GetReadUncommittedDataOfAbortedTxn(cleared bool) error {
+	if cleared {
+		return ErrReadUncommittedDataPrevTxnRollbacked
+	}
+	return ErrReadUncommittedDataPrevTxnRollbacking
+}
+
 func IsRetryableTransactionErr(e error) bool {
 	return in(GetErrorCode(e), retryableTxnErrs)
 }
@@ -168,11 +174,6 @@ func IsRetryableTransactionErr(e error) bool {
 func IsRetryableTransactionManagerErr(e error) bool {
 	return false
 	//return GetErrorCode(e) == consts.ErrCodeTransactionAlreadyExists
-}
-
-func IsRetryableGetErr(e error) bool {
-	code := GetErrorCode(e)
-	return code == consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked
 }
 
 func IsMustRollbackWriteKeyErr(e error) bool {
@@ -189,12 +190,6 @@ func IsQueueFullErr(e error) bool {
 func IsNotSupportedErr(e error) bool {
 	code := GetErrorCode(e)
 	return code == consts.ErrCodeNotSupported
-}
-
-func IsRetryableTabletGetErr(err error) bool {
-	code := GetErrorCode(err)
-	return code == consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked ||
-		code == consts.ErrCodeTabletWriteTransactionNotFound
 }
 
 func IsSnapshotReadTabletErr(err error) bool {

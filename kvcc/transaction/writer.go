@@ -60,7 +60,7 @@ var HasMoreWritingWriters = NewWriter(newTransaction(types.MaxTxnId, nil, nil))
 type WritingWriters []*Writer
 
 func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, waitTimeout time.Duration) error {
-	//return errors.ErrWriteReadConflictUnsafeRead
+	//return errors.ErrWriteReadConflictUnsafeReadHasMoreWritingWriters
 	ctx, cancel := context.WithTimeout(ctx, waitTimeout)
 	defer cancel()
 
@@ -68,7 +68,7 @@ func (writers WritingWriters) CheckRead(ctx context.Context, valVersion uint64, 
 
 	for _, writer := range writers {
 		if writer == HasMoreWritingWriters {
-			return errors.ErrWriteReadConflictUnsafeRead
+			return errors.ErrWriteReadConflictUnsafeReadHasMoreWritingWriters
 		}
 		if valTxnId >= writer.Transaction.ID {
 			return nil

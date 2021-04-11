@@ -54,7 +54,7 @@ type reader struct {
 	addTime uint64
 }
 
-func newReader(opt types.KVCCReadOption) *reader {
+func newReader(opt *types.KVCCReadOption) *reader {
 	return &reader{
 		ReaderVersion:     opt.ReaderVersion,
 		WaitWhenReadDirty: opt.WaitWhenReadDirty,
@@ -128,7 +128,7 @@ func newReadModifyWriteQueue(key string, staleWriteThr time.Duration, cfg types.
 	}
 }
 
-func (pq *readModifyWriteQueue) pushReader(readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
+func (pq *readModifyWriteQueue) pushReader(readOpt *types.KVCCReadOption) (*readModifyWriteCond, error) {
 	readerVersion := readOpt.ReaderVersion
 	if maxHeadVersion := pq.maxHeadVersion.Get(); readerVersion <= maxHeadVersion {
 		assert.Must(readerVersion < maxHeadVersion)

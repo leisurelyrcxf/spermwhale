@@ -24,7 +24,7 @@ type Stub struct {
 
 func (stub *Stub) Get(ctx context.Context, req *kvccpb.KVCCGetRequest) (*kvccpb.KVCCGetResponse, error) {
 	opt := types.NewKVCCReadOptionFromPB(req.Opt)
-	vv, err := stub.kvcc.Get(ctx, req.Key, opt)
+	vv, err := stub.kvcc.Get(ctx, req.Key, *opt)
 	assert.Must(err != nil || !vv.IsEmpty())
 	//noinspection ALL
 	return &kvccpb.KVCCGetResponse{

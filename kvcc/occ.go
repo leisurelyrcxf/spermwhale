@@ -19,7 +19,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
-const OCCVerboseLevel = 160
+const OCCVerboseLevel = 110
 
 // KV with concurrency control
 type KVCC struct {
@@ -70,7 +70,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 		if !utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold) {
 			txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion))
 			if err == nil {
-				valCC, getErr := txn.GetTxnRecord(ctx, opt)
+				valCC, getErr := txn.GetTxnRecord(ctx, &opt)
 				if getErr == nil && valCC.IsAborted() {
 					valCC.V, getErr = nil, errors.GetNotExistsErrForAborted(valCC.IsCleared())
 				}
@@ -97,7 +97,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			return types.EmptyValue.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)), errors.Annotatef(errors.ErrWriteReadConflict, "read for write txn version < kv.tsCache.GetMaxReaderVersion(key: '%s')", key)
 		}
 		if opt.IsReadModifyWriteFirstReadOfKey {
-			w, err := kv.txnManager.PushReadModifyWriteReaderOnKey(key, opt)
+			w, err := kv.txnManager.PushReadModifyWriteReaderOnKey(key, &opt)
 			if err != nil {
 				return types.EmptyValue.WithMaxReadVersion(kv.tsCache.GetMaxReaderVersion(key)), err
 			}
@@ -199,7 +199,7 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 		}
 		//assert.Must(err == nil && valCC.Version != 0 && opt.IsUpdateTimestampCache())
 		assert.Must(try >= consts.MaxRetryTxnGet)
-		return valCC, errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, false, 0 // TODO who should come first?
+		return valCC, errors.GetReadUncommittedDataOfAbortedTxn(valCC.IsCleared()), false, 0 // TODO who should come first?
 	}
 	assert.Must(valCC.Version != 0)
 	return valCC, nil, false, 0
@@ -218,7 +218,6 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 		return types.NewValue(nil, w.Transaction.ID.Version()), err, false, 0
 	}
 
-	w.WaitWritten()
 	//if opt.IsMetaOnly {
 	//	if opt.ReadExactVersion {
 	//		if w != nil {
@@ -238,6 +237,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	//	}
 	//}
 
+	w.WaitWritten()
 	if !opt.IsSnapshotRead || w != nil {
 		kvOpt, readCommitted := opt.ToKV(), false
 		if w != nil && w.Transaction.IsCommitted() {
@@ -344,7 +344,10 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 			}
 		}
 		val.Meta.VFlag = dbMeta.VFlag
-		return val, err, !opt.ReadExactVersion, utils.SafeDecr(val.Version)
+		if opt.ReadExactVersion {
+			return val, err, false, 0
+		}
+		return val, err, true, utils.SafeDecr(val.Version)
 	}
 	assert.Must(!opt.WaitWhenReadDirty)
 	return val, err, false, 0

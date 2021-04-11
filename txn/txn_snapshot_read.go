@@ -18,7 +18,7 @@ func (txn *Txn) getSnapshot(ctx context.Context, key string) (types.TValue, erro
 	if txnSnapshotVersion == 0 {
 		txnSnapshotVersion = txn.ID.Version()
 	}
-	val, err := txn.kv.Get(ctx, key, txn.GetSnapshotKVCCReadOption(txnSnapshotVersion))
+	val, err := txn.kv.Get(ctx, key, *txn.GetSnapshotKVCCReadOption(txnSnapshotVersion))
 	if err != nil {
 		if errors.IsSnapshotReadTabletErr(err) {
 			txn.assertSnapshotReadResult(val, txnSnapshotVersion, true)
@@ -54,14 +54,14 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.TVal
 		if len(readKeys) == 1 {
 			readKey := readKeys.MustFirst()
 			tasks = append(tasks, basic.NewTask(basic.NewTaskId(txn.ID.Version(), readKey), "get", consts.DefaultReadTimeout, func(ctx context.Context) (i interface{}, err error) {
-				return txn.kv.Get(ctx, readKey, txn.GetSnapshotKVCCReadOption(snapshotReadOpt.SnapshotVersion))
+				return txn.kv.Get(ctx, readKey, *txn.GetSnapshotKVCCReadOption(snapshotReadOpt.SnapshotVersion))
 			}))
 			_ = tasks[0].Run()
 		} else {
 			for readKey := range readKeys {
 				var (
 					readKey = readKey
-					readOpt = txn.GetSnapshotKVCCReadOption(snapshotReadOpt.SnapshotVersion)
+					readOpt = *txn.GetSnapshotKVCCReadOption(snapshotReadOpt.SnapshotVersion)
 				)
 				task := basic.NewTask(basic.NewTaskId(txn.ID.Version(), readKey), "get", consts.DefaultReadTimeout, func(ctx context.Context) (i interface{}, err error) {
 					return txn.kv.Get(ctx, readKey, readOpt)
@@ -165,13 +165,13 @@ func (txn *Txn) BeginSnapshotReadTxn(opt types.TxnSnapshotReadOption) error {
 	return nil
 }
 
-func (txn *Txn) GetSnapshotKVCCReadOption(snapshotVersion uint64) types.KVCCReadOption {
+func (txn *Txn) GetSnapshotKVCCReadOption(snapshotVersion uint64) *types.KVCCReadOption {
 	assert.Must(snapshotVersion != 0)
 	minAllowedSnapshotVersion := txn.MinAllowedSnapshotVersion
 	if !txn.AllowsVersionBack() {
 		minAllowedSnapshotVersion = utils.MaxUint64(minAllowedSnapshotVersion, txn.SnapshotVersion)
 	}
-	return types.NewSnapshotKVCCReadOption(snapshotVersion, minAllowedSnapshotVersion).CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
+	return types.NewKVCCSnapshotReadOption(snapshotVersion, minAllowedSnapshotVersion).CondSetWaitWhenReadDirty(txn.IsWaitWhenReadDirty())
 }
 
 func (txn *Txn) assertSnapshotReadResult(val types.ValueCC, readSnapshotVersion uint64, isDirty bool) {

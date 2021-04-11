@@ -138,7 +138,7 @@ func testTxnLostUpdateWriteAfterWrite(ctx context.Context, ts *TestCase) (b bool
 		if _, isWrite := cur.WriteValues[key]; !isWrite {
 			continue
 		}
-		val, err := kv.Get(ctx, key, types.NewKVCCReadOption(cur.ID).WithExactVersion(cur.ID).WithNotGetMaxReadVersion().WithNotGetMaxReadVersion())
+		val, err := kv.Get(ctx, key, *types.NewKVCCReadOption(cur.ID).SetExactVersion(cur.ID).SetNotGetMaxReadVersion().SetNotGetMaxReadVersion())
 		if !ts.NoError(err) {
 			return
 		}
@@ -805,8 +805,8 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 	kv := ts.txnManagers[0].(*TransactionManager).kv
 	for _, txn := range abortedTxnPerGoRoutine {
 		if txn != nil {
-			if _, err := kv.Get(ctx, "k1", types.NewKVCCReadOption(txn.GetId().Version()).WithExactVersion(txn.GetId().Version()).
-				WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()); !ts.Equal(int32(consts.ErrCodeKeyOrVersionNotExists), errors.GetErrorCode(err)) {
+			if _, err := kv.Get(ctx, "k1", *types.NewKVCCReadOption(txn.GetId().Version()).SetExactVersion(txn.GetId().Version()).
+				SetNotGetMaxReadVersion().SetNotUpdateTimestampCache()); !ts.Equal(int32(consts.ErrCodeKeyOrVersionNotExists), errors.GetErrorCode(err)) {
 				return
 			}
 		}
@@ -887,8 +887,8 @@ func testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx context.Context, ts *Tes
 	kv := ts.txnManagers[0].(*TransactionManager).kv
 	for _, txn := range abortedTxnPerGoRoutine {
 		if txn != nil {
-			if _, err := kv.Get(ctx, "k1", types.NewKVCCReadOption(txn.GetId().Version()).WithExactVersion(txn.GetId().Version()).
-				WithNotGetMaxReadVersion().WithNotUpdateTimestampCache()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
+			if _, err := kv.Get(ctx, "k1", *types.NewKVCCReadOption(txn.GetId().Version()).SetExactVersion(txn.GetId().Version()).
+				SetNotGetMaxReadVersion().SetNotUpdateTimestampCache()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
 				return
 			}
 		}

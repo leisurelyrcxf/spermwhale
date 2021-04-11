@@ -31,15 +31,15 @@ var (
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
 		Msg:     "write read conflict: reader skipped committed data",
 	})
-	ErrWriteReadConflictUnsafeRead = registerErr(&Error{
+	ErrWriteReadConflictUnsafeReadHasMoreWritingWriters = registerErr(&Error{
 		Code:    consts.ErrCodeWriteReadConflict,
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
-		Msg:     "write read conflict: unsafe read",
+		Msg:     "write read conflict unsafe read: has more writing writers",
 	})
 	ErrWriteReadConflictUnsafeReadWaitTxnTerminateFailed = registerErr(&Error{
 		Code:    consts.ErrCodeWriteReadConflict,
 		SubCode: ErrWriteReadConflictSubCodeGenerator.Next(),
-		Msg:     "write read conflict: unsafe read wait txn terminate failed",
+		Msg:     "write read conflict unsafe read: wait txn terminate failed",
 	})
 	ErrWriteReadConflictFutureWritePrevented = registerErr(&Error{
 		Code:    consts.ErrCodeWriteReadConflict,
@@ -69,21 +69,23 @@ var (
 		SubCode: 1,
 		Msg:     "read uncommitted data previous txn state undetermined",
 	})
-	ErrReadUncommittedDataPrevTxnKeyRollbacked = registerErr(&Error{
-		Code:    consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
-		SubCode: 1,
-		Msg:     "read uncommitted data previous txn key has been rollbacked",
+
+	ErrReadUncommittedDataPrevTxnRollbacking = registerErr(&Error{
+		Code:    consts.ErrCodeReadUncommittedDataPrevTxnAborted,
+		SubCode: consts.ErrSubCodeReadUncommittedDataPrevTxnRollbacking,
+		Msg:     "read uncommitted data previous txn rollbacking",
+	})
+	ErrReadUncommittedDataPrevTxnRollbacked = registerErr(&Error{
+		Code:    consts.ErrCodeReadUncommittedDataPrevTxnAborted,
+		SubCode: consts.ErrSubCodeReadUncommittedDataPrevTxnRollbacked,
+		Msg:     "read uncommitted data previous txn rollbacked",
 	})
 	ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite = registerErr(&Error{
-		Code:    consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked,
-		SubCode: 2,
+		Code:    consts.ErrCodeReadUncommittedDataPrevTxnAborted,
+		SubCode: consts.ErrSubCodeReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite,
 		Msg:     "read uncommitted data previous txn key has been rollbacked: read after write",
 	})
-	ErrReadUncommittedDataPrevTxnToBeRollbacked = registerErr(&Error{
-		Code:    consts.ErrCodeReadUncommittedDataPrevTxnToBeRollbacked,
-		SubCode: 1,
-		Msg:     "read uncommitted data previous txn to be rollbacked",
-	})
+
 	ErrReadAfterWriteFailed = registerErr(&Error{
 		Code:    consts.ErrCodeReadAfterWriteFailed,
 		SubCode: 1,
@@ -106,13 +108,13 @@ var (
 	})
 	ErrKeyOrVersionNotExist = registerErr(&Error{
 		Code:    consts.ErrCodeKeyOrVersionNotExists,
-		SubCode: consts.ErrKeyOrVersionNotExistsSubCodeNotExistsInDB,
-		Msg:     "key or version not exist",
+		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsNotExistsInDB,
+		Msg:     "key or version not exists in db",
 	})
 	ErrKeyOrVersionNotExistExistsButToBeRollbacked = registerErr(&Error{
 		Code:    consts.ErrCodeKeyOrVersionNotExists,
-		SubCode: consts.ErrKeyOrVersionNotExistsSubCodeExistsButToBeRollbacked,
-		Msg:     "key or version not exist: exists but to be rollbacked",
+		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButToBeRollbacked,
+		Msg:     "key or version not exist: exists in db but to be rollbacked",
 	})
 	ErrVersionAlreadyExists = registerErr(&Error{
 		Code:    consts.ErrCodeVersionAlreadyExists,

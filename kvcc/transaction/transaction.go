@@ -81,7 +81,7 @@ func clearWriteIntent(ctx context.Context, key string, version uint64, opt types
 		}
 		return false, err
 	}
-	if glog.V(60) {
+	if glog.V(TabletTransactionVerboseLevel) {
 		glog.Infof("txn-%d clear write intent of key '%s' succeeded, cost: %s", version, key, bench.Elapsed())
 	}
 	return false, nil
@@ -119,7 +119,7 @@ func rollbackKey(ctx context.Context, key string, version uint64, opt types.KVCC
 		}
 		return false, err
 	}
-	if glog.V(60) {
+	if glog.V(TabletTransactionVerboseLevel) {
 		glog.Infof("txn-%d rollback key '%s' succeeded, cost: %s", version, key, bench.Elapsed())
 	}
 	return false, nil
@@ -141,7 +141,7 @@ func (t *Transaction) HasPositiveInternalVersionUnsafe(key string, version types
 	return t.future.HasPositiveInternalVersion(types.NewTxnKeyUnionKey(key), version)
 }
 
-func (t *Transaction) GetTxnRecord(ctx context.Context, opt types.KVCCReadOption) (types.ValueCC, error) {
+func (t *Transaction) GetTxnRecord(ctx context.Context, opt *types.KVCCReadOption) (types.ValueCC, error) {
 	var atomicMaxReadVersion uint64
 
 	t.txnRecordRW.RLock() // guarantee mutual exclusion with Transaction::SetTxnRecord()
@@ -167,7 +167,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 			glog.Fatalf("txn-%d write txn record after committed", val.Version)
 		}
 		assert.Must(t.IsAborted())
-		glog.V(70).Infof("[Transaction::SetTxnRecord] txn-%d want to insert txn-record after rollbacked", val.Version)
+		glog.V(TabletTransactionVerboseLevel).Infof("[Transaction::SetTxnRecord] txn-%d want to insert txn-record after rollbacked", val.Version)
 		return errors.ErrWriteKeyAfterTabletTxnRollbacked
 	}
 
@@ -178,7 +178,7 @@ func (t *Transaction) SetTxnRecord(ctx context.Context, val types.Value, opt typ
 		return errors.ErrWriteReadConflict
 	}
 
-	if err = t.SetRLocked(ctx, types.NewTxnKeyUnionTxnRecord(t.ID), val, opt); err == nil && glog.V(60) {
+	if err = t.SetRLocked(ctx, types.NewTxnKeyUnionTxnRecord(t.ID), val, opt); err == nil && glog.V(TabletTransactionVerboseLevel) {
 		glog.Infof("[Transaction::SetTxnRecord] txn-%d set txn-record succeeded, cost %s", val.Version, bench.Elapsed())
 	}
 	return err
@@ -202,7 +202,7 @@ func (t *Transaction) SetRLocked(ctx context.Context, futureKey types.TxnKeyUnio
 		// assert.Must(checkErr == nil && exists) error pruning
 		assert.Must(gotVal.IsUncommitted())
 	}
-	if t.future.MustAdd(futureKey, val.Meta.ToDB()) && bool(glog.V(60)) {
+	if t.future.MustAdd(futureKey, val.Meta.ToDB()) && bool(glog.V(TabletTransactionVerboseLevel)) {
 		if setErr == nil {
 			glog.Infof("[KVCC::%s][setRLockedUnsafe] added new key '%s' to txn-%d", trace.CallerFunc(), futureKey, t.ID)
 		} else {
@@ -279,7 +279,7 @@ func removeTxnRecord(ctx context.Context, version uint64, action string, db type
 		}
 		return err
 	}
-	if glog.V(60) {
+	if glog.V(TabletTransactionVerboseLevel) {
 		glog.Infof("[removeTxnRecord][txn-%d] %s succeeded, cost %s", version, action, bench.Elapsed())
 	}
 	return nil
@@ -292,7 +292,7 @@ func (t *Transaction) doneKey(futureKey types.TxnKeyUnion, keyStateAfterDone typ
 		t.AtomicTxnState.SetTxnStateUnsafe(types.TxnState(keyStateAfterDone))
 		t.Unlock()
 
-		if glog.V(60) {
+		if glog.V(TabletTransactionVerboseLevel) {
 			glog.Infof("[Transaction::%s][doneKey] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", trace.CallerFunc(), t.ID, t.GetTxnState(), t.future.GetAddedKeyCountUnsafe(), futureKey)
 		}
 
@@ -319,7 +319,7 @@ func (t *Transaction) setAbortedUnsafe(reason string, args ...interface{}) (done
 	if doneOnce = t.setTxnStateUnsafe(types.TxnStateRollbacking, reason, args...); doneOnce {
 		t.future.AssertAllKeysCleared(types.KeyStateRollbackedCleared)
 		t.AtomicTxnState.SetTxnStateUnsafe(types.TxnStateRollbackedCleared)
-		if glog.V(60) {
+		if glog.V(TabletTransactionVerboseLevel) {
 			glog.Infof("[Transaction::%s][setAbortedUnsafe] txn-%d done", trace.CallerFunc(), t.ID)
 		}
 	}

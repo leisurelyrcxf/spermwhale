@@ -42,7 +42,7 @@ func (tm *Manager) newTransaction(id types.TxnId) *Transaction {
 	})
 }
 
-func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt types.KVCCReadOption) (*readModifyWriteCond, error) {
+func (tm *Manager) PushReadModifyWriteReaderOnKey(key string, readOpt *types.KVCCReadOption) (*readModifyWriteCond, error) {
 	return tm.readModifyWriteQueues.GetLazy(key, func() interface{} {
 		return newReadModifyWriteQueue(key, tm.cfg.StaleWriteThreshold, tm.cfg.ReadModifyWriteQueueCfg)
 	}).(*readModifyWriteQueue).pushReader(readOpt)

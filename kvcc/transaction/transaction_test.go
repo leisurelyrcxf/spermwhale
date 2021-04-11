@@ -52,7 +52,7 @@ func testTransactionSetTxnRecord(t types.T) (b bool) {
 		defer wg.Done()
 
 		time.Sleep(utils.RandomPeriod(time.Microsecond, 10, 500))
-		val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+		val, err := txn.GetTxnRecord(ctx, types.NewKVCCCheckTxnRecordReadOption(1))
 		assert.Equal(types.MaxTxnVersion, val.MaxReadVersion)
 		if errors.IsNotExistsErr(err) {
 			readErr = err
@@ -75,7 +75,7 @@ func testTransactionSetTxnRecord(t types.T) (b bool) {
 	}
 
 	wg.Wait()
-	val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+	val, err := txn.GetTxnRecord(ctx, types.NewKVCCCheckTxnRecordReadOption(1))
 	if readErr != nil {
 		if !assert.Equal(readErr, err) {
 			return
@@ -109,8 +109,7 @@ func testTransactionSetTxnRecordGetMaxReadVersion(t types.T) (b bool) {
 		defer wg.Done()
 
 		for i := 0; ; i++ {
-			if val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1).
-				WithNotUpdateTimestampCache()); val.MaxReadVersion > txn.ID.Version() {
+			if val, err := txn.GetTxnRecord(ctx, types.NewKVCCCheckTxnRecordReadOption(1).SetNotUpdateTimestampCache()); val.MaxReadVersion > txn.ID.Version() {
 				if errors.IsNotExistsErr(err) {
 					readErr = err
 					return
@@ -129,7 +128,7 @@ func testTransactionSetTxnRecordGetMaxReadVersion(t types.T) (b bool) {
 		defer wg.Done()
 
 		time.Sleep(utils.RandomPeriod(time.Microsecond, 500, 600))
-		val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+		val, err := txn.GetTxnRecord(ctx, types.NewKVCCCheckTxnRecordReadOption(1))
 		if assert.Equal(types.MaxTxnVersion, val.MaxReadVersion); !errors.IsNotExistsErr(err) {
 			assert.NoError(err)
 		}
@@ -146,7 +145,7 @@ func testTransactionSetTxnRecordGetMaxReadVersion(t types.T) (b bool) {
 	}
 
 	wg.Wait()
-	val, err := txn.GetTxnRecord(ctx, types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(1))
+	val, err := txn.GetTxnRecord(ctx, types.NewKVCCCheckTxnRecordReadOption(1))
 	if readErr != nil {
 		if !assert.Equalf(readErr, err, "expect not exists, but got value '%s'", string(val.V)) {
 			return

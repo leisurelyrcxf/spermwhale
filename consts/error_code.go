@@ -7,11 +7,15 @@ const (
 	ErrCodeWriteReadConflict                           int32 = 1
 	ErrCodeStaleWrite                                        = 2
 	ErrCodeReadUncommittedDataPrevTxnStateUndetermined       = 3
-	ErrCodeReadUncommittedDataPrevTxnKeyRollbacked           = 4
-	ErrCodeReadUncommittedDataPrevTxnToBeRollbacked          = 5
-	ErrCodeReadAfterWriteFailed                              = 6
-	ErrCodeTxnRollbacking                                    = 7
-	ErrCodeTxnRollbacked                                     = 8
+
+	ErrCodeReadUncommittedDataPrevTxnAborted                        = 4
+	ErrSubCodeReadUncommittedDataPrevTxnRollbacking                 = 1
+	ErrSubCodeReadUncommittedDataPrevTxnRollbacked                  = 2
+	ErrSubCodeReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite = 3
+
+	ErrCodeReadAfterWriteFailed = 5
+	ErrCodeTxnRollbacking       = 6
+	ErrCodeTxnRollbacked        = 7
 
 	ErrCodeSnapshotReadRetriedTooManyTimes   int32 = 19
 	ErrCodeMinAllowedSnapshotVersionViolated       = 20
@@ -21,9 +25,9 @@ const (
 	ErrCodeTabletTxnSetFailedKeyNotFound           int32 = 24
 	ErrCodeTabletTxnSetFailedKeyStatusUndetermined int32 = 25
 
-	ErrCodeKeyOrVersionNotExists                           int32 = 27
-	ErrKeyOrVersionNotExistsSubCodeNotExistsInDB                 = 1
-	ErrKeyOrVersionNotExistsSubCodeExistsButToBeRollbacked       = 2
+	ErrCodeKeyOrVersionNotExists                               int32 = 27
+	ErrSubCodeKeyOrVersionNotExistsNotExistsInDB                     = 1
+	ErrSubCodeKeyOrVersionNotExistsExistsInDBButToBeRollbacked       = 2
 
 	ErrCodeShardsNotReady = 28
 	ErrCodeEmptyKey       = 29

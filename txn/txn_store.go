@@ -26,9 +26,9 @@ type TransactionStore struct {
 
 func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, key string, txnId types.TxnId, callerTxn *Txn,
 	preventFutureWrite bool, getMaxReadVersion bool, maxRetry int) (val types.ValueCC, exists bool, notExistsErrSubCode int32, err error) {
-	readOpt := types.NewKVCCReadOption(callerTxn.ID.Version()).WithCheckKey(txnId.Version())
+	readOpt := types.NewKVCCCheckKeyReadOption(callerTxn.ID.Version(), txnId.Version())
 	if !preventFutureWrite {
-		readOpt = readOpt.WithNotUpdateTimestampCache()
+		readOpt.SetNotUpdateTimestampCache()
 	} else {
 		if readOpt.ReaderVersion == txnId.Version() {
 			readOpt.ReaderVersion++ // hack to prevent future write so we will infer that max_reader_version > write_version to prevent future write if key not exists
@@ -36,10 +36,10 @@ func (s *TransactionStore) getValueWrittenByTxnWithRetry(ctx context.Context, ke
 		assert.Must(readOpt.ReaderVersion > txnId.Version())
 	}
 	if !getMaxReadVersion {
-		readOpt = readOpt.WithNotGetMaxReadVersion()
+		readOpt.SetNotGetMaxReadVersion()
 	}
 	for i := 0; ; {
-		if val, err = s.kv.Get(ctx, key, readOpt); err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
+		if val, err = s.kv.Get(ctx, key, *readOpt); err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
 			return val, err == nil, notExistsErrSubCode, nil
 		}
 		glog.Warningf("[getValueWrittenByTxnWithRetry] kv.Get conflicted key %s returns unexpected error: %v", key, err)
@@ -55,8 +55,8 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 	assert.Must(len(keys) > 0)
 	for i := 0; ; {
 		for key := range keys {
-			val, err = s.kv.Get(ctx, key, types.NewKVCCReadOption(callTxn.ID.Version()).WithCheckKey(txnId.Version()).
-				WithNotUpdateTimestampCache().WithNotGetMaxReadVersion())
+			val, err = s.kv.Get(ctx, key, *types.NewKVCCCheckKeyReadOption(callTxn.ID.Version(), txnId.Version()).
+				SetNotUpdateTimestampCache().SetNotGetMaxReadVersion())
 			if err == nil || errors.IsNotExistsErrEx(err, &notExistsErrSubCode) {
 				return key, val, err == nil, notExistsErrSubCode, nil
 			}
@@ -72,13 +72,13 @@ func (s *TransactionStore) getAnyValueWrittenByTxnWithRetry(ctx context.Context,
 
 func (s *TransactionStore) loadTransactionRecordWithRetry(ctx context.Context, txnID types.TxnId, allWrittenKey2LastVersion ttypes.KeyVersions,
 	preventFutureWrite bool, txnRecordFlag *types.VFlag, maxRetryTimes int) (txn *Txn, preventedFutureWrite bool, err error) {
-	readOpt := types.NewKVCCReadOption(types.MaxTxnVersion).WithCheckTxnRecord(txnID)
+	readOpt := types.NewKVCCCheckTxnRecordReadOption(txnID)
 	if !preventFutureWrite {
-		readOpt = readOpt.WithNotUpdateTimestampCache()
+		readOpt.SetNotUpdateTimestampCache()
 	}
 	for i := 0; ; {
 		var txnRecordData types.ValueCC
-		txnRecordData, err = s.kv.Get(ctx, "", readOpt)
+		txnRecordData, err = s.kv.Get(ctx, "", *readOpt)
 		*txnRecordFlag = txnRecordData.VFlag
 		if txnRecordData.IsAborted() {
 			return s.partialTxnConstructor(txnID, types.TxnStateRollbacking, allWrittenKey2LastVersion).setErr(errors.ErrTransactionRecordNotFoundAndFoundAbortedValue), false, nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"sync"
 	"time"
 
@@ -186,21 +185,19 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, e
 		assert.Must(err != nil || tVal.Version == txn.ID.Version() || (tVal.Version != 0 && tVal.IsCommitted()))
 	}()
 
-	for i := 0; ; i++ {
-		val, err := txn.getLatestOneRound(ctx, key)
-		if err == nil || !errors.IsRetryableGetErr(err) || i >= consts.MaxRetryTxnGet-1 || ctx.Err() != nil {
+	var dbReadVersion uint64
+	for try := 1; ; try++ {
+		val, err, retry, retryDBReadVersion := txn.getLatestOneRound(ctx, key, try, dbReadVersion)
+		if !retry {
 			return val.ToTValue().CondPreventedFutureWrite(txn.preventFutureWriteKeys.Contains(key)), err
 		}
-		if errors.GetErrorCode(err) != consts.ErrCodeReadUncommittedDataPrevTxnKeyRollbacked {
-			rand.Seed(time.Now().UnixNano())
-			time.Sleep(time.Duration(1+rand.Intn(3)) * time.Millisecond)
-		}
+		dbReadVersion = retryDBReadVersion
 	}
 }
 
-func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.ValueCC, err error) {
+func (txn *Txn) getLatestOneRound(ctx context.Context, key string, try int, dbReadVersion uint64) (_ types.ValueCC, err error, retry bool, retryDBVersion uint64) {
 	if txn.TxnState != types.TxnStateUncommitted {
-		return types.EmptyValueCC, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState)
+		return types.EmptyValueCC, errors.Annotatef(errors.ErrTransactionStateCorrupted, "expect: %s, but got %s", types.TxnStateUncommitted, txn.TxnState), false, 0
 	}
 
 	var (
@@ -211,35 +208,35 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		ctx, cancel := context.WithTimeout(ctx, consts.DefaultReadTimeout)
 		if !lastWriteTask.WaitFinishWithContext(ctx) {
 			cancel()
-			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "wait write task timeouted after %s", consts.DefaultReadTimeout)
+			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "wait write task timeouted after %s", consts.DefaultReadTimeout), false, 0
 		}
 		cancel()
 		if writeErr := lastWriteTask.Err(); writeErr != nil {
-			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr)
+			return types.EmptyValueCC, errors.Annotatef(errors.ErrReadAfterWriteFailed, "previous error: '%v'", writeErr), false, 0
 		}
-		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).WithExactVersion(txn.ID.Version()).WithNotUpdateTimestampCache()) // TODO check this is safe?
+		vv, err = txn.kv.Get(ctx, key, *types.NewKVCCReadOption(txn.ID.Version()).SetExactVersion(txn.ID.Version()).SetNotUpdateTimestampCache()) // TODO check this is safe?
 	} else {
-		vv, err = txn.kv.Get(ctx, key, types.NewKVCCReadOption(txn.ID.Version()).
-			CondReadModifyWrite(txn.IsReadModifyWrite()).CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)).
-			CondWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
+		vv, err = txn.kv.Get(ctx, key, *types.NewKVCCReadOption(txn.ID.Version()).SetDBReadVersion(dbReadVersion).
+			CondSetReadModifyWrite(txn.IsReadModifyWrite()).CondSetReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key)).
+			CondSetWaitWhenReadDirty(txn.IsWaitWhenReadDirty()))
 	}
 	if //noinspection ALL
 	vv.MaxReadVersion > txn.ID.Version() {
 		txn.preventFutureWriteKeys.Insert(key)
 	}
-	if txn.IsReadModifyWrite() { // NOTE: Must be after CondReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key))
+	if txn.IsReadModifyWrite() { // NOTE: Must be after CondSetReadModifyWriteFirstReadOfKey(!txn.readModifyWriteReadKeys.Contains(key))
 		txn.readModifyWriteReadKeys.Insert(key)
 	}
 	if err != nil {
 		if lastWriteTask != nil && errors.IsNotExistsErr(err) {
-			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite
+			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite, false, 0
 		}
-		return types.EmptyValueCC, err
+		return types.EmptyValueCC, err, false, 0
 	}
 	assert.Must((lastWriteTask == nil && vv.Version < txn.ID.Version()) || (lastWriteTask != nil && vv.Version == txn.ID.Version()))
 	assert.Must(!vv.IsAborted())
 	if vv.IsCommitted() || vv.Version == txn.ID.Version() /* read after write */ {
-		return vv, nil
+		return vv, nil, false, 0
 	}
 	assert.Must(txn.ID.Version() > vv.Version)
 	var preventFutureWrite = utils.IsTooOld(vv.Version, txn.cfg.WoundUncommittedTxnThreshold)
@@ -251,7 +248,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		preventFutureWrite,
 		consts.MaxRetryResolveFoundedWriteIntent)
 	if err != nil {
-		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version)
+		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "reason: '%v', txn: %d", err, vv.Version), false, 0
 	}
 	assert.Must(writeTxn.ID.Version() == vv.Version && vv.MaxReadVersion >= txn.ID.Version() /* > vv.Version */)
 	writeTxn.checkCommitState(ctx, txn, map[string]types.ValueCC{key: vv}, preventFutureWrite, committedKey, consts.MaxRetryResolveFoundedWriteIntent)
@@ -259,16 +256,18 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string) (_ types.Valu
 		committedTxnInternalVersion := writeTxn.GetCommittedVersion(key)
 		assert.Must(committedTxnInternalVersion == 0 || committedTxnInternalVersion == vv.InternalVersion) // no way to write a new version after read
 		vv.SetCommitted()
-		return vv, nil
+		return vv, nil, false, 0
 	}
 	if writeTxn.IsAborted() {
 		if writeTxn.GetKeyStateUnsafe(key).IsRollbackedCleared() { // TODO change dbReadVersion
-			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnKeyRollbacked
+			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnRollbacked, try < consts.MaxRetryTxnGet, 0
 		}
 		assert.Must(writeTxn.TxnState == types.TxnStateRollbacking)
-		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnToBeRollbacked, "previous txn %d", writeTxn.ID) // TODO can be optimized, skip the aborted version
+		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnRollbacking, "previous txn %d", writeTxn.ID), false, 0
+		//return types.EmptyValueCC, errors.Annotatef(errors.GetReadUncommittedDataOfAbortedTxn(writeTxn.GetKeyStateUnsafe(key).IsRollbackedCleared()),
+		//	"previous txn %d", writeTxn.ID), try < consts.MaxRetryTxnGet /* TODO not working */, vv.Version - 1
 	}
-	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID)
+	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID), false, 0
 }
 
 func (txn *Txn) MGet(ctx context.Context, keys []string) ([]types.TValue, error) {
@@ -580,7 +579,7 @@ func (txn *Txn) rollback(ctx context.Context, callerTxn types.TxnId, createTxnRe
 	{
 		var deltaV = 0
 		if errors.IsQueueFullErr(txn.err) {
-			deltaV += 10
+			deltaV += 200
 		}
 		if callerTxn != txn.ID {
 			if glog.V(glog.Level(7 + deltaV)) {
