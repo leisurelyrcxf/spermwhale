@@ -2,7 +2,6 @@ package kvcc
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"time"
 
@@ -53,7 +52,7 @@ func newKVCC(db types.KV, cfg types.TabletTxnConfig, testing bool) *KVCC {
 		db:              db,
 		txnManager: transaction.NewManager(types.NewTabletTxnManagerConfig(
 			cfg,
-			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(cfg.StaleWriteThreshold*4/5),
+			types.DefaultReadModifyWriteQueueCfg.WithMaxQueuedAge(cfg.StaleWriteThreshold/1000*999),
 		), db),
 		tsCache: NewTimestampCache(),
 	}
@@ -102,7 +101,7 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			if err != nil {
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), err
 			}
-			if waitErr := w.Wait(ctx, kv.StaleWriteThreshold/2); waitErr != nil {
+			if waitErr := w.Wait(ctx, utils.MaxDuration(time.Second/2, kv.StaleWriteThreshold/2)); waitErr != nil {
 				glog.V(8).Infof("KVCC:Get failed to wait read modify write queue event of key '%s', txn version: %d, err: %v", key, opt.ReaderVersion, waitErr)
 				return kv.addMaxReadVersionForceFetchLatest(key, types.EmptyValue, opt.GetMaxReadVersion, opt.ReadExactVersion), errors.Annotatef(errors.ErrReadModifyWriteWaitFailed, waitErr.Error())
 			}
@@ -138,15 +137,6 @@ func (kv *KVCC) get(ctx context.Context, key string, opt *types.KVCCReadOption, 
 			!errors.IsNotExistsErr(err) && err != errors.ErrMinAllowedSnapshotVersionViolated {
 			glog.Errorf("txn-%d get key '%s' failed: '%v', minAllowedSnapshotVersion: %d, cost: %s", opt.ReaderVersion, key, err, opt.MinAllowedSnapshotVersion, bench.Elapsed())
 		} else if glog.V(60) {
-			var errDesc string
-			if err != nil {
-				errDesc = ", " + err.Error()
-			}
-			var exactVersionDesc = ", read_exact_version: false"
-			if opt.ReadExactVersion {
-				exactVersionDesc = fmt.Sprintf(", read_exact_version: true, exact_version: %d", opt.ExactVersion)
-			}
-			glog.Infof("txn-%d get key '%s' succeeded, version: %d, dirty: %v%s%s, cost: %s", opt.ReaderVersion, key, val.Version, valCC.IsDirty(), exactVersionDesc, errDesc, bench.Elapsed())
 		}
 		if retry && try < consts.MaxRetryTxnGet {
 			return types.EmptyValueCC, nil, true, retryDBReadVersion
@@ -219,26 +209,6 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	}
 
 	w.WaitWritten()
-	if opt.IsMetaOnly {
-		if opt.ReadExactVersion {
-			if w != nil {
-				if meta, err, valid := w.Transaction.GetMetaWeak(key); valid {
-					assert.Must(!w.Succeeded() || err == nil)
-					return types.Value{Meta: meta}, err, false, 0
-				}
-			} else if txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion)); err == nil {
-				if meta, err, valid := txn.GetMetaWeak(key); valid {
-					return types.Value{Meta: meta}, err, false, 0
-				}
-			}
-		} else if w != nil && w.Succeeded() {
-			if meta := w.Transaction.MustGetMetaWeak(key); meta.IsValid() {
-				return types.Value{Meta: meta}, nil, meta.IsAborted() && !opt.ReadExactVersion, utils.SafeDecr(meta.Version)
-			}
-		}
-		//defer func() { val.V = nil }() // low level should guarantee this
-	}
-
 	if !opt.IsSnapshotRead || w != nil {
 		kvOpt, readCommitted := opt.ToKV(), false
 		if w != nil && w.IsCommitted() {
@@ -321,29 +291,29 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 		}
 	}
 
-	dbMeta := txn.GetDBMetaStrongUnsafe(key)
+	dbMeta := txn.GetTxnState()
 	if dbMeta.IsCommitted() {
 		assert.Must(err == nil && val.Version != 0 && val.InternalVersion > 0)
 		if maxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
-			assert.Must(dbMeta.InternalVersion == val.InternalVersion)
-			val.Meta.VFlag = dbMeta.VFlag
+			//assert.Must(dbMeta.InternalVersion == val.InternalVersion)
+			val.SetCommitted()
 			return val, err, false, 0
 		}
 		if txn.HasPositiveInternalVersion(key, val.InternalVersion) {
-			assert.Must(dbMeta.InternalVersion == val.InternalVersion)
-			val.Meta.VFlag = dbMeta.VFlag
+			//assert.Must(dbMeta.InternalVersion == val.InternalVersion)
+			val.SetCommitted()
 			return val, err, false, 0
 		}
 		return val, err, true, opt.DBReadVersion // retry to get latest committed value
 	}
 	if dbMeta.IsAborted() {
-		if txn.IsKeyDoneUnsafe(key) { // TODO remove in product
+		if txn.IsKeyDone(key) { // TODO remove in product
 			if vv, err := kv.db.Get(ctx, key, types.NewKVReadOptionWithExactVersion(txn.ID.Version())); !errors.IsNotExistsErr(err) {
 				assert.Must(vv.Version == txn.ID.Version())
 				glog.Fatalf("txn-%d value of key '%s' still exists after rollbacked", vv.Version, key)
 			}
 		}
-		val.Meta.VFlag = dbMeta.VFlag
+		val.SetAborted()
 		return val, err, !opt.ReadExactVersion, utils.SafeDecr(val.Version)
 	}
 	assert.Must(!opt.WaitWhenReadDirty)
@@ -395,13 +365,13 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	var (
 		txn *transaction.Transaction
 	)
-	defer func() {
-		if txn != nil && errors.IsMustRollbackSetErr(setErr) {
-			txn.Lock()
-			txn.SetAbortedUnsafe(false, "got must rollback error '%v' during setting key '%s'", setErr, key) // don't rollback keys here because we wan't to notify upper layer as soon as possible
-			txn.Unlock()
-		}
-	}()
+	//defer func() {
+	//	if txn != nil && errors.IsMustRollbackSetErr(setErr) {
+	//		txn.Lock()
+	//		txn.SetAbortedUnsafe(false, "got must rollback error '%v' during setting key '%s'", setErr, key) // don't rollback keys here because we wan't to notify upper layer as soon as possible
+	//		txn.Unlock()
+	//	}
+	//}()
 
 	if isTxnRecord {
 		kv.lm.Lock(txnId)
@@ -456,7 +426,10 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 
 		return err
 	}
-	err = txn.SetRLocked(ctx, key, key, val, opt)
+	if err = kv.db.Set(ctx, key, val, opt.ToKV()); err == nil && txn.MustAddWrittenKeyUnsafe(key, val.Meta.ToDB()) {
+		glog.V(OCCVerboseLevel).Infof("[KVCC::setKey] added new key '%s' to txn-%d", key, txnId)
+	}
+
 	w.SetResult(err)
 	w.Done()
 	txn.Unlock()

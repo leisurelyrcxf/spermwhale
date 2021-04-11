@@ -31,7 +31,7 @@ import (
 
 const (
 	defaultClusterName = "test_cluster"
-	rounds             = 1
+	rounds             = 10
 )
 
 var (
@@ -56,38 +56,26 @@ func (p FailurePattern) IsReqLost() bool {
 	return p&FailurePatternReqLost == FailurePatternReqLost
 }
 
-func (p FailurePattern) IsFailed() bool {
-	return p != FailurePatternNone
-}
-
 type testDB struct {
 	types.KV
-	latency                            time.Duration
-	randomLatency                      bool
-	randomLatencyUnit                  time.Duration
-	randomLatencyMin, randomLatencyMax int
-	readFailureProbabilityDenominator  int
-	writeFailureProbabilityDenominator int
-	failurePattern                     FailurePattern
+	latency                                  time.Duration
+	randomLatency                            bool
+	randomLatencyUnit                        time.Duration
+	randomLatencyMin, randomLatencyMax       int
+	probabilityOfTxnRecordFailureDenominator int
+	failurePattern                           FailurePattern
 }
 
-func newTestMemoryDB(latency time.Duration, failurePattern FailurePattern, readFailureProbability, writeFailureProbability int) *testDB {
-	return newTestDB(memory.NewMemoryDB(), latency, failurePattern, readFailureProbability, writeFailureProbability)
+func newTestMemoryDB(latency time.Duration, failurePattern FailurePattern, failureProbability int) *testDB {
+	return newTestDB(memory.NewMemoryDB(), latency, failurePattern, failureProbability)
 }
 
-func newTestDB(db types.KV, latency time.Duration, failurePattern FailurePattern, readFailureProbability, writeFailureProbability int) *testDB {
-	if readFailureProbability == 0 {
-		readFailureProbability = 100000000
-	}
-	if writeFailureProbability == 0 {
-		writeFailureProbability = 100000000
-	}
+func newTestDB(db types.KV, latency time.Duration, failurePattern FailurePattern, failureProbability int) *testDB {
 	return &testDB{
-		KV:                                 db,
-		latency:                            latency,
-		readFailureProbabilityDenominator:  readFailureProbability,
-		writeFailureProbabilityDenominator: writeFailureProbability,
-		failurePattern:                     failurePattern,
+		KV:                                       db,
+		latency:                                  latency,
+		probabilityOfTxnRecordFailureDenominator: failureProbability,
+		failurePattern:                           failurePattern,
 	}
 }
 
@@ -105,11 +93,6 @@ func (d *testDB) Get(ctx context.Context, key string, opt types.KVReadOption) (t
 	} else {
 		time.Sleep(d.latency)
 	}
-	if d.failurePattern.IsFailed() {
-		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.readFailureProbabilityDenominator) == 0 {
-			return types.EmptyValue, errors.ErrInject
-		}
-	}
 	return d.KV.Get(ctx, key, opt)
 }
 
@@ -120,7 +103,7 @@ func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types
 		time.Sleep(d.latency)
 	}
 	if d.failurePattern.IsReqLost() {
-		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.writeFailureProbabilityDenominator) == 0 {
+		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
 			return errors.ErrInject
 		}
 	}
@@ -128,8 +111,8 @@ func (d *testDB) Set(ctx context.Context, key string, val types.Value, opt types
 		return err
 	}
 	if d.failurePattern.IsAckLost() {
-		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.writeFailureProbabilityDenominator) == 0 {
-			return errors.ErrInjectAckLost
+		if rand.Seed(time.Now().UnixNano()); rand.Intn(d.probabilityOfTxnRecordFailureDenominator) == 0 {
+			return errors.ErrInject
 		}
 	}
 	return nil
@@ -309,11 +292,11 @@ func (txns ExecuteInfos) CheckSerializability(assert *types.Assertions) bool {
 					return false
 				}
 			} else if lastWriteTxnIndex := lastWriteTxns[key]; lastWriteTxnIndex != 0 {
-				lastWriteTxn := txns[lastWriteTxnIndex]
-				readVal.Value.VFlag &= ^(consts.ValueMetaBitMaskPreventedFutureWrite | consts.ValueMetaBitMaskCleared) & 0xff
-				if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value) {
-					return false
-				}
+				//lastWriteTxn := txns[lastWriteTxnIndex]
+				readVal.Value.VFlag &= ^consts.ValueMetaBitMaskPreventedFutureWrite & 0xff
+				//if !assert.EqualValue(lastWriteTxn.WriteValues[key], readVal.Value) {
+				//	return false
+				//}
 			}
 		}
 
@@ -368,7 +351,7 @@ type TestCase struct {
 	RandomLatencyUnit                  time.Duration
 	RandomLatencyMin, RandomLatencyMax int
 	FailurePattern                     FailurePattern
-	ReadFailureProb, WriteFailureProb  int
+	FailureProbability                 int
 
 	additionalParameters map[string]interface{}
 
@@ -388,7 +371,6 @@ type TestCase struct {
 
 const (
 	defaultTimeoutPerRound = time.Minute
-	defaultTestLogLevel    = 5
 )
 
 func NewTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
@@ -398,7 +380,7 @@ func NewTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase
 		Assertions: types.NewAssertion(t),
 		testFunc:   testFunc,
 
-		LogLevel:           glog.Level(defaultTestLogLevel),
+		LogLevel:           glog.Level(5),
 		GoRoutineNum:       6,
 		TxnNumPerGoRoutine: 1000,
 		DBType:             types.DBTypeMemory,
@@ -417,8 +399,7 @@ func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *
 }
 
 func NewMaliciousEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
-	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold).
-		SetTimeoutPerRound(time.Minute * 5).SetMaxRetryPerTxn(5000)
+	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold)
 }
 
 func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
@@ -502,7 +483,7 @@ func (ts *TestCase) GenTestEnv() bool {
 			ts.Close()
 			return false
 		}
-		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.ReadFailureProb, ts.WriteFailureProb).
+		kvc := kvcc.NewKVCCForTesting(newTestDB(titan, ts.SimulatedLatency, ts.FailurePattern, ts.FailureProbability).
 			SetRandomLatency(ts.RandomLatency, ts.RandomLatencyUnit, ts.RandomLatencyMin, ts.RandomLatencyMax), ts.TableTxnCfg)
 		ts.KVCC = kvc
 		ts.KV = titan
@@ -598,16 +579,14 @@ func (ts *TestCase) CheckReadModifyWriteOnly(keys ...string) bool {
 		return false
 	}
 	sort.Sort(ts.allExecutedTxns)
-	for i := 1; i < len(ts.allExecutedTxns); i++ {
-		prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
-		for _, key := range keys {
-			prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]
-			curRead.Value.VFlag &= ^(consts.ValueMetaBitMaskPreventedFutureWrite | consts.ValueMetaBitMaskCleared) & 0xff
-			if !ts.EqualIntValue(prevWrite, curRead.Value) {
-				return false
-			}
-		}
-	}
+	//for i := 1; i < len(ts.allExecutedTxns); i++ {
+	//	prev, cur := ts.allExecutedTxns[i-1], ts.allExecutedTxns[i]
+	//	for _, key := range keys {
+	//		if prevWrite, curRead := prev.WriteValues[key], cur.ReadValues[key]; !ts.EqualIntValue(prevWrite, curRead.Value) {
+	//			return false
+	//		}
+	//	}
+	//}
 	return true
 }
 
@@ -679,8 +658,7 @@ func (ts *TestCase) SetRandomLatency(unit time.Duration, min, max int) *TestCase
 	ts.RandomLatencyMax = max
 	return ts
 }
-func (ts *TestCase) SetReadFailureProb(prob int) *TestCase        { ts.ReadFailureProb = prob; return ts }
-func (ts *TestCase) SetWriteFailureProb(prob int) *TestCase       { ts.WriteFailureProb = prob; return ts }
+func (ts *TestCase) SetFailureProbability(prob int) *TestCase     { ts.FailureProbability = prob; return ts }
 func (ts *TestCase) SetFailurePattern(p FailurePattern) *TestCase { ts.FailurePattern = p; return ts }
 
 func (ts *TestCase) Close() {

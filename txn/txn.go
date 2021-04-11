@@ -82,7 +82,7 @@ type Txn struct {
 
 	allWriteTasksFinished bool
 
-	cfg   types.TxnConfig
+	cfg   types.TxnManagerConfig
 	kv    types.KVCC
 	store *TransactionStore
 	s     *Scheduler
@@ -93,7 +93,7 @@ type Txn struct {
 
 func NewTxn(
 	id types.TxnId, typ types.TxnType,
-	kv types.KVCC, cfg types.TxnConfig,
+	kv types.KVCC, cfg types.TxnManagerConfig,
 	store *TransactionStore,
 	s *Scheduler,
 	destroy func(_ *Txn, force bool)) *Txn {
@@ -179,9 +179,6 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, e
 		if err != nil && errors.IsMustRollbackGetErr(err) {
 			txn.TxnState = types.TxnStateRollbacking
 			_ = txn.rollback(ctx, txn.ID, true, "error occurred during Txn::Get: %v", err)
-		}
-		if err == nil {
-			tVal.AssertValid()
 		}
 		assert.Must(err != nil || tVal.Version == txn.ID.Version() || (tVal.Version != 0 && tVal.IsCommitted()))
 	}()
@@ -776,7 +773,7 @@ func (txn *Txn) getAllWriteTasks() []*basic.Task {
 func (txn *Txn) writeTxnRecord(ctx context.Context, recordData []byte) error {
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
-	err := txn.kv.Set(ctx, "", types.NewTxnValue(recordData, txn.ID.Version()).WithInternalVersion(types.TxnInternalVersionMin), types.NewKVCCWriteOption())
+	err := txn.kv.Set(ctx, "", types.NewTxnValue(recordData, txn.ID.Version()).WithInternalVersion(1), types.NewKVCCWriteOption())
 	if err != nil {
 		glog.V(7).Infof("[writeTxnRecord] write transaction record failed: %v", err)
 	}

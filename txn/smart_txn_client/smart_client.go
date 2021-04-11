@@ -128,7 +128,7 @@ func (c *SmartClient) DoTransactionRaw(ctx context.Context, opt types.TxnOption,
 			opt.SnapshotReadOption.SetSnapshotVersion(tx.GetSnapshotReadOption().SnapshotVersion, true)
 		}
 		time.Sleep(utils.RandomPeriod(time.Millisecond, 1, 9))
-		glog.V(401).Infof("[SmartClient::DoTransactionRaw] user function returns err: %v, retrying for %dth round...", err.Error(), i+2)
+		glog.V(201).Infof("[SmartClient::DoTransactionRaw] user function returns err: %v, retrying for %dth round...", err.Error(), i+2)
 		onRetry(err)
 	}
 	return nil, c.maxRetry, errors.Annotatef(errors.ErrTxnRetriedTooManyTimes, "after retried %d times", c.maxRetry)

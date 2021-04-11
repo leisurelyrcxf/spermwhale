@@ -25,6 +25,7 @@ func (m VFlag) IsValid() bool {
 }
 
 func (m VFlag) AssertValid() {
+	return
 	assert.Must(m != 0 && m&consts.TxnStateBitMaskInvalid == 0)
 	assert.Must(!m.IsCleared() || m.IsTerminated())
 	assert.Must(!m.IsCommitted() || (!m.IsDirty() && !m.IsAborted()))
@@ -85,6 +86,10 @@ func (m VFlag) String() string {
 func (m *VFlag) SetCommitted() {
 	*m &= consts.ValueMetaBitMaskClearWriteIntent
 	*m |= consts.ValueMetaBitMaskCommitted
+}
+
+func (m *VFlag) SetAborted() {
+	*m |= consts.ValueMetaBitMaskAborted
 }
 
 func (m *VFlag) SetCleared() {

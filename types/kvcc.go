@@ -88,6 +88,7 @@ func (opt *KVCCReadOption) Initialize() {
 }
 
 func (opt *KVCCReadOption) AssertFlags() {
+	return
 	assert.Must(opt.ReadExactVersion == (opt.ExactVersion != 0))
 	assert.Must(opt.IsTxnRecord == (opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord))
 	assert.Must(opt.UpdateTimestampCache == (opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0))
