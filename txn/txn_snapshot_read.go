@@ -132,35 +132,13 @@ func (txn *Txn) mgetSnapshot(ctx context.Context, keys []string) (_ []types.TVal
 }
 
 func (txn *Txn) BeginSnapshotReadTxn(opt types.TxnSnapshotReadOption) error {
-	if opt.IsExplicitSnapshotVersion() {
-		if !opt.IsRelativeSnapshotVersion() {
-			if opt.SnapshotVersion == 0 {
-				return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "!opt.IsRelativeSnapshotVersion() && opt.SnapshotVersion == 0")
-			}
-			if opt.SnapshotVersion > txn.ID.Version() {
-				return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "!opt.IsRelativeSnapshotVersion() && opt.SnapshotVersion > txn.ID.Version()")
-			}
-		} else if txn.ID.Version() < opt.SnapshotVersion {
-			return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "opt.IsRelativeSnapshotVersion() && txn.ID.Version() < opt.SnapshotVersion ")
-		}
+	txnVersion := txn.ID.Version()
+	if err := opt.Validate(txnVersion); err != nil {
+		return err
 	}
-	if opt.IsRelativeMinAllowedSnapshotVersion() && txn.ID.Version() < opt.MinAllowedSnapshotVersion {
-		return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, "opt.IsRelativeMinAllowedSnapshotVersion() && txn.ID.Version() < opt.MinAllowedSnapshotVersion ")
-	}
-	if (opt.SnapshotVersion != 0 && opt.SnapshotVersion < opt.MinAllowedSnapshotVersion) ||
-		(opt.SnapshotVersion == 0 && txn.ID.Version() < opt.MinAllowedSnapshotVersion) {
-		return errors.Annotatef(errors.ErrInvalidTxnSnapshotReadOption, errors.ErrMinAllowedSnapshotVersionViolated.Msg)
-	}
-
 	txn.TxnSnapshotReadOption = opt
-	if opt.IsRelativeMinAllowedSnapshotVersion() {
-		txn.MinAllowedSnapshotVersion = txn.ID.Version() - opt.MinAllowedSnapshotVersion
-	}
-	if opt.IsExplicitSnapshotVersion() && opt.IsRelativeSnapshotVersion() {
-		txn.SnapshotVersion = txn.ID.Version() - opt.SnapshotVersion
-	}
-	if !txn.TxnSnapshotReadOption.IsEmpty() && bool(glog.V(60)) {
-		glog.Infof("[Txn::BeginSnapshotReadTxn] txn-%d snapshot read option initialized to %s", txn.ID, txn.TxnSnapshotReadOption)
+	if !opt.IsEmpty() && bool(glog.V(60)) {
+		glog.Infof("[Txn::BeginSnapshotReadTxn] txn-%d snapshot read option initialized to %s", txnVersion, txn.TxnSnapshotReadOption)
 	}
 	return nil
 }

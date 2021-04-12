@@ -18,11 +18,11 @@ const (
 	DefaultMaxClockDrift                = time.Second
 	DefaultWoundUncommittedTxnThreshold = 10 * time.Second
 
-	DefaultTxnManagerClearerNumber              = 32
+	DefaultTxnManagerClearerNumber              = 600
 	DefaultTxnManagerClearJobTimeout            = time.Second * 10
-	DefaultTxnManagerWriterNumber               = 32
-	DefaultTxnManagerReaderNumber               = 32
-	DefaultTxnManagerMaxBufferedJobPerPartition = 10000
+	DefaultTxnManagerWriterNumber               = 1000
+	DefaultTxnManagerReaderNumber               = 1000
+	DefaultTxnManagerMaxBufferedJobPerPartition = 1000
 )
 
 const (
@@ -60,6 +60,9 @@ const (
 	TxnSnapshotReadOptionBitMaskRelativeSnapshotVersion           = 1 << 1
 	TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion = 1 << 2
 	TxnSnapshotReadOptionBitMaskDontAllowVersionBack              = 1 << 3
+
+	TxnSnapshotReadOptionBitMaskClearRelativeSnapshotVersion           = (^TxnSnapshotReadOptionBitMaskRelativeSnapshotVersion) & 0xff
+	TxnSnapshotReadOptionBitMaskClearRelativeMinAllowedSnapshotVersion = (^TxnSnapshotReadOptionBitMaskRelativeMinAllowedSnapshotVersion) & 0xff
 )
 
 const (

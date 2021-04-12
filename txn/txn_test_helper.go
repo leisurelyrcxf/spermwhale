@@ -365,6 +365,7 @@ type TestCase struct {
 	LogLevel                         glog.Level
 	maxRetryPerTxn                   int
 	snapshotReadDontAllowVersionBack bool
+	relativeSnapshotVersion          time.Duration
 
 	SimulatedLatency                   time.Duration
 	RandomLatency                      bool
@@ -392,7 +393,7 @@ type TestCase struct {
 }
 
 const (
-	defaultTimeoutPerRound = time.Minute
+	defaultTimeoutPerRound = time.Minute * 2
 	defaultTestLogLevel    = 5
 )
 
@@ -466,7 +467,7 @@ func (ts *TestCase) runOneRound(i int) bool {
 	if !ts.CheckSerializability() {
 		return false
 	}
-	if !ts.CheckCleared() {
+	if !ts.CheckCleared(ctx) {
 		return false
 	}
 	ts.LogExecuteInfos(float64(cost) / float64(time.Second))
@@ -479,7 +480,11 @@ func (ts *TestCase) DoTransaction(ctx context.Context, goRoutineIndex int, sc *s
 }
 func (ts *TestCase) DoReadOnlyTransaction(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient,
 	f func(ctx context.Context, txn types.Txn) error) bool {
-	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, types.NewTxnOption(ts.ReadOnlyTxnType).CondSnapshotReadDontAllowVersionBack(ts.snapshotReadDontAllowVersionBack), f)
+	opt := types.NewTxnOption(ts.ReadOnlyTxnType).CondSnapshotReadDontAllowVersionBack(ts.snapshotReadDontAllowVersionBack)
+	if ts.relativeSnapshotVersion > 0 {
+		opt = opt.WithRelativeSnapshotVersion(ts.relativeSnapshotVersion)
+	}
+	return ts.DoTransactionOfOption(ctx, goRoutineIndex, sc, opt, f)
 }
 func (ts *TestCase) DoTransactionOfOption(ctx context.Context, goRoutineIndex int, sc *smart_txn_client.SmartClient, opt types.TxnOption,
 	f func(ctx context.Context, txn types.Txn) error) bool {
@@ -575,20 +580,22 @@ func (ts *TestCase) CheckSerializability() bool {
 	return b
 }
 
-func (ts *TestCase) CheckCleared() bool {
+func (ts *TestCase) CheckCleared(ctx context.Context) bool {
 	if !ts.NotEmpty(ts.allExecutedTxns) {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	defer cancel()
 
 	// Check committed txn are cleared
 	keyVersionCount := make(map[string]int64)
 	for _, txn := range ts.allExecutedTxns {
 		for key, writeVal := range txn.WriteValues {
 			keyVersionCount[key]++
-			if _, err := txn.Get(ctx, key); !ts.Contains([]int32{consts.ErrCodeTransactionStateCorrupted, consts.ErrCodeTransactionNotFound}, errors.GetErrorCode(err)) {
-				return false
+			if _, ok := txn.Txn.(*Txn); ok {
+				if val, err := txn.Get(ctx, key); !ts.Containsf([]int32{consts.ErrCodeTransactionStateCorrupted,
+					consts.ErrCodeTransactionNotFound}, errors.GetErrorCode(err), "val: %v, err: %v", val, err) {
+					_, _ = val, err
+					return false
+				}
 			}
 			val, err := ts.KV.Get(ctx, key, types.NewKVReadOptionWithExactVersion(txn.ID))
 			if !ts.NoError(err) {
@@ -611,7 +618,8 @@ func (ts *TestCase) CheckCleared() bool {
 
 	// Check txn record are cleared
 	for _, txn := range ts.allExecutedTxns {
-		if _, err := ts.KV.Get(ctx, "", types.NewKVReadCheckVersionOption(txn.ID).WithTxnRecord()); !ts.Equal(consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err)) {
+		if val, err := ts.KV.Get(ctx, "", types.NewKVReadCheckVersionOption(txn.ID).WithTxnRecord()); !ts.Equalf(
+			consts.ErrCodeKeyOrVersionNotExists, errors.GetErrorCode(err), "val: %v", val) {
 			return false
 		}
 	}
@@ -665,6 +673,10 @@ func (ts *TestCase) AddReadOnlyTxnType(typ types.TxnType) *TestCase {
 }
 func (ts *TestCase) SetSnapshotReadDontAllowVersionBack(b bool) *TestCase {
 	ts.snapshotReadDontAllowVersionBack = b
+	return ts
+}
+func (ts *TestCase) SetRelativeSnapshotVersion(d time.Duration) *TestCase {
+	ts.relativeSnapshotVersion = d
 	return ts
 }
 func (ts *TestCase) SetMaxRetryPerTxn(v int) *TestCase    { ts.maxRetryPerTxn = v; return ts }

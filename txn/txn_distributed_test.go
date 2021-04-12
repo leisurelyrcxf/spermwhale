@@ -22,7 +22,8 @@ func TestDistributedTxnReadConsistency(t *testing.T) {
 }
 
 func TestDistributedTxnReadConsistencySnapshotRead(t *testing.T) {
-	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
+	NewTestCase(t, rounds, testDistributedTxnReadConsistency).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).
+		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetRelativeSnapshotVersion(time.Second * 2).SetGoRoutineNum(20).Run()
 }
 
 func TestDistributedTxnReadConsistencyDeadlock(t *testing.T) {
@@ -32,7 +33,8 @@ func TestDistributedTxnReadConsistencyDeadlockReadModifyWriteWaitWhenReadDirty(t
 	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetLogLevel(10).Run()
 }
 func TestDistributedTxnReadConsistencyDeadlockReadModifyWriteWaitWhenReadDirtySnapshotRead(t *testing.T) {
-	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetReadOnlyTxnType(types.TxnTypeSnapshotRead).SetLogLevel(10).Run()
+	NewTestCase(t, rounds, testDistributedTxnReadConsistencyDeadlock).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).SetReadOnlyTxnType(types.TxnTypeSnapshotRead).
+		SetLogLevel(10).SetGoRoutineNum(30).Run()
 }
 
 func TestDistributedTxnWriteSkew(t *testing.T) {
@@ -111,6 +113,9 @@ func testDistributedTxnReadConsistency(ctx context.Context, ts *TestCase) (b boo
 	}
 	if val, err := sc1.GetInt(ctx, key2); !ts.NoError(err) || !ts.Equal(k2InitialValue, val) {
 		return
+	}
+	if ts.relativeSnapshotVersion > 0 {
+		time.Sleep(ts.relativeSnapshotVersion + time.Millisecond*100)
 	}
 
 	ts.SetExtraRound(0)

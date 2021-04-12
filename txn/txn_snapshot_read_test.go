@@ -514,7 +514,7 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 					if !relativeVersion {
 						opt = opt.WithSnapshotVersion(firstWrittenTxnId.Version())
 					} else {
-						opt = opt.WithRelativeSnapshotVersion(uint64(versionDiff))
+						opt = opt.WithRelativeSnapshotVersion(versionDiff)
 						assert.Must(!opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.IsRelativeSnapshotVersion() && opt.SnapshotReadOption.IsExplicitSnapshotVersion())
 						time.Sleep(time.Duration(float64(versionDiff) * 1.01))
 					}
@@ -522,7 +522,7 @@ func testTxnSnapshotReadVisibility(ctx context.Context, ts *TestCase, explicitSn
 					if !relativeVersion {
 						opt = opt.WithSnapshotReadMinAllowedSnapshotVersion(firstWrittenTxnId.Version())
 					} else {
-						opt = opt.WithSnapshotReadRelativeMinAllowedSnapshotVersion(uint64(versionDiff))
+						opt = opt.WithSnapshotReadRelativeMinAllowedSnapshotVersion(versionDiff)
 						assert.Must(opt.SnapshotReadOption.AllowsVersionBack() && opt.SnapshotReadOption.IsRelativeMinAllowedSnapshotVersion() && !opt.SnapshotReadOption.IsExplicitSnapshotVersion())
 						time.Sleep(time.Duration(float64(versionDiff) * 1.01))
 					}
