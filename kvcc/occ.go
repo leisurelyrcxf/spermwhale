@@ -51,7 +51,7 @@ func NewKVCC(db types.KV, cfg types.TabletTxnManagerConfig) *KVCC {
 
 func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (x types.ValueCC, e error) {
 	opt.AssertFlags() // TODO remove in product
-	assert.Must((!opt.IsTxnRecord && key != "") || (opt.IsTxnRecord && key == "" && opt.ReadExactVersion && opt.GetMaxReadVersion && opt.IsCheckVersion))
+	assert.Must((!opt.IsTxnRecord && key != "") || (opt.IsTxnRecord && key == "" && opt.ReadExactVersion))
 	assert.Must(opt.ReadExactVersion || opt.UpdateTimestampCache)
 	if !opt.UpdateTimestampCache && !opt.GetMaxReadVersion {
 		assert.Must(opt.ReadExactVersion)
@@ -67,18 +67,21 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 
 	if opt.IsTxnRecord {
 		if !utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold) {
-			txn, err := kv.txnManager.GetTxn(types.TxnId(opt.ExactVersion))
-			if err == nil {
+			if inserted, txn, err := kv.txnManager.InsertTxnIfNotExists(types.TxnId(opt.ExactVersion)); err == nil {
+				if inserted {
+					glog.V(OCCVerboseLevel).Infof("[KVCC::Get] created new txn-%d", opt.ExactVersion)
+				}
 				valCC, getErr := txn.GetTxnRecord(ctx, &opt)
 				if getErr == nil && valCC.IsAborted() {
 					valCC.V, getErr = nil, errors.GetNotExistsErrForAborted(valCC.IsClearedUint())
 				}
 				return valCC, getErr
 			}
-			glog.V(OCCVerboseLevel).Infof("[KVCC:Get] can't find txn-%d", opt.ExactVersion)
+			glog.V(OCCVerboseLevel).Infof("[KVCC:Get] can't create txn-%d", opt.ExactVersion)
 		}
 		txnId := types.TxnId(opt.ExactVersion)
 		kv.lm.RLock(txnId)
+		//age := txnId.Age()
 		assert.Must(utils.IsTooOld(opt.ExactVersion, kv.StaleWriteThreshold))
 		kv.lm.RUnlock(txnId) // NOTE: this is enough, no need 'defer kv.lm.RUnlock(txnId)'
 
