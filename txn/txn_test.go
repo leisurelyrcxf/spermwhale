@@ -148,8 +148,7 @@ func TestTxnLostUpdateWithSomeAbortedRollbackFailedWaitWhenReadDirty(t *testing.
 func TestTxnLostUpdateWithSomeAbortedRollbackFailedReadModifyWriteWaitWhenReadDirty(t *testing.T) {
 	NewMaliciousEmbeddedTestCase(t, rounds, func(ctx context.Context, testCase *TestCase) bool {
 		return testTxnLostUpdateWithSomeAbortedRollbackFailed(ctx, testCase, 1)
-	}).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).
-		SetLogLevel(10).Run()
+	}).SetTxnType(types.TxnTypeReadModifyWrite | types.TxnTypeWaitWhenReadDirty).Run()
 }
 
 func TestTxnLostUpdateWriteAfterWriteOverflow(t *testing.T) {

@@ -17,7 +17,8 @@ const (
 	EstimatedMaxQPS = 1000000
 	TxnPartitionNum = 64
 
-	TabletTransactionVerboseLevel = 150
+	TabletTransactionVerboseLevel                 = 150
+	TableInsertOrGetTransactionFailedVerboseLevel = 4
 )
 
 type Manager struct {
@@ -72,7 +73,7 @@ func (tm *Manager) InsertTxnIfNotExists(id types.TxnId) (inserted bool, txn *Tra
 func (tm *Manager) ClearWriteIntent(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption) error {
 	txn, getErr := tm.GetTxn(types.TxnId(version))
 	if getErr != nil {
-		glog.V(4).Infof("[Manager::ClearWriteIntent] can't get txn-%d", version)
+		glog.V(TableInsertOrGetTransactionFailedVerboseLevel).Infof("[Manager::ClearWriteIntent] can't get txn-%d", version)
 		_, err := clearWriteIntent(ctx, key, version, opt, tm.db)
 		return err
 	}
@@ -82,7 +83,7 @@ func (tm *Manager) ClearWriteIntent(ctx context.Context, key string, version uin
 func (tm *Manager) RollbackKey(ctx context.Context, key string, version uint64, opt types.KVCCRollbackKeyOption) error {
 	inserted, txn, insertErr := tm.InsertTxnIfNotExists(types.TxnId(version)) // TODO not insert if too stale
 	if insertErr != nil {
-		glog.V(4).Infof("[Manager::RollbackKey] failed to insert txn-%d", version)
+		glog.V(TableInsertOrGetTransactionFailedVerboseLevel).Infof("[Manager::RollbackKey] failed to insert txn-%d", version)
 		_, err := rollbackKey(ctx, key, version, opt, tm.db)
 		return err
 	}
@@ -104,7 +105,7 @@ func (tm *Manager) RemoveTxnRecord(ctx context.Context, version uint64, opt type
 	} else {
 		var inserted bool
 		if inserted, txn, err = tm.InsertTxnIfNotExists(types.TxnId(version)); err != nil {
-			glog.V(6).Infof("[Manager::RemoveTxnRecord] failed to insert txn-%d", version)
+			glog.V(TableInsertOrGetTransactionFailedVerboseLevel).Infof("[Manager::RemoveTxnRecord] failed to insert txn-%d", version)
 			return removeTxnRecord(ctx, version, "rollback txn record", tm.db)
 		}
 		if inserted {

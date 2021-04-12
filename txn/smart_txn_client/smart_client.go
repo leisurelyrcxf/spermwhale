@@ -61,10 +61,15 @@ func (c *SmartClient) DoTransactionOfTypeEx(ctx context.Context, typ types.TxnTy
 
 func (c *SmartClient) DoTransactionOfOption(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) error) (
 	txn types.Txn, retryTimes int, retryDetails types.RetryDetails, err error) {
-	retryDetails = make(types.RetryDetails)
-	txn, retryTimes, err = c.DoTransactionRaw(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
+	return c.DoTransactionRawFetchRetryDetails(ctx, opt, func(ctx context.Context, txn types.Txn) (err error, retry bool) {
 		return f(ctx, txn), true
-	}, nil, nil, func(err error) {
+	}, nil, nil)
+}
+
+func (c *SmartClient) DoTransactionRawFetchRetryDetails(ctx context.Context, opt types.TxnOption, f func(ctx context.Context, txn types.Txn) (err error, retry bool),
+	beforeCommit, beforeRollback func() error) (txn types.Txn, retryTimes int, retryDetails types.RetryDetails, err error) {
+	retryDetails = make(types.RetryDetails)
+	txn, retryTimes, err = c.DoTransactionRaw(ctx, opt, f, beforeCommit, beforeRollback, func(err error) {
 		assert.Must(err != nil)
 		retryDetails[errors.GetErrorKey(err)]++
 	})

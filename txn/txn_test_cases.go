@@ -761,7 +761,7 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 
 			if goRoutineIdx%abortFactor == 0 {
 				ts.SetSkipRoundCheck(goRoutineIdx)
-				if tx, _, err := sc.DoTransactionRaw(ctx, types.NewTxnOption(ts.TxnType), func(ctx context.Context, txn types.Txn) (error, bool) {
+				if tx, _, _, err := sc.DoTransactionRawFetchRetryDetails(ctx, types.NewTxnOption(ts.TxnType), func(ctx context.Context, txn types.Txn) (error, bool) {
 					val, err := txn.Get(ctx, "k1")
 					if err != nil {
 						return err, true
@@ -773,7 +773,7 @@ func testTxnLostUpdateWithSomeAbortedCommitFailed(ctx context.Context, ts *TestC
 					return txn.Set(ctx, "k1", types.NewIntValue(v1+delta).V), true
 				}, func() error {
 					return errors.ErrInject
-				}, nil, smart_txn_client.VoidOnRetry); ts.Equal(errors.ErrInject, err) {
+				}, nil); ts.Equal(errors.ErrInject, err) {
 					abortedTxnPerGoRoutine[goRoutineIdx] = tx
 				}
 			} else {

@@ -422,7 +422,7 @@ func NewEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *
 
 func NewMaliciousEmbeddedTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {
 	return NewEmbeddedTestCase(t, rounds, testFunc).SetStaleWriteThreshold(consts.ReadModifyWriteTxnMinSupportedStaleWriteThreshold).
-		SetTimeoutPerRound(time.Minute * 5).SetMaxRetryPerTxn(5000)
+		SetTimeoutPerRound(time.Minute * 5).SetLogLevel(transaction.TableInsertOrGetTransactionFailedVerboseLevel).SetMaxRetryPerTxn(5000)
 }
 
 func NewEmbeddedSnapshotReadTestCase(t types.T, rounds int, testFunc func(context.Context, *TestCase) bool) *TestCase {

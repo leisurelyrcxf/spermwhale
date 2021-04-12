@@ -332,15 +332,24 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 
 	txnState := txn.GetTxnState()
 	if txnState.IsCommitted() {
-		assert.Must(err == nil && val.Version != 0 && val.InternalVersion > 0)
-		if atomicMaxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
+		assert.Must((errors.IsNotExistsErr(err) && atomicMaxReadVersion <= txn.ID.Version()) || (err == nil && val.Version != 0 && val.InternalVersion > 0))
+		if atomicMaxReadVersion > txn.ID.Version() { // No more write with val.Version would be possible after val.InternalVersion
 			val.UpdateTxnState(txnState)
 			return val, err, false, 0
 		}
 		dbMeta, ok := txn.GetDBMetaWithoutTxnStateUnsafe(key)
 		if assert.Must(ok && !dbMeta.IsKeyStateInvalid()); dbMeta.InternalVersion == val.InternalVersion {
+			if errors.IsNotExistsErr(err) {
+				if opt.IsMetaOnly {
+					return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
+				}
+				return val, err, true, opt.DBReadVersion // retry to get latest committed value
+			}
 			val.UpdateTxnState(txnState)
 			return val, err, false, 0
+		}
+		if opt.IsMetaOnly {
+			return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
 		}
 		return val, err, true, opt.DBReadVersion // retry to get latest committed value
 	}
