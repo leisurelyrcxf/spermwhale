@@ -258,7 +258,7 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 			if txnState.IsCommitted() {
 				assert.Must(val.Version != 0 && val.InternalVersion != 0 &&
 					*atomicMaxReadVersion > val.Version /*  No more write with val.Version would be possible after val.InternalVersion */)
-				val.UpdateTxnState(txnState)
+				val.UpdateCommittedTxnState(txnState)
 				return val, nil, false, 0
 			}
 			if txnState.IsAborted() {
@@ -298,7 +298,7 @@ func (kv *KVCC) getMetaOnly(key string, w *transaction.Writer, opt *types.KVCCRe
 			return types.EmptyValue, nil, false, 0, false
 		}
 		meta, metaOK := txn.GetMetaUnsafe(key, state)
-		assert.Must(metaOK || state.IsAborted())
+		assert.Must(metaOK || meta.IsAborted())
 		return types.Value{Meta: meta}, nil, false, 0, true
 	}
 
@@ -310,7 +310,7 @@ func (kv *KVCC) getMetaOnly(key string, w *transaction.Writer, opt *types.KVCCRe
 		return types.EmptyValue, nil, false, 0, false
 	}
 	meta, metaOK := w.Transaction.GetMetaUnsafe(key, state)
-	assert.Must(metaOK || state.IsAborted())
+	assert.Must(metaOK || meta.IsAborted())
 	return types.Value{Meta: meta}, nil, meta.IsAborted(), w.Transaction.ID.Version() - 1, true
 }
 
@@ -355,8 +355,8 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 	if txnState.IsCommitted() {
 		assert.Must((errors.IsNotExistsErr(err) && atomicMaxReadVersion <= txn.ID.Version()) || (err == nil && val.Version != 0 && val.InternalVersion != 0))
 		if atomicMaxReadVersion > txn.ID.Version() { // No more write with val.Version would be possible after val.InternalVersion
-			val.UpdateTxnState(txnState)
 			assert.Must(err == nil)
+			val.UpdateCommittedTxnState(txnState)
 			return val, nil, false, 0
 		}
 		dbMeta, ok := txn.GetDBMetaWithoutTxnStateUnsafe(key)
@@ -364,17 +364,15 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 			val.InternalVersion <= dbMeta.InternalVersion); val.InternalVersion == dbMeta.InternalVersion {
 			if errors.IsNotExistsErr(err) {
 				if opt.IsMetaOnly {
-					dbMeta.UpdateTxnState(txnState)
-					return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
+					return types.Value{Meta: dbMeta.WithCommittedTxnState(txnState).WithVersion(txn.ID.Version())}, nil, false, 0
 				}
 				return val, err, true, opt.DBReadVersion // retry to get latest committed value
 			}
-			val.UpdateTxnState(txnState)
+			val.UpdateCommittedTxnState(txnState)
 			return val, err, false, 0
 		}
 		if opt.IsMetaOnly {
-			dbMeta.UpdateTxnState(txnState)
-			return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
+			return types.Value{Meta: dbMeta.WithCommittedTxnState(txnState).WithVersion(txn.ID.Version())}, nil, false, 0
 		}
 		return val, err, true, opt.DBReadVersion // retry to get latest committed value
 	}
@@ -385,7 +383,7 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 				glog.Fatalf("txn-%d value of key '%s' still exists after rollbacked", vv.Version, key)
 			}
 		}
-		val.UpdateTxnState(txnState)
+		val.UpdateAbortedTxnState(txnState)
 		if opt.ReadExactVersion {
 			return val, err, false, 0
 		}

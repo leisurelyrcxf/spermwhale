@@ -124,12 +124,22 @@ func (m *VFlag) UpdateKeyState(state KeyState) {
 	if state.IsCommitted() {
 		*m &= consts.ValueMetaBitMaskClearWriteIntent
 	}
-	m.UpdateKeyStateUnsafe(state)
+	m.UpdateAbortedKeyState(state)
 }
 
-// UpdateKeyStateUnsafe only use this when you known what you are doing
-func (m *VFlag) UpdateKeyStateUnsafe(state KeyState) {
-	*m |= state.ToVFlag()
+// UpdateAbortedTxnState only use this when you known what you are doing
+func (m *VFlag) UpdateAbortedKeyState(abortedState KeyState) {
+	*m |= abortedState.ToVFlag()
+}
+
+func (m *VFlag) UpdateCommittedTxnState(committedState TxnState) {
+	*m &= consts.ValueMetaBitMaskClearWriteIntent
+	*m |= committedState.ToVFlag()
+}
+
+// UpdateAbortedTxnState only use this when you known what you are doing
+func (m *VFlag) UpdateAbortedTxnState(abortedState TxnState) {
+	*m |= abortedState.ToVFlag()
 }
 
 func (m *VFlag) UpdateTxnState(state TxnState) {

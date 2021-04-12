@@ -120,7 +120,7 @@ func (s *Future) DoneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (don
 			InternalVersion: types.TxnInternalVersionMax,
 		}
 		assert.Must(state == types.KeyStateRollbackedCleared)
-		dbMeta.UpdateKeyStateUnsafe(state)
+		dbMeta.UpdateAbortedKeyState(state)
 		s.keys[key] = dbMeta // prevent future inserts
 	}
 	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 {

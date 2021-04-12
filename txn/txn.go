@@ -803,11 +803,7 @@ func (txn *Txn) getAllWriteTasks() []*basic.Task {
 func (txn *Txn) writeTxnRecord(ctx context.Context, recordData []byte) error {
 	// set write intent so that other transactions can stop this txn from committing,
 	// thus implement the safe-rollback functionality
-	err := txn.kv.Set(ctx, "", types.NewTxnValue(recordData, txn.ID.Version()).WithInternalVersion(types.TxnInternalVersionMin), types.NewKVCCWriteOption())
-	if err != nil {
-		glog.V(7).Infof("[writeTxnRecord] write transaction record failed: %v", err)
-	}
-	return err
+	return txn.kv.Set(ctx, "", types.NewTxnValue(recordData, txn.ID.Version()).WithInternalVersion(types.TxnInternalVersionMin), types.NewKVCCWriteOption())
 }
 
 func (txn *Txn) removeTxnRecord(ctx context.Context, rollback bool, callerTxn types.TxnId) error {

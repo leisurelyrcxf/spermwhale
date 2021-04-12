@@ -58,6 +58,11 @@ func (m *DBMeta) UpdateByMeta(meta Meta) {
 	m.InternalVersion = meta.InternalVersion
 }
 
+func (m DBMeta) WithCommittedTxnState(committedState TxnState) DBMeta {
+	m.UpdateCommittedTxnState(committedState)
+	return m
+}
+
 type DBValue struct {
 	DBMeta
 
