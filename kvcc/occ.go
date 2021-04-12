@@ -250,15 +250,36 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 	for i, readerVersion := 0, uint64(0); ; {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		if val, err = kv.db.Get(ctx, key, opt.ToKV()); err != nil || val.IsCommitted() {
-			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
+			return val, err, false, 0
+		}
+		if txn, getErr := kv.txnManager.GetTxn(types.TxnId(val.Version)); getErr == nil {
+			txnState := txn.GetTxnState()
+			if txnState.IsCommitted() {
+				assert.Must(val.Version != 0 && val.InternalVersion != 0)
+				if *atomicMaxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
+					val.UpdateTxnState(txnState)
+					return val, nil, false, 0
+				}
+				dbMeta, ok := txn.GetDBMetaWithoutTxnStateUnsafe(key)
+				if assert.Must(ok && !dbMeta.IsKeyStateInvalid() &&
+					val.InternalVersion <= dbMeta.InternalVersion); val.InternalVersion == dbMeta.InternalVersion {
+					val.UpdateTxnState(txnState)
+					return val, nil, false, 0
+				}
+				return val, nil, true, opt.DBReadVersion // retry to get latest committed value
+			}
+			if txnState.IsAborted() {
+				opt.SetDBReadVersion(val.Version - 1) // TODO check retry times
+				continue
+			}
 		}
 		if readerVersion = val.Version - 1; readerVersion < opt.MinAllowedSnapshotVersion {
 			*minSnapshotVersionViolated = true
-			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
+			return kv.checkPreCheckedGotValue(ctx, key, val, nil, opt, *atomicMaxReadVersion)
 		}
 		if i == consts.MaxRetrySnapshotRead-1 {
 			*retriedTooManyTimes = true
-			return kv.checkGotValue(ctx, key, val, err, opt, *atomicMaxReadVersion)
+			return kv.checkPreCheckedGotValue(ctx, key, val, nil, opt, *atomicMaxReadVersion)
 		}
 		i, opt.ReaderVersion = i+1, readerVersion // NOTE: order can't change, guarantee the invariant: val.Version == floor(opt.ReaderVersion)
 	}
@@ -301,7 +322,10 @@ func (kv *KVCC) checkGotValue(ctx context.Context, key string, val types.Value, 
 		return val, err, false, 0
 	}
 	assert.Must(err == nil || (errors.IsNotExistsErr(err) && opt.ReadExactVersion))
+	return kv.checkPreCheckedGotValue(ctx, key, val, err, opt, atomicMaxReadVersion)
+}
 
+func (kv *KVCC) checkPreCheckedGotValue(ctx context.Context, key string, val types.Value, err error, opt *types.KVCCReadOption, atomicMaxReadVersion uint64) (_ types.Value, _ error, retry bool, retryVersion uint64) {
 	var (
 		txn    *transaction.Transaction
 		getErr error
@@ -332,15 +356,18 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 
 	txnState := txn.GetTxnState()
 	if txnState.IsCommitted() {
-		assert.Must((errors.IsNotExistsErr(err) && atomicMaxReadVersion <= txn.ID.Version()) || (err == nil && val.Version != 0 && val.InternalVersion > 0))
+		assert.Must((errors.IsNotExistsErr(err) && atomicMaxReadVersion <= txn.ID.Version()) || (err == nil && val.Version != 0 && val.InternalVersion != 0))
 		if atomicMaxReadVersion > txn.ID.Version() { // No more write with val.Version would be possible after val.InternalVersion
 			val.UpdateTxnState(txnState)
-			return val, err, false, 0
+			assert.Must(err == nil)
+			return val, nil, false, 0
 		}
 		dbMeta, ok := txn.GetDBMetaWithoutTxnStateUnsafe(key)
-		if assert.Must(ok && !dbMeta.IsKeyStateInvalid()); dbMeta.InternalVersion == val.InternalVersion {
+		if assert.Must(ok && !dbMeta.IsKeyStateInvalid() &&
+			val.InternalVersion <= dbMeta.InternalVersion); val.InternalVersion == dbMeta.InternalVersion {
 			if errors.IsNotExistsErr(err) {
 				if opt.IsMetaOnly {
+					dbMeta.UpdateTxnState(txnState)
 					return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
 				}
 				return val, err, true, opt.DBReadVersion // retry to get latest committed value
@@ -349,6 +376,7 @@ func (kv *KVCC) checkGotValueWithTxn(ctx context.Context, key string, val types.
 			return val, err, false, 0
 		}
 		if opt.IsMetaOnly {
+			dbMeta.UpdateTxnState(txnState)
 			return types.Value{Meta: dbMeta.WithVersion(txn.ID.Version())}, nil, false, 0
 		}
 		return val, err, true, opt.DBReadVersion // retry to get latest committed value

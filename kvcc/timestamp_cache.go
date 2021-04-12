@@ -149,16 +149,6 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 			return
 		}
 
-		for w.Transaction.IsAborted() {
-			opt.SetDBReadVersion(w.Transaction.ID.Version() - 1)
-			if node = i.prev(node); node == nil {
-				w = nil
-				i.mu.RUnlock()
-				return
-			}
-			w = node.Value.(*transaction.Writer)
-		}
-
 		if curNode, found := i.writingWriters.Floor(w.Transaction.ID.Version() - 1); found {
 			for j := 0; j < consts.DefaultTimestampCacheMaxSeekedWritingWriters && curNode != nil; j, curNode = j+1, i.prev(curNode) {
 				writingWritersBefore = append(writingWritersBefore, curNode.Value.(*transaction.Writer))
@@ -183,15 +173,30 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 	}
 
 	if !opt.IsSnapshotRead {
-		return i, node.Value.(*transaction.Writer), nil, nil
+		for w = node.Value.(*transaction.Writer); w.Transaction.IsAborted(); w = node.Value.(*transaction.Writer) {
+			opt.SetDBReadVersion(w.Transaction.ID.Version() - 1)
+			if node = i.prev(node); node == nil {
+				return i, nil, nil, nil
+			}
+		}
+		return i, w, nil, nil
 	}
 
 	for {
 		assert.Must(opt.ReaderVersion >= opt.MinAllowedSnapshotVersion)
 		w := node.Value.(*transaction.Writer)
-		if w.Transaction.IsCommitted() {
+
+		txnState := w.Transaction.GetTxnState()
+		if txnState.IsCommitted() {
 			glog.V(TimestampCacheVerboseLevel).Infof("[TimestampCache][KeyInfo '%s'][FindWriters] found clean writer-%d, max reader version: %d", i.key, w.Transaction.ID.Version(), i.maxReaderVersion)
 			return i, w, nil, nil
+		}
+		if txnState.IsAborted() {
+			opt.SetDBReadVersion(w.Transaction.ID.Version() - 1)
+			if node = i.prev(node); node == nil {
+				return i, nil, nil, nil
+			}
+			continue
 		}
 		newReaderVersion := w.Transaction.ID.Version() - 1
 		if newReaderVersion < opt.MinAllowedSnapshotVersion {
