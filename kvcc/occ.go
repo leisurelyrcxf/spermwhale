@@ -109,15 +109,13 @@ func (kv *KVCC) Get(ctx context.Context, key string, opt types.KVCCReadOption) (
 			}
 		}
 	}
-	//if opt.DBReadVersion == 0 {
-	//	opt.DBReadVersion = opt.GetKVReadVersion()
-	//}
+
 	for try := 1; ; try++ {
 		val, err, retry, retryDBReadVersion := kv.get(ctx, key, &opt, try)
 		if !retry {
 			return val, err
 		}
-		assert.Must(retryDBReadVersion != 0 && retryDBReadVersion != types.MaxTxnVersion && retryDBReadVersion != math.MaxUint64)
+		assert.Must(retryDBReadVersion != 0 && retryDBReadVersion != math.MaxUint64)
 		opt.SetDBReadVersion(retryDBReadVersion)
 	}
 }

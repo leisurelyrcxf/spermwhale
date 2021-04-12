@@ -7,6 +7,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	. "github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/proto/kvccpb"
+	"github.com/leisurelyrcxf/spermwhale/utils"
 )
 
 type KVCCReadOptionConst struct {
@@ -35,7 +36,7 @@ type KVCCReadOption struct {
 }
 
 func NewKVCCReadOption(readerVersion uint64) *KVCCReadOption {
-	opt := &KVCCReadOption{ReaderVersion: readerVersion}
+	opt := &KVCCReadOption{ReaderVersion: readerVersion, DBReadVersion: MaxTxnVersion}
 	opt.InitializeWithZeroFlag()
 	return opt
 }
@@ -95,6 +96,9 @@ func (opt *KVCCReadOption) ToPB() *kvccpb.KVCCReadOption {
 }
 
 func (opt *KVCCReadOption) Initialize() {
+	if opt.DBReadVersion == 0 {
+		opt.DBReadVersion = MaxTxnVersion
+	}
 	opt.ReadExactVersion = opt.ExactVersion != 0
 	opt.IsTxnRecord = opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord
 	opt.UpdateTimestampCache = opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0
@@ -108,6 +112,8 @@ func (opt *KVCCReadOption) Initialize() {
 }
 
 func (opt *KVCCReadOption) AssertFlags() {
+	assert.Must(opt.ReaderVersion != 0)
+	assert.Must(opt.DBReadVersion != 0)
 	assert.Must(opt.ReadExactVersion == (opt.ExactVersion != 0))
 	assert.Must(opt.IsTxnRecord == (opt.flag&KVCCReadOptBitMaskTxnRecord == KVCCReadOptBitMaskTxnRecord))
 	assert.Must(opt.UpdateTimestampCache == (opt.flag&KVCCReadOptBitMaskNotUpdateTimestampCache == 0))
@@ -170,26 +176,18 @@ func (opt *KVCCReadOption) CondSetWaitWhenReadDirty(b bool) *KVCCReadOption {
 }
 
 func (opt *KVCCReadOption) SetDBReadVersion(dbReadVersion uint64) *KVCCReadOption {
+	assert.Must(dbReadVersion != 0)
 	opt.DBReadVersion = dbReadVersion
 	return opt
-}
-
-func (opt *KVCCReadOption) GetKVReadVersion() uint64 {
-	if opt.ReadExactVersion {
-		return opt.ExactVersion
-	}
-	return opt.ReaderVersion
 }
 
 func (opt *KVCCReadOption) ToKV() (kvOpt KVReadOption) {
 	if opt.ReadExactVersion {
 		kvOpt = NewKVReadOptionWithExactVersion(opt.ExactVersion)
-		assert.Must(opt.DBReadVersion == 0 || opt.DBReadVersion == kvOpt.Version)
 	} else {
-		if kvOpt = NewKVReadOption(opt.ReaderVersion); opt.DBReadVersion != 0 && opt.DBReadVersion < kvOpt.Version {
-			kvOpt.Version = opt.DBReadVersion
-		}
+		kvOpt = NewKVReadOption(utils.MinUint64(opt.ReaderVersion, opt.DBReadVersion))
 	}
+	assert.Must(kvOpt.Version != 0)
 	if opt.IsTxnRecord {
 		kvOpt.Flag |= KVReadOptBitMaskTxnRecord
 	}

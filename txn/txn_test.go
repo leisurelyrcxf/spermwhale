@@ -9,6 +9,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/memory"
 	"github.com/leisurelyrcxf/spermwhale/kvcc"
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
 	"github.com/leisurelyrcxf/spermwhale/txn/smart_txn_client"
 	"github.com/leisurelyrcxf/spermwhale/txn/ttypes"
 	"github.com/leisurelyrcxf/spermwhale/types"
@@ -23,11 +24,13 @@ func TestTxnReadModifyWriteNKeys(t *testing.T) {
 }
 
 func TestTxnLostUpdate(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).Run()
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).
+		SetLogLevel(transaction.TableInsertOrGetTransactionFailedVerboseLevel - 1).Run()
 }
 func TestTxnLostUpdateInjectErr(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).SetStaleWriteThreshold(time.Millisecond * 10).
-		SetGoRoutineNum(1000).SetFailurePattern(FailurePatternAll).SetWriteFailureProb(10).SetLogLevel(-1).Run()
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetStaleWriteThreshold(time.Millisecond * 10).
+		SetStaleWriteThreshold(time.Millisecond * 10).SetLogLevel(transaction.TableInsertOrGetTransactionFailedVerboseLevel - 1).
+		SetGoRoutineNum(1000).SetFailurePattern(FailurePatternAll).SetWriteFailureProb(10).Run()
 }
 func TestTxnLostUpdateReadModifyWrite(t *testing.T) {
 	NewEmbeddedTestCase(t, rounds, testTxnLostUpdate).SetTxnType(types.TxnTypeReadModifyWrite).Run()

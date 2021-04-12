@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/leisurelyrcxf/spermwhale/utils"
+
 	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
 
 	"github.com/emirpasic/gods/trees/redblacktree"
@@ -24,7 +26,7 @@ type Writer struct {
 
 func (l Writer) Done() {
 	l.Writer.Unlock()
-	l.KeyInfo.done(l.Transaction.ID.Version())
+	l.KeyInfo.doneWriter(l.Transaction.ID.Version())
 }
 
 type KeyInfo struct {
@@ -124,6 +126,13 @@ func (i *KeyInfo) AddWriter(txn *transaction.Transaction) (writer Writer, err er
 	return Writer{Writer: w, KeyInfo: i}, nil
 }
 
+// done marks writer done
+func (i *KeyInfo) doneWriter(writerVersion uint64) {
+	i.mu.Lock()
+	i.writingWriters.Remove(writerVersion)
+	i.mu.Unlock()
+}
+
 func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *uint64, minSnapshotVersionViolated *bool) (_ *KeyInfo, w *transaction.Writer, writingWritersBefore transaction.WritingWriters, err error) {
 	var (
 		node *redblacktree.Node
@@ -168,7 +177,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 	}
 
 	var found bool
-	if node, found = i.writers.Floor(opt.ReaderVersion); !found { //  all writer id > opt.ReaderVersion or empty
+	if node, found = i.writers.Floor(utils.MinUint64(opt.ReaderVersion, opt.DBReadVersion)); !found { //  all writer id > opt.ReaderVersion or empty
 		return i, nil, nil, nil
 	}
 
@@ -217,13 +226,6 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 func (i *KeyInfo) RemoveVersion(version uint64) {
 	i.mu.Lock()
 	i.writers.Remove(version)
-	i.mu.Unlock()
-}
-
-// done marks writer done
-func (i *KeyInfo) done(writerVersion uint64) {
-	i.mu.Lock()
-	i.writingWriters.Remove(writerVersion)
 	i.mu.Unlock()
 }
 

@@ -185,7 +185,7 @@ func (txn *Txn) getLatest(ctx context.Context, key string) (tVal types.TValue, e
 		assert.Must(err != nil || tVal.Version == txn.ID.Version() || (tVal.Version != 0 && tVal.IsCommitted()))
 	}()
 
-	var dbReadVersion uint64
+	var dbReadVersion = types.MaxTxnVersion
 	for try := 1; ; try++ {
 		val, err, retry, retryDBReadVersion := txn.getLatestOneRound(ctx, key, try, dbReadVersion)
 		if !retry {
@@ -259,13 +259,7 @@ func (txn *Txn) getLatestOneRound(ctx context.Context, key string, try int, dbRe
 		return vv, nil, false, 0
 	}
 	if writeTxn.IsAborted() {
-		if writeTxn.GetKeyStateUnsafe(key).IsRollbackedCleared() { // TODO change dbReadVersion
-			return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnRollbacked, try < consts.MaxRetryTxnGet, 0
-		}
-		assert.Must(writeTxn.TxnState == types.TxnStateRollbacking)
-		return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnRollbacking, "previous txn %d", writeTxn.ID), false, 0
-		//return types.EmptyValueCC, errors.Annotatef(errors.GetReadUncommittedDataOfAbortedTxn(writeTxn.GetKeyStateUnsafe(key).IsRollbackedCleared()),
-		//	"previous txn %d", writeTxn.ID), try < consts.MaxRetryTxnGet /* TODO not working */, vv.Version - 1
+		return types.EmptyValueCC, errors.ErrReadUncommittedDataPrevTxnRollbacking, try < consts.MaxRetryTxnGet, writeTxn.ID.Version() - 1
 	}
 	return types.EmptyValueCC, errors.Annotatef(errors.ErrReadUncommittedDataPrevTxnStatusUndetermined, "previous txn %d", writeTxn.ID), false, 0
 }

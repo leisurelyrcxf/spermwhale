@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
+
 	"github.com/golang/glog"
 
 	"github.com/leisurelyrcxf/spermwhale/assert"
@@ -17,7 +19,8 @@ import (
 )
 
 func TestTxnLostUpdateWriteAfterWriteSnapshotRead(t *testing.T) {
-	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).SetStaleWriteThreshold(time.Millisecond * 10).
+	NewEmbeddedTestCase(t, rounds, testTxnLostUpdateWriteAfterWrite).
+		SetStaleWriteThreshold(time.Millisecond * 10).SetLogLevel(transaction.TableInsertOrGetTransactionFailedVerboseLevel - 1).
 		SetReadOnlyTxnType(types.TxnTypeSnapshotRead).Run()
 }
 func TestTxnLostUpdateWriteAfterWriteSnapshotReadReadModifyWrite(t *testing.T) {
