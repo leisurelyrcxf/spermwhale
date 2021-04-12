@@ -157,6 +157,22 @@ func (opt KVReadOption) IsMetaOnly() bool {
 	return opt.Flag&KVReadOptBitMaskMetaOnly == KVReadOptBitMaskMetaOnly
 }
 
+func (opt KVReadOption) ToKVCC() *KVCCReadOption {
+	kvccOpt := NewKVCCReadOption(opt.Version).SetNotGetMaxReadVersion().SetNotUpdateTimestampCache()
+	if opt.IsReadExactVersion() {
+		kvccOpt.SetExactVersion(opt.Version)
+	}
+	if opt.IsMetaOnly() {
+		kvccOpt.flag |= KVCCReadOptBitMaskMetaOnly
+		kvccOpt.IsMetaOnly = true
+	}
+	if opt.IsTxnRecord() {
+		kvccOpt.flag |= KVCCReadOptBitMaskTxnRecord
+		kvccOpt.IsTxnRecord = true
+	}
+	return kvccOpt
+}
+
 type KVWriteOption struct {
 	flag uint8
 }

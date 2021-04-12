@@ -376,13 +376,14 @@ type TestCase struct {
 	additionalParameters map[string]interface{}
 
 	// output
-	scs         []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
-	txnServers  []*Server
-	txnManagers []types.TxnManager
-	KVCC        types.KVCC
-	tablets     []*kvcc.KVCC
-	KV          types.KV
-	stopper     func()
+	scs           []*smart_txn_client.SmartClient // can be set too, if setted, will ignore gen test env
+	tabletServers []*kvcc.Server
+	tablets       []*kvcc.KVCC
+	txnServers    []*Server
+	txnManagers   []types.TxnManager
+	KVCC          types.KVCC
+	KV            types.KV
+	stopper       func()
 
 	// statistics
 	executedTxnsPerGoRoutine     [][]ExecuteInfo
@@ -522,15 +523,11 @@ func (ts *TestCase) GenTestEnv() bool {
 	}
 
 	var clientTxnManagers []*ClientTxnManager
-	if ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.Assertions, ts.DBType, ts.TxnManagerCfg,
-		ts.TableTxnManagerCfg); !ts.Len(ts.txnServers, 2) {
+	if ts.tabletServers, ts.txnServers, clientTxnManagers, ts.stopper = createCluster(ts.Assertions, ts.DBType, ts.TxnManagerCfg,
+		ts.TableTxnManagerCfg); !ts.Len(ts.tabletServers, 2) || !ts.Len(ts.txnServers, 2) {
 		return false
 	}
-	shards := ts.txnServers[0].tm.kv.(*gate.Gate).GetShards()
-	if !ts.Len(shards, 2) {
-		return false
-	}
-	ts.tablets = []*kvcc.KVCC{shards[0].KVCC.(*kvcc.KVCC), shards[1].KVCC.(*kvcc.KVCC)}
+	ts.tablets = []*kvcc.KVCC{ts.tabletServers[0].Stub.KVCC.(*kvcc.KVCC), ts.tabletServers[1].Stub.KVCC.(*kvcc.KVCC)}
 	ts.KVCC = ts.txnServers[0].tm.kv
 	ts.KV = gate.NewReadOnlyKV(ts.GetGate1())
 	for _, clientTm := range clientTxnManagers {
@@ -590,7 +587,7 @@ func (ts *TestCase) CheckCleared() bool {
 	for _, txn := range ts.allExecutedTxns {
 		for key, writeVal := range txn.WriteValues {
 			keyVersionCount[key]++
-			if _, err := txn.Get(ctx, key); !ts.Equal(consts.ErrCodeTransactionStateCorrupted, errors.GetErrorCode(err)) {
+			if _, err := txn.Get(ctx, key); !ts.Contains([]int32{consts.ErrCodeTransactionStateCorrupted, consts.ErrCodeTransactionNotFound}, errors.GetErrorCode(err)) {
 				return false
 			}
 			val, err := ts.KV.Get(ctx, key, types.NewKVReadOptionWithExactVersion(txn.ID))
@@ -780,10 +777,10 @@ func (ts *TestCase) initialGoRoutineRelatedFields() *TestCase {
 	return ts
 }
 
-func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnManagerConfig) (txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
-	gates, stopTablets, stopGates := createTabletsGates(assert, dbType, tabletCfg)
-	if !assert.Len(gates, 2) || !assert.NotNil(stopTablets) || !assert.NotNil(stopGates) {
-		return nil, nil, nil
+func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnManagerConfig, tabletCfg types.TabletTxnManagerConfig) (tablets []*kvcc.Server, txnServers []*Server, clientTxnManagers []*ClientTxnManager, _ func()) {
+	tablets, gates, stopTablets, stopGates := createTabletsGates(assert, dbType, tabletCfg)
+	if !assert.Len(tablets, 2) || !assert.Len(gates, 2) || !assert.NotNil(stopTablets) || !assert.NotNil(stopGates) {
+		return nil, nil, nil, nil
 	}
 	stop := stopTablets
 	defer func() {
@@ -797,10 +794,10 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 		// create oracle server
 		oracleServer := createOracleServer(assert, OracleServerPort, dbType)
 		if !assert.NotNil(oracleServer) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if err := oracleServer.Start(); !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		stopTablets := stop
 		stop = func() {
@@ -814,15 +811,15 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 		const txnServer1Port = 16666
 		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 
 		txnServer1, err := NewServer(txnServer1Port, gates[0], cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if !assert.NoError(txnServer1.Start()) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		txnServers = append(txnServers, txnServer1)
 		stopOracleTablets := stop
@@ -832,7 +829,7 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 		}
 		tmCli1, err := NewClient(fmt.Sprintf("localhost:%d", txnServer1Port))
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		clientTxnManagers = append(clientTxnManagers, NewClientTxnManager(tmCli1).SetRecordValues(true))
 	}
@@ -842,15 +839,15 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 		const txnServer2Port = 17777
 		cli, err := client.NewClient("fs", "/tmp/", "", time.Minute)
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 
 		txnServer2, err := NewServer(txnServer2Port, gates[1], cfg, topo.NewStore(cli, defaultClusterName))
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		if !assert.NoError(txnServer2.Start()) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		txnServers = append(txnServers, txnServer2)
 		stopOracleTablets := stop
@@ -860,16 +857,16 @@ func createCluster(assert *types.Assertions, dbType types.DBType, cfg types.TxnM
 		}
 		tmCli2, err := NewClient(fmt.Sprintf("localhost:%d", txnServer2Port))
 		if !assert.NoError(err) {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		clientTxnManagers = append(clientTxnManagers, NewClientTxnManager(tmCli2).SetRecordValues(true))
 	}
-	return txnServers, clientTxnManagers, stop
+	return tablets, txnServers, clientTxnManagers, stop
 }
 
-func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnManagerConfig) (gates []*gate.Gate, stopTablets func(), stopGates func()) {
+func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg types.TabletTxnManagerConfig) (tablets []*kvcc.Server, gates []*gate.Gate, stopTablets func(), stopGates func()) {
 	if !assert.NoError(utils.RemoveDirIfExists("/tmp/data/")) {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	const (
@@ -878,39 +875,47 @@ func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg
 	)
 	stopTablets = func() {}
 	defer func() {
-		if len(gates) == 0 {
+		if len(gates) != 2 {
 			stopTablets()
 			stopTablets = nil
+			tablets = nil
 		}
 	}()
-	tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
-	if !assert.NotNil(tablet1) {
-		return
+	{
+		tablet1 := createTabletServer(assert, tablet1Port, dbType, 0, tabletCfg)
+		if !assert.NotNil(tablet1) {
+			return
+		}
+		if !assert.NoError(tablet1.Start()) {
+			return
+		}
+		tablets = append(tablets, tablet1)
+		stopTablets = func() {
+			assert.NoError(tablet1.Close())
+		}
 	}
-	if !assert.NoError(tablet1.Start()) {
-		return
-	}
-	stopTablets = func() {
-		assert.NoError(tablet1.Close())
-	}
-	tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
-	if !assert.NotNil(tablet2) {
-		return
-	}
-	if !assert.NoError(tablet2.Start()) {
-		return
-	}
-	oldStopper := stopTablets
-	stopTablets = func() {
-		assert.NoError(tablet2.Close())
-		oldStopper()
+	{
+		tablet2 := createTabletServer(assert, tablet2Port, dbType, 1, tabletCfg)
+		if !assert.NotNil(tablet2) {
+			return
+		}
+		if !assert.NoError(tablet2.Start()) {
+			return
+		}
+		tablets = append(tablets, tablet2)
+		oldStopper := stopTablets
+		stopTablets = func() {
+			assert.NoError(tablet2.Close())
+			oldStopper()
+		}
 	}
 
 	stopGates = func() {}
 	defer func() {
-		if len(gates) == 0 {
+		if len(gates) != 2 {
 			stopGates()
 			stopGates = nil
+			gates = nil
 		}
 	}()
 	{
@@ -946,7 +951,7 @@ func createTabletsGates(assert *types.Assertions, dbType types.DBType, tabletCfg
 			stopGate1()
 		}
 	}
-	return gates, stopTablets, stopGates
+	return tablets, gates, stopTablets, stopGates
 }
 
 func createTabletServer(assert *types.Assertions, port int, dbType types.DBType, gid int, cfg types.TabletTxnManagerConfig) (server *kvcc.Server) {

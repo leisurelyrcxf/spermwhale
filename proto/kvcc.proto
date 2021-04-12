@@ -70,10 +70,19 @@ message KVCCRemoveTxnRecordResponse {
     Error err = 1;
 }
 
+message KVCCVersionCountRequest {
+    string key = 1;
+}
+message KVCCVersionCountResponse {
+    Error err = 1;
+    int64 version_count = 2;
+}
+
 service KVCC {
     rpc Get(KVCCGetRequest) returns (KVCCGetResponse) {}
     rpc Set(KVCCSetRequest) returns (KVCCSetResponse) {}
     rpc UpdateMeta(KVCCUpdateMetaRequest) returns (KVCCUpdateMetaResponse) {}
     rpc RollbackKey(KVCCRollbackKeyRequest) returns (KVCCRollbackKeyResponse) {}
     rpc RemoveTxnRecord(KVCCRemoveTxnRecordRequest) returns (KVCCRemoveTxnRecordResponse) {}
+    rpc KeyVersionCount(KVCCVersionCountRequest) returns (KVCCVersionCountResponse) {}
 }

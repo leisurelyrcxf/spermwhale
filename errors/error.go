@@ -123,13 +123,15 @@ func ToPBError(e error) *commonpb.Error {
 	}
 	if e, ok := e.(*Error); ok {
 		return &commonpb.Error{
-			Code: int32(e.Code),
-			Msg:  e.Msg,
+			Code:    e.Code,
+			SubCode: e.SubCode,
+			Msg:     e.Msg,
 		}
 	}
 	return &commonpb.Error{
-		Code: consts.ErrCodeUnknown,
-		Msg:  e.Error(),
+		Code:    consts.ErrCodeUnknown,
+		SubCode: consts.ErrSubCodeUnknown,
+		Msg:     e.Error(),
 	}
 }
 

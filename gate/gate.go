@@ -97,6 +97,14 @@ func (g *Gate) RemoveTxnRecord(ctx context.Context, version uint64, opt types.KV
 	return s.RemoveTxnRecord(ctx, version, opt)
 }
 
+func (g *Gate) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	s, err := g.Route(types.TxnKeyUnion{Key: key})
+	if err != nil {
+		return 0, err
+	}
+	return s.KeyVersionCount(ctx, key)
+}
+
 func (g *Gate) Close() (err error) {
 	for _, s := range g.shards {
 		err = errors.Wrap(err, s.Close())
@@ -217,13 +225,7 @@ func NewReadOnlyKV(gate *Gate) *ReadOnlyKV {
 }
 
 func (kv *ReadOnlyKV) Get(ctx context.Context, key string, opt types.KVReadOption) (types.Value, error) {
-	var kvccOpt *types.KVCCReadOption
-	if opt.IsReadExactVersion() {
-		kvccOpt = types.NewKVCCReadOption(opt.Version).SetExactVersion(opt.Version).SetNotGetMaxReadVersion().SetNotUpdateTimestampCache()
-	} else {
-		kvccOpt = types.NewKVCCReadOption(opt.Version).SetNotGetMaxReadVersion().SetNotUpdateTimestampCache()
-	}
-	val, err := kv.Gate.Get(ctx, key, *kvccOpt)
+	val, err := kv.Gate.Get(ctx, key, *opt.ToKVCC())
 	//noinspection ALL
 	return val.Value, err
 }
@@ -232,16 +234,16 @@ func (kv *ReadOnlyKV) Set(context.Context, string, types.Value, types.KVWriteOpt
 	return errors.Annotatef(errors.ErrNotSupported, "this is an read-only kv server")
 }
 
-func (kv *ReadOnlyKV) KeyVersionCount(context.Context, string) (int64, error) {
-	return 0, errors.ErrNotSupported
+func (kv *ReadOnlyKV) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	return kv.Gate.KeyVersionCount(ctx, key)
 }
 
 func (kv *ReadOnlyKV) UpdateMeta(context.Context, string, uint64, types.KVUpdateMetaOption) error {
-	return errors.ErrNotSupported
+	return errors.Annotatef(errors.ErrNotSupported, "by ReadOnlyKV")
 }
 
 func (kv *ReadOnlyKV) RollbackKey(context.Context, string, uint64) error {
-	return errors.ErrNotSupported
+	return errors.Annotatef(errors.ErrNotSupported, "by ReadOnlyKV")
 }
 
 func (kv *ReadOnlyKV) RemoveTxnRecord(context.Context, uint64) error {

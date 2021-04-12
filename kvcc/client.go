@@ -64,6 +64,20 @@ func (c *Client) Set(ctx context.Context, key string, val types.Value, opt types
 	return errors.NewErrorFromPB(resp.Err)
 }
 
+func (c *Client) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	resp, err := c.kv.KeyVersionCount(ctx, &kvccpb.KVCCVersionCountRequest{Key: key})
+	if err != nil {
+		return 0, err
+	}
+	if resp == nil {
+		return 0, errors.Annotatef(errors.ErrNilResponse, "TabletClient::KeyVersionCount resp == nil")
+	}
+	if resp.Err != nil {
+		return 0, errors.NewErrorFromPB(resp.Err)
+	}
+	return resp.VersionCount, nil
+}
+
 func (c *Client) UpdateMeta(ctx context.Context, key string, version uint64, opt types.KVCCUpdateMetaOption) error {
 	resp, err := c.kv.UpdateMeta(ctx, &kvccpb.KVCCUpdateMetaRequest{
 		Key:     key,

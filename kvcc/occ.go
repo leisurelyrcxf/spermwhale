@@ -518,6 +518,10 @@ func (kv *KVCC) Set(ctx context.Context, key string, val types.Value, opt types.
 	return nil
 }
 
+func (kv *KVCC) KeyVersionCount(ctx context.Context, key string) (int64, error) {
+	return kv.db.KeyVersionCount(ctx, key)
+}
+
 func (kv *KVCC) GetTxnManager() *transaction.Manager {
 	return kv.txnManager
 }

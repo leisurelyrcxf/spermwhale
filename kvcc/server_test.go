@@ -31,7 +31,7 @@ func newTestServer(assert *testifyassert.Assertions, port int) (server *Server) 
 }
 
 func newReadOption(version uint64) types.KVCCReadOption {
-	return types.NewKVCCReadOption(version)
+	return *types.NewKVCCReadOption(version)
 }
 
 func TestKV_Get(t *testing.T) {
@@ -52,17 +52,17 @@ func TestKV_Get(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	_, err = client.Get(ctx, "k1", newReadOption(0))
+	_, err = client.Get(ctx, "k1", newReadOption(1))
 	assert.Error(err)
 
 	base := physical.NewOracle().MustFetchTimestamp()
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.NewKVCCWriteOption())) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1).WithInternalVersion(1), types.NewKVCCWriteOption())) {
 		return
 	}
-	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.NewKVCCWriteOption())) {
+	if !assert.NoError(client.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2).WithInternalVersion(1), types.NewKVCCWriteOption())) {
 		return
 	}
 
@@ -115,17 +115,17 @@ func TestKV_Get2(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	_, err = cli.Get(ctx, "k1", newReadOption(0))
+	_, err = cli.Get(ctx, "k1", newReadOption(1))
 	assert.Error(err)
 
 	base := physical.NewOracle().MustFetchTimestamp()
 	ts1 := base - uint64(time.Millisecond)*10
 	ts2 := base
 
-	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2), types.NewKVCCWriteOption())) {
+	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v2"), ts2).WithInternalVersion(1), types.NewKVCCWriteOption())) {
 		return
 	}
-	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1), types.NewKVCCWriteOption())) {
+	if !assert.NoError(cli.Set(ctx, "k1", types.NewValue([]byte("v1"), ts1).WithInternalVersion(1), types.NewKVCCWriteOption())) {
 		return
 	}
 
@@ -159,7 +159,7 @@ func TestKV_Get2(t *testing.T) {
 		assert.Equal(true, vv.IsDirty())
 	}
 
-	err = cli.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10), types.NewKVCCWriteOption())
+	err = cli.Set(ctx, "k1", types.NewValue([]byte("v5"), base+uint64(time.Millisecond)*10).WithInternalVersion(1), types.NewKVCCWriteOption())
 	assert.Error(err)
 	assert.Contains(err.Error(), errors.ErrWriteReadConflict.Msg)
 }

@@ -64,6 +64,9 @@ func (c *Client) Get(ctx context.Context, key string, txnID types.TxnId) (types.
 	txnInfo := NewTransactionInfoFromPB(resp.Txn)
 	assert.Must(txnInfo.ID == txnID)
 	if resp.Err != nil {
+		if resp.TValue == nil {
+			return types.EmptyTValue, txnInfo, errors.NewErrorFromPB(resp.Err)
+		}
 		return types.NewTValueFromPB(resp.TValue), txnInfo, errors.NewErrorFromPB(resp.Err)
 	}
 	if err := resp.TValue.Validate(); err != nil {

@@ -366,6 +366,7 @@ func (opt KVCCRemoveTxnRecordOption) IsRollback() bool {
 type KVCC interface {
 	Get(ctx context.Context, key string, opt KVCCReadOption) (ValueCC, error)
 	Set(ctx context.Context, key string, val Value, opt KVCCWriteOption) error
+	KeyVersionCount(ctx context.Context, key string) (int64, error)
 	UpdateMeta(ctx context.Context, key string, version uint64, opt KVCCUpdateMetaOption) error
 	RollbackKey(ctx context.Context, key string, version uint64, opt KVCCRollbackKeyOption) error
 	RemoveTxnRecord(ctx context.Context, version uint64, opt KVCCRemoveTxnRecordOption) error
