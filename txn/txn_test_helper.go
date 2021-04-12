@@ -8,12 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
-
-	"github.com/leisurelyrcxf/spermwhale/assert"
-
 	"github.com/golang/glog"
 
+	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/errors"
 	"github.com/leisurelyrcxf/spermwhale/gate"
@@ -21,6 +18,7 @@ import (
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/mongodb"
 	"github.com/leisurelyrcxf/spermwhale/kv/impl/redis"
 	"github.com/leisurelyrcxf/spermwhale/kvcc"
+	"github.com/leisurelyrcxf/spermwhale/kvcc/transaction"
 	"github.com/leisurelyrcxf/spermwhale/oracle"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl"
 	"github.com/leisurelyrcxf/spermwhale/oracle/impl/physical"
@@ -40,7 +38,7 @@ var (
 	defaultTxnManagerConfig       = types.NewTxnManagerConfig(time.Millisecond * 10000)
 	defaultTabletTxnManagerConfig = types.NewTabletTxnManagerConfig(
 		types.NewTabletTxnConfig(time.Second*10).WithMaxClockDrift(0),
-		types.NewReadModifyWriteQueueCfg(500),
+		types.NewReadModifyWriteQueueCfg(10000),
 	).WithTest()
 )
 

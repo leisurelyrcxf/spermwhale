@@ -63,14 +63,14 @@ const (
 )
 
 const (
+	ClearedFlagBitOrder = 4
+
 	TxnStateBitMaskUncommitted = 1
 	TxnStateBitMaskStaging     = 1 << 1
 	TxnStateBitMaskCommitted   = 1 << 2
 	TxnStateBitMaskAborted     = 1 << 3
-	TxnStateBitMaskCleared     = 1 << 4
+	TxnStateBitMaskCleared     = 1 << ClearedFlagBitOrder
 	TxnStateBitMaskInvalid     = 1 << 5
-
-	TxnStateBitMaskClearInvalidKeyState = (^TxnStateBitMaskInvalid) & 0xff
 
 	TxnStateBitMaskTerminated = TxnStateBitMaskCommitted | TxnStateBitMaskAborted
 
@@ -94,6 +94,10 @@ func IsRollbacking(flag uint8) bool {
 
 func IsCleared(flag uint8) bool {
 	return flag&txnStateCheckBitMaskCleared == TxnStateBitMaskCleared
+}
+
+func IsClearedUint(flag uint8) uint8 {
+	return (flag & txnStateCheckBitMaskCleared) >> ClearedFlagBitOrder
 }
 
 // IsTerminated indicate either IsCommitted() or IsAborted()
@@ -164,13 +168,13 @@ const (
 
 const (
 	DefaultReadTimeout = time.Second * 10
-	MinTxnLifeSpan     = time.Second
+	MinTxnLifeSpan     = time.Second * 2
 )
 
 const (
 	DefaultMaxReadModifyWriteQueueCapacityPerKey      = 500
-	ReadModifyWriteQueueMaxReadersRatio               = 0.7
-	ReadModifyWriteQueueMaxQueuedAgeRatio             = 0.8 // divide by staleWriteThreshold
+	ReadModifyWriteQueueMaxReadersRatio               = 0.3333
+	ReadModifyWriteQueueMaxQueuedAgeRatio             = 0.99 // divide by staleWriteThreshold
 	ReadModifyWriteTxnMinSupportedStaleWriteThreshold = 400 * time.Millisecond
 
 	MaxWriteIntentWaitersCapacityPerTxnPerKey = 40
@@ -178,7 +182,7 @@ const (
 
 const (
 	DefaultTimestampCacheMaxBufferedWriters           = 1024
-	DefaultTimestampCacheMaxBufferedWritersLowerRatio = 0.8
+	DefaultTimestampCacheMaxBufferedWritersLowerRatio = 0.98
 	DefaultTimestampCacheMaxSeekedWritingWriters      = 6
 )
 

@@ -19,14 +19,14 @@ func (m VFlag) GetKeyState() KeyState {
 
 func (m VFlag) IsValid() bool {
 	return m != 0 && m&consts.TxnStateBitMaskInvalid == 0 &&
-		(!m.IsCleared() || m.IsTerminated()) &&
+		(!m.IsClearedUnsafe() || m.IsTerminated()) &&
 		(!m.IsCommitted() || (!m.IsDirty() && !m.IsAborted())) &&
 		(!m.IsAborted() || (m.IsDirty() && !m.IsCommitted()))
 }
 
 func (m VFlag) AssertValid() {
 	assert.Must(m != 0 && m&consts.TxnStateBitMaskInvalid == 0)
-	assert.Must(!m.IsCleared() || m.IsTerminated())
+	assert.Must(!m.IsClearedUnsafe() || m.IsTerminated())
 	assert.Must(!m.IsCommitted() || (!m.IsDirty() && !m.IsAborted()))
 	assert.Must(!m.IsAborted() || (m.IsDirty() && !m.IsCommitted()))
 }
@@ -61,6 +61,14 @@ func (m VFlag) IsCleared() bool {
 	return cleared
 }
 
+func (m VFlag) IsClearedUnsafe() bool {
+	return consts.IsCleared(uint8(m))
+}
+
+func (m VFlag) IsClearedUint() uint8 {
+	return consts.IsClearedUint(uint8(m))
+}
+
 func (m VFlag) IsCommittedCleared() bool {
 	return consts.IsCommittedClearedValue(uint8(m))
 }
@@ -89,6 +97,10 @@ func (m VFlag) String() string {
 func (m *VFlag) SetCommitted() {
 	*m &= consts.ValueMetaBitMaskClearWriteIntent
 	*m |= consts.ValueMetaBitMaskCommitted
+}
+
+func (m *VFlag) SetAborted() {
+	*m |= consts.ValueMetaBitMaskAborted
 }
 
 func (m *VFlag) SetCommittedCleared() {
@@ -433,4 +445,15 @@ func NewTValuesFromPB(pbValues []*txnpb.TValue) []TValue {
 		ret[idx] = NewTValueFromPB(pbVal)
 	}
 	return ret
+}
+
+func init() {
+	val, clearedVal := NewValue(nil, 123), NewValue(nil, 123)
+	clearedVal.SetCleared()
+
+	assert.Must(errors.GetReadUncommittedDataOfAbortedTxn(val.IsClearedUint()).SubCode == consts.ErrSubCodeReadUncommittedDataPrevTxnRollbacking)
+	assert.Must(errors.GetReadUncommittedDataOfAbortedTxn(clearedVal.IsClearedUint()).SubCode == consts.ErrSubCodeReadUncommittedDataPrevTxnRollbacked)
+
+	assert.Must(errors.GetNotExistsErrForAborted(val.IsClearedUint()).SubCode == consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButRollbacking)
+	assert.Must(errors.GetNotExistsErrForAborted(clearedVal.IsClearedUint()).SubCode == consts.ErrSubCodeKeyOrVersionNotExistsInDB)
 }

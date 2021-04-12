@@ -150,7 +150,7 @@ func (i *KeyInfo) findWriters(opt *types.KVCCReadOption, atomicMaxReadVersion *u
 		}
 
 		for w.Transaction.IsAborted() {
-			opt.DBReadVersion = w.Transaction.ID.Version() - 1
+			opt.SetDBReadVersion(w.Transaction.ID.Version() - 1)
 			if node = i.prev(node); node == nil {
 				w = nil
 				i.mu.RUnlock()

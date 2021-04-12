@@ -85,6 +85,7 @@ var (
 		SubCode: consts.ErrSubCodeReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite,
 		Msg:     "read uncommitted data previous txn key has been rollbacked: read after write",
 	})
+	ReadUncommittedDataPrevTxnAbortedErrors = [4]*Error{nil, ErrReadUncommittedDataPrevTxnRollbacking, ErrReadUncommittedDataPrevTxnRollbacked, ErrReadUncommittedDataPrevTxnKeyRollbackedReadAfterWrite}
 
 	ErrReadAfterWriteFailed = registerErr(&Error{
 		Code:    consts.ErrCodeReadAfterWriteFailed,
@@ -106,16 +107,19 @@ var (
 		SubCode: 1,
 		Msg:     "shards not ready",
 	})
+
+	ErrKeyOrVersionNotExistExistsInDBButRollbacking = registerErr(&Error{
+		Code:    consts.ErrCodeKeyOrVersionNotExists,
+		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButRollbacking,
+		Msg:     "key or version not exist: exists in db but rollbacking",
+	})
 	ErrKeyOrVersionNotExist = registerErr(&Error{
 		Code:    consts.ErrCodeKeyOrVersionNotExists,
-		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsNotExistsInDB,
+		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsInDB,
 		Msg:     "key or version not exists in db",
 	})
-	ErrKeyOrVersionNotExistExistsButToBeRollbacked = registerErr(&Error{
-		Code:    consts.ErrCodeKeyOrVersionNotExists,
-		SubCode: consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButToBeRollbacked,
-		Msg:     "key or version not exist: exists in db but to be rollbacked",
-	})
+	KeyOrVersionNotExistErrors = [3]*Error{nil, ErrKeyOrVersionNotExistExistsInDBButRollbacking, ErrKeyOrVersionNotExist}
+
 	ErrVersionAlreadyExists = registerErr(&Error{
 		Code:    consts.ErrCodeVersionAlreadyExists,
 		SubCode: 1,

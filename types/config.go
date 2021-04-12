@@ -153,8 +153,8 @@ func (c ReadModifyWriteQueueCfg) Validate() error {
 	if c.MaxQueuedAgeRatio <= 0 {
 		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxQueuedAgeRatio <= 0")
 	}
-	if c.MaxQueuedAgeRatio >= 0.9 {
-		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxQueuedAgeRatio >= 0.9")
+	if c.MaxQueuedAgeRatio > 1 {
+		return errors.Annotatef(errors.ErrInvalidConfig, "ReadModifyWriteQueueCfg::c.MaxQueuedAgeRatio > 1")
 	}
 	return nil
 }

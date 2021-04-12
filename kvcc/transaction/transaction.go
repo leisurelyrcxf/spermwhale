@@ -55,13 +55,17 @@ func newTransaction(id types.TxnId, db types.KV, unref func(*Transaction)) *Tran
 func (t *Transaction) ClearWriteIntent(ctx context.Context, key string, opt types.KVCCUpdateMetaOption) (err error) {
 	// NOTE: OK even if opt.IsReadModifyWriteRollbackOrClearReadKey() or kv.db.Set failed TODO needs test against kv.db.Set() failed.
 	t.Lock() // NOTE: Lock is must though seems not needed
-	t.setCommittedUnsafe("clear write intent of key '%s' by upper layer", key)
+	terminateOnce := t.setCommittedUnsafe("clear write intent of key '%s' by upper layer", key)
 	futureKey := types.NewTxnKeyUnionKey(key)
-	meta := t.future.MustGetDBMeta(futureKey)
-	assert.Must(meta.InternalVersion == opt.TxnInternalVersion && meta.IsCommitted())
+	meta := t.future.MustGetDBMetaUnsafe(futureKey)
+	assert.Must(meta.InternalVersion == opt.TxnInternalVersion)
 	t.Unlock()
 
-	if meta.IsCleared() {
+	if terminateOnce {
+		t.unref(t)
+	}
+
+	if meta.IsClearedUnsafe() {
 		return nil
 	}
 	var readonly bool
@@ -89,17 +93,16 @@ func clearWriteIntent(ctx context.Context, key string, version uint64, opt types
 
 func (t *Transaction) RollbackKey(ctx context.Context, key string, opt types.KVCCRollbackKeyOption) (err error) {
 	t.Lock()
-	doneOnce := t.setAbortedUnsafe("rollback key '%s' by upper layer", key)
+	terminateOnce := t.setAbortedUnsafe("rollback key '%s' by upper layer, read-only: %v", key, opt.IsReadOnlyKey())
 	futureKey := types.NewTxnKeyUnionKey(key)
-	meta, ok := t.future.GetDBMeta(futureKey)
-	assert.Must(!ok || meta.IsAborted())
+	meta, _ := t.future.GetDBMetaUnsafe(futureKey)
 	t.Unlock()
 
-	if doneOnce {
+	if terminateOnce {
 		t.unref(t)
 	}
 
-	if meta.IsCleared() {
+	if meta.IsClearedUnsafe() {
 		return nil
 	}
 	var readonly bool
@@ -123,22 +126,6 @@ func rollbackKey(ctx context.Context, key string, version uint64, opt types.KVCC
 		glog.Infof("txn-%d rollback key '%s' succeeded, cost: %s", version, key, bench.Elapsed())
 	}
 	return false, nil
-}
-
-// Can only use this for IsCommitted() or IsAborted() call, because the info may be not consistent with db layer
-// In case of
-// 1. Tablet restarted
-// 2. Rollback key or Remove txn record didn't get the transaction.
-// 3. The cached state is guaranteed to be stale than db state
-func (t *Transaction) GetDBMetaUnsafe(key string) types.DBMeta {
-	t.RLock()
-	dbMeta := t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionKey(key))
-	t.RUnlock()
-	return dbMeta
-}
-
-func (t *Transaction) HasPositiveInternalVersionUnsafe(key string, version types.TxnInternalVersion) bool {
-	return t.future.HasPositiveInternalVersion(types.NewTxnKeyUnionKey(key), version)
 }
 
 func (t *Transaction) GetTxnRecord(ctx context.Context, opt *types.KVCCReadOption) (types.ValueCC, error) {
@@ -189,7 +176,7 @@ func (t *Transaction) SetRLocked(ctx context.Context, futureKey types.TxnKeyUnio
 	if setErr = t.db.Set(ctx, futureKey.Key, val, opt.ToKV()); setErr != nil {
 		gotVal, exists, chkErr := t.checkVersion(ctx, futureKey, TxnMaxRetry)
 		if chkErr != nil {
-			t.future.MustAdd(futureKey, val.Meta.ToDB().WithInvalidKeyState())
+			t.future.MustAddInvalid(futureKey, val.Meta.ToDB())
 			if chkErr != errors.ErrDummy {
 				glog.Errorf("[Transaction::setRLockedUnsafe] failed to check key '%s' on set error '%v' of version %d : '%v'", futureKey, setErr, val.Version, chkErr)
 			}
@@ -237,32 +224,30 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveT
 		keyStateAfterDone types.KeyState
 		futureKey         = types.NewTxnKeyUnionTxnRecord(t.ID)
 		dbMeta            types.DBMeta
-		doneOnce          bool
+		terminateOnce     bool
 	)
 	if !opt.IsRollback() {
 		keyStateAfterDone, action = types.KeyStateCommittedCleared, "clear txn record on commit"
 
 		t.Lock() // NOTE: Lock is must though seems not needed
-		t.setCommittedUnsafe(action)
-		dbMeta = t.future.MustGetDBMeta(futureKey)
+		terminateOnce = t.setCommittedUnsafe(action)
+		dbMeta = t.future.MustGetDBMetaUnsafe(futureKey)
 		t.Unlock()
 	} else {
 		// TODO maybe skip if txn record not written?
 		keyStateAfterDone, action = types.KeyStateRollbackedCleared, "rollback txn record"
 
 		t.Lock()
-		doneOnce = t.setAbortedUnsafe(action)
-		var ok bool
-		dbMeta, ok = t.future.GetDBMeta(futureKey)
-		assert.Must(!ok || dbMeta.IsAborted())
+		terminateOnce = t.setAbortedUnsafe(action)
+		dbMeta, _ = t.future.GetDBMetaUnsafe(futureKey)
 		t.Unlock()
 	}
 
-	if doneOnce {
+	if terminateOnce {
 		t.unref(t)
 	}
 
-	if dbMeta.IsCleared() {
+	if dbMeta.IsClearedUnsafe() {
 		return nil
 	}
 
@@ -287,79 +272,70 @@ func removeTxnRecord(ctx context.Context, version uint64, action string, db type
 
 func (t *Transaction) doneKey(futureKey types.TxnKeyUnion, keyStateAfterDone types.KeyState) {
 	t.Lock()
-	if t.future.DoneKey(futureKey, keyStateAfterDone) {
-		t.future.AssertAllKeysCleared(keyStateAfterDone)
-		t.AtomicTxnState.SetTxnStateUnsafe(types.TxnState(keyStateAfterDone))
-		t.Unlock()
-
-		if glog.V(TabletTransactionVerboseLevel) {
-			glog.Infof("[Transaction::%s][doneKey] txn-%d done, state: %s, (all %d written keys include '%s' have been done)", trace.CallerFunc(), t.ID, t.GetTxnState(), t.future.GetAddedKeyCountUnsafe(), futureKey)
-		}
-
-		t.unref(t)
-		return
+	if t.future.DoneKeyUnsafe(futureKey, keyStateAfterDone) {
+		t.future.AssertAllKeysClearedUnsafe(keyStateAfterDone) // TODO remove in product
+		txnState := types.TxnState(keyStateAfterDone)
+		assert.Must(t.future.TxnState == txnState)
+		t.AtomicTxnState.SetTxnStateUnsafe(txnState)
+		glog.V(TabletTransactionVerboseLevel).Infof("[Transaction::%s][doneKey] txn-%d done, state: %s, "+
+			"(all %d written keys include '%s' have been done)", trace.CallerFunc(), t.ID, t.GetTxnState(), t.future.GetAddedKeyCountUnsafe(), futureKey)
 	}
 	t.Unlock()
 }
 
 func (t *Transaction) SetAborted(reason string, args ...interface{}) {
 	t.Lock()
-	doneOnce := t.setAbortedUnsafe(reason, args...)
+	terminateOnce := t.setAbortedUnsafe(reason, args...)
 	t.Unlock()
 
-	if doneOnce {
+	if terminateOnce {
 		t.unref(t)
 	}
 }
 
-func (t *Transaction) setAbortedUnsafe(reason string, args ...interface{}) (doneOnce bool) {
+func (t *Transaction) setAbortedUnsafe(reason string, args ...interface{}) (terminateOnce bool) {
 	if t.IsAborted() {
 		return false
 	}
-	if doneOnce = t.setTxnStateUnsafe(types.TxnStateRollbacking, reason, args...); doneOnce {
-		t.future.AssertAllKeysCleared(types.KeyStateRollbackedCleared)
-		t.AtomicTxnState.SetTxnStateUnsafe(types.TxnStateRollbackedCleared)
-		if glog.V(TabletTransactionVerboseLevel) {
-			glog.Infof("[Transaction::%s][setAbortedUnsafe] txn-%d done", trace.CallerFunc(), t.ID)
-		}
-	}
-	return doneOnce
+	return t.setTxnStateUnsafe(types.TxnStateRollbacking, reason, args...)
 }
 
-func (t *Transaction) setCommittedUnsafe(reason string, args ...interface{}) {
-	if !t.IsCommitted() {
-		doneOnce := t.setTxnStateUnsafe(types.TxnStateCommitted, reason, args...)
-		assert.Must(!doneOnce)
+func (t *Transaction) setCommittedUnsafe(reason string, args ...interface{}) (terminateOnce bool) {
+	if t.IsCommitted() {
+		return false
 	}
+	return t.setTxnStateUnsafe(types.TxnStateCommitted, reason, args...)
 }
 
-func (t *Transaction) setTxnStateUnsafe(state types.TxnState, reason string, args ...interface{}) (doneOnce bool) {
-	var terminateOnce bool
+func (t *Transaction) setTxnStateUnsafe(state types.TxnState, reason string, args ...interface{}) (terminateOnce bool) {
 	if terminateOnce = t.AtomicTxnState.SetTxnStateUnsafe(state); terminateOnce {
 		if glog.V(TabletTransactionVerboseLevel) {
-			glog.Infof(fmt.Sprintf("[Transaction::setTxnStateUnsafe] txn-%d set state to '%s' due to %s", t.ID, state, reason), args...)
+			glog.InfoDepth(3, fmt.Sprintf("[Transaction::setTxnStateUnsafe] txn-%d set state to '%s' due to "+reason, append([]interface{}{t.ID, state}, args...)...))
 		}
 		close(t.terminated)
-		return t.future.NotifyTerminated(state, func(futureKey types.TxnKeyUnion, meta *types.DBMeta) (exists bool) {
-			assert.Must(meta.IsKeyStateInvalid())
-			val, exists, err := t.checkVersion(context.Background(), futureKey, 100)
-			if err != nil {
+
+		if t.future.NotifyTerminatedUnsafe(state, func(futureKey types.TxnKeyUnion) (val types.Value, exists bool) {
+			var err error
+			if val, exists, err = t.checkVersion(context.Background(), futureKey, 100); err != nil {
 				glog.Fatalf("commit an invalid key '%s' and check failed: '%v'", futureKey, err)
 			}
-			assert.Must(!exists || val.IsUncommitted())
-
-			if state.IsAborted() {
-				meta.ClearInvalidKeyState() // Allowed to clear positive invalid flag if is rollback, 1. prev exists-> version removed 2. prev not exists -> rollback is no op
-				return exists
+			if state.IsAborted() { // Allowed to clear positive invalid flag if is rollback, 1. prev exists-> version removed 2. prev not exists -> rollback is no op
+				return val, exists
 			}
 			if !exists {
 				glog.Fatalf("commit a non-exists key '%s'", futureKey)
 			}
-			meta.ClearInvalidKeyState()
-			return true
-		})
+			return val, true
+		}) {
+			t.future.AssertAllKeysClearedUnsafe(types.KeyStateRollbackedCleared) // TODO remove in product
+			assert.Must(t.future.TxnState == types.TxnStateRollbackedCleared)
+			t.AtomicTxnState.SetTxnStateUnsafe(types.TxnStateRollbackedCleared)
+			if glog.V(TabletTransactionVerboseLevel) {
+				glog.InfoDepth(3, fmt.Sprintf("[setTxnStateUnsafe] txn-%d set state to '%s'", t.ID, types.TxnStateRollbackedCleared))
+			}
+		}
 	}
-	return false
+	return terminateOnce
 }
 
 func (t *Transaction) WaitTerminateWithTimeout(ctx context.Context, timeout time.Duration) error {
@@ -391,6 +367,42 @@ func (t *Transaction) SetTxnStateUnsafe(_ types.TxnState) (newState types.TxnSta
 func (t *Transaction) SetRollbacking() (abortOnce bool) {
 	panic(errors.ErrNotSupported)
 }
+
+// IsKeyClearedUnsafe is only safe when called after t.IsTerminated()
+func (t *Transaction) IsKeyClearedUnsafe(key string) bool {
+	meta, _ := t.GetDBMetaWithoutTxnStateUnsafe(key)
+	return meta.IsClearedUnsafe()
+}
+
+// GetMetaUnsafe is only safe when called after t.IsTerminated()
+func (t *Transaction) GetMetaUnsafe(key string, state types.TxnState) (types.Meta, bool) {
+	meta, ok := t.GetDBMetaWithoutTxnStateUnsafe(key)
+	assert.Must(!meta.IsKeyStateInvalid())
+	meta.UpdateTxnState(state)
+	return meta.WithVersion(t.ID.Version()), ok
+}
+
+// GetDBMetaWithoutTxnStateUnsafe is only safe when called after t.IsTerminated()
+func (t *Transaction) GetDBMetaWithoutTxnStateUnsafe(key string) (types.DBMeta, bool) {
+	t.RLock()
+	defer t.RUnlock()
+
+	dbMeta, ok := t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionKey(key))
+	return dbMeta, ok
+}
+
+// Can only use this for IsCommitted() or IsAborted() call, because the info may be not consistent with db layer
+// In case of
+// 1. Tablet restarted
+// 2. Rollback key or Remove txn record didn't get the transaction.
+// 3. The cached state is guaranteed to be stale than db state
+// Deprecated
+//func (t *Transaction) GetDBMetaUnsafe(key string) types.DBMeta {
+//	t.Lock()
+//	dbMeta, _ := t.future.GetDBMetaUnsafe(types.NewTxnKeyUnionKey(key))
+//	t.Unlock()
+//	return dbMeta
+//}
 
 // Deprecated
 type keyEventHolder struct {
@@ -516,18 +528,6 @@ func isInvalidKeyWaiters(waiters []*KeyEventWaiter) bool {
 	return len(waiters) == 0 && waiters != nil
 }
 
-// Deprecated
-func (t *Transaction) GetMetaWeak(key string) (meta types.Meta, err error, valid bool) {
-	futureKey := types.NewTxnKeyUnionKey(key)
-	dbMeta, ok := t.future.GetDBMeta(futureKey)
-	if !ok {
-		assert.Must(!t.IsCommitted())
-		return types.Meta{}, errors.ErrKeyOrVersionNotExist, true
-	}
-	// Don't transform error here if IsAborted() because will do that later
-	return dbMeta.WithVersion(t.ID.Version()), nil, dbMeta.IsValid()
-}
-
 //func (t *Transaction) GetMetaStrong(key string) (meta types.Meta, err error, valid bool) {
 //	dbMeta, ok := t.getDBMetaStrong(key)
 //	if !ok {
@@ -543,7 +543,7 @@ func (t *Transaction) GetMetaWeak(key string) (meta types.Meta, err error, valid
 //
 //	t.RLock()
 //	t.lm.RLock(futureKey)
-//	dbMeta, ok = t.future.GetDBMeta(futureKey)
+//	dbMeta, ok = t.future.GetDBMetaUnsafe(futureKey)
 //	t.lm.RUnlock(futureKey)
 //	t.RUnlock()
 //

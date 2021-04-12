@@ -152,19 +152,12 @@ func IsNotExistsErrEx(e error, subCode *int32) bool {
 	return code == consts.ErrCodeKeyOrVersionNotExists
 }
 
-func GetNotExistsErrForAborted(cleared bool) error {
-	if cleared {
-		return ErrKeyOrVersionNotExist
-	}
-	// Rollbacking...
-	return ErrKeyOrVersionNotExistExistsButToBeRollbacked
+func GetNotExistsErrForAborted(cleared uint8) *Error {
+	return KeyOrVersionNotExistErrors[consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButRollbacking+cleared]
 }
 
-func GetReadUncommittedDataOfAbortedTxn(cleared bool) error {
-	if cleared {
-		return ErrReadUncommittedDataPrevTxnRollbacked
-	}
-	return ErrReadUncommittedDataPrevTxnRollbacking
+func GetReadUncommittedDataOfAbortedTxn(cleared uint8) *Error {
+	return ReadUncommittedDataPrevTxnAbortedErrors[consts.ErrSubCodeReadUncommittedDataPrevTxnRollbacking+cleared]
 }
 
 func IsRetryableTransactionErr(e error) bool {

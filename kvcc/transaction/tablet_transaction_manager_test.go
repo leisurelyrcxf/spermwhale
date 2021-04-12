@@ -1,6 +1,8 @@
 package transaction
 
 import (
+	"flag"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -66,6 +68,8 @@ func testManagerInsert(t types.T) (b bool) {
 }
 
 func TestManagerGC(t *testing.T) {
+	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", "10000")
 	testutils.RunTestForNRounds(t, 100, testManagerGC)
 }
 
@@ -98,7 +102,7 @@ func testManagerGC(t types.T) (b bool) {
 				{
 					// different
 					if idx > 10 {
-						time.Sleep(time.Second)
+						time.Sleep(time.Millisecond * 100)
 					}
 				}
 				return tm.newTransaction(id)
@@ -118,8 +122,13 @@ func testManagerGC(t types.T) (b bool) {
 			defer wg.Done()
 
 			if inserted, txn, _ := insertTxnIfNotExists(txnIds[i&1], i); inserted {
-				txn.setAbortedUnsafe("dummy")
-				txn.unref(txn)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+
+					time.Sleep(time.Millisecond * 10)
+					txn.SetAborted("test no txn will inserted after %s", "removed")
+				}()
 			}
 		}(i)
 	}

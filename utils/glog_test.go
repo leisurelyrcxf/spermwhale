@@ -61,3 +61,17 @@ func TestVerbose2(t *testing.T) {
 	}
 	testifyassert.False(t, called)
 }
+
+func a() {
+	glog.InfoDepth(2, "a")
+}
+
+func b() {
+	a()
+}
+
+func TestLogDepth(t *testing.T) {
+	_ = flag.Set("logtostderr", fmt.Sprintf("%t", true))
+	_ = flag.Set("v", "10000")
+	b()
+}

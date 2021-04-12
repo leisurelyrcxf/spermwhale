@@ -53,6 +53,11 @@ func (m DBMeta) AssertValid() {
 	assert.Must(m.InternalVersion.IsValid())
 }
 
+func (m *DBMeta) UpdateByMeta(meta Meta) {
+	m.VFlag = meta.VFlag
+	m.InternalVersion = meta.InternalVersion
+}
+
 type DBValue struct {
 	DBMeta
 

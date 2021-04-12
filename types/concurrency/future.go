@@ -3,18 +3,18 @@ package concurrency
 import (
 	"sync"
 
-	"github.com/golang/glog"
-
 	"github.com/leisurelyrcxf/spermwhale/assert"
 	"github.com/leisurelyrcxf/spermwhale/consts"
 	"github.com/leisurelyrcxf/spermwhale/types"
 )
 
 type Future struct {
-	sync.RWMutex
+	sync.Mutex
 
 	types.TxnState
-	keys           map[types.TxnKeyUnion]types.DBMeta
+	keys        map[types.TxnKeyUnion]types.DBMeta
+	invalidKeys map[types.TxnKeyUnion]struct{}
+
 	flyingKeyCount int
 	addedKeyCount  int
 }
@@ -30,15 +30,29 @@ func (s *Future) Initialize() {
 }
 
 func (s *Future) GetAddedKeyCountUnsafe() int {
-	s.RLock()
-	defer s.RUnlock()
 	return s.addedKeyCount
+}
+
+func (s *Future) MustAddInvalid(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.invalidKeys == nil {
+		s.invalidKeys = map[types.TxnKeyUnion]struct{}{key: {}}
+	} else {
+		s.invalidKeys[key] = struct{}{}
+	}
+	return s.mustAddUnsafe(key, meta.WithInvalidKeyState())
 }
 
 func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
 	s.Lock()
 	defer s.Unlock()
 
+	return s.mustAddUnsafe(key, meta)
+}
+
+func (s *Future) mustAddUnsafe(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewKey bool) {
 	assert.Must(!s.IsTerminated())
 	assert.Must(meta.VFlag&(consts.ValueMetaBitMaskCommitted|consts.ValueMetaBitMaskAborted|
 		consts.ValueMetaBitMaskCleared|consts.ValueMetaBitMaskHasWriteIntent) == consts.ValueMetaBitMaskHasWriteIntent)
@@ -54,54 +68,49 @@ func (s *Future) MustAdd(key types.TxnKeyUnion, meta types.DBMeta) (insertedNewK
 	return true
 }
 
-func (s *Future) NotifyTerminated(state types.TxnState, chkAndClearInvalid func(key types.TxnKeyUnion, meta *types.DBMeta) (exists bool)) (doneOnce bool) {
+func (s *Future) NotifyTerminatedUnsafe(state types.TxnState, chkInvalid func(key types.TxnKeyUnion) (_ types.Value, exists bool)) (doneOnce bool) {
 	assert.Must(state.IsTerminated() && !state.IsCleared() && !s.IsTerminated())
-	s.Lock()
-	defer s.Unlock()
+	//s.Lock()
+	//defer s.Unlock()
 
 	s.TxnState = state
-	for key, old := range s.keys {
-		if glog.V(210) {
-			glog.Infof("[Future::NotifyTerminated] update key '%s' to state %s", key, state)
+
+	var flyingKeyDecreased bool
+	for key := range s.invalidKeys {
+		old := s.keys[key]
+		assert.Must(old.IsKeyStateInvalid())
+		if val, exists := chkInvalid(key); !exists {
+			old.ClearInvalidKeyState()
+			old.SetCleared()
+			assert.Must(state == types.TxnStateRollbacking)
+			s.flyingKeyCount--
+			flyingKeyDecreased = true
+		} else {
+			old.UpdateByMeta(val.Meta)
+			assert.Must(old.IsUncommitted())
 		}
-		if old.IsKeyStateInvalid() {
-			if exists := chkAndClearInvalid(key, &old); !exists {
-				old.UpdateTxnState(state)
-				old.SetCleared()
-				assert.Must(old.IsRollbackedCleared())
-				s.keys[key] = old
-				s.flyingKeyCount--
-				continue
-			}
-		}
-		old.UpdateTxnState(state)
-		assert.Must(old.IsValid())
 		s.keys[key] = old
 	}
-	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 {
+	s.invalidKeys = nil
+
+	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 && flyingKeyDecreased {
 		s.TxnState.SetCleared()
 		return true
 	}
 	return false
 }
 
-func (s *Future) DoneKey(key types.TxnKeyUnion, state types.KeyState) (doneOnce bool) {
+func (s *Future) DoneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (doneOnce bool) {
 	assert.Must(s.IsTerminated())
-
-	s.Lock()
-	defer s.Unlock()
+	//s.Lock()
+	//defer s.Unlock()
 
 	oldDone := s.IsCleared()
-	newDone := s.doneKeyUnsafe(key, state)
-	return !oldDone && newDone
-}
+	assert.Must(!oldDone || state.IsAborted() || s.keys[key].IsCommittedCleared())
 
-func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (done bool) {
-	assert.Must(!s.IsCleared() || state.IsAborted() || s.keys[key].IsCommittedCleared())
 	if old, ok := s.keys[key]; ok {
-		if assert.Must(old.IsValid()); !old.IsCleared() {
+		if assert.Must(!old.IsKeyStateInvalid()); !old.IsClearedUnsafe() {
 			old.SetCleared()
-			assert.Must(old.GetKeyState() == state)
 			s.keys[key] = old
 			s.flyingKeyCount-- // !done->done //else { already done }
 		} // else { skip }
@@ -116,51 +125,34 @@ func (s *Future) doneKeyUnsafe(key types.TxnKeyUnion, state types.KeyState) (don
 	}
 	if assert.Must(s.flyingKeyCount >= 0); s.flyingKeyCount == 0 {
 		s.TxnState = types.TxnState(state)
-		return true
+		return !oldDone
 	}
 	return false
 }
 
-func (s *Future) MustGetDBMeta(key types.TxnKeyUnion) types.DBMeta {
-	s.RLock()
-	defer s.RUnlock()
+func (s *Future) MustGetDBMetaUnsafe(key types.TxnKeyUnion) types.DBMeta {
+	//s.RLock()
+	//defer s.RUnlock()
 
 	meta, ok := s.keys[key]
 	assert.Must(ok)
 	return meta
 }
 
-func (s *Future) GetDBMeta(key types.TxnKeyUnion) (types.DBMeta, bool) {
-	s.RLock()
-	defer s.RUnlock()
+func (s *Future) GetDBMetaUnsafe(key types.TxnKeyUnion) (types.DBMeta, bool) {
+	//s.RLock()
+	//defer s.RUnlock()
 
 	meta, ok := s.keys[key]
 	return meta, ok
 }
 
-func (s *Future) GetDBMetaUnsafe(key types.TxnKeyUnion) types.DBMeta {
-	s.RLock()
-	defer s.RUnlock()
-
-	return s.keys[key]
-}
-
-func (s *Future) HasPositiveInternalVersion(key types.TxnKeyUnion, version types.TxnInternalVersion) bool {
-	s.RLock()
-	defer s.RUnlock()
-
-	info := s.keys[key]
-	assert.Must(info.IsValid() && version > 0)
-	return info.InternalVersion == version
-}
-
-func (s *Future) AssertAllKeysCleared(state types.KeyState) {
-	s.RLock()
-	defer s.RUnlock()
+func (s *Future) AssertAllKeysClearedUnsafe(state types.KeyState) {
+	//s.RLock()
+	//defer s.RUnlock()
 
 	for key, info := range s.keys {
 		_ = key
-		assert.Must(info.GetKeyState() == state)
+		assert.Must(info.IsClearedUnsafe())
 	}
-	assert.Must(s.TxnState == types.TxnState(state))
 }

@@ -25,9 +25,9 @@ const (
 	ErrCodeTabletTxnSetFailedKeyNotFound           int32 = 24
 	ErrCodeTabletTxnSetFailedKeyStatusUndetermined int32 = 25
 
-	ErrCodeKeyOrVersionNotExists                               int32 = 27
-	ErrSubCodeKeyOrVersionNotExistsNotExistsInDB                     = 1
-	ErrSubCodeKeyOrVersionNotExistsExistsInDBButToBeRollbacked       = 2
+	ErrCodeKeyOrVersionNotExists                            int32 = 27
+	ErrSubCodeKeyOrVersionNotExistsExistsInDBButRollbacking       = 1
+	ErrSubCodeKeyOrVersionNotExistsInDB                           = 2
 
 	ErrCodeShardsNotReady = 28
 	ErrCodeEmptyKey       = 29

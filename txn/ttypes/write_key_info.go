@@ -207,9 +207,9 @@ func (ks WriteKeyInfos) MarkWrittenKeyCommitted(key string, val types.Value) {
 
 func (ks WriteKeyInfos) MarkWrittenKeyAborted(key string, notExistsErrSubCode int32) {
 	v := ks.keys[key]
-	if notExistsErrSubCode == consts.ErrSubCodeKeyOrVersionNotExistsNotExistsInDB {
+	if notExistsErrSubCode == consts.ErrSubCodeKeyOrVersionNotExistsInDB {
 		v.KeyState = types.KeyStateRollbackedCleared
-	} else if notExistsErrSubCode == consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButToBeRollbacked {
+	} else if notExistsErrSubCode == consts.ErrSubCodeKeyOrVersionNotExistsExistsInDBButRollbacking {
 		v.KeyState = types.KeyStateRollbacking
 	} else {
 		panic(errors.UnreachableCode)
