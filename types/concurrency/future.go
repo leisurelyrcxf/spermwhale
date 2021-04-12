@@ -147,12 +147,21 @@ func (s *Future) GetDBMetaUnsafe(key types.TxnKeyUnion) (types.DBMeta, bool) {
 	return meta, ok
 }
 
-func (s *Future) AssertAllKeysClearedUnsafe(state types.KeyState) {
+func (s *Future) AssertAllKeysClearedUnsafe() {
 	//s.RLock()
 	//defer s.RUnlock()
 
 	for key, info := range s.keys {
 		_ = key
 		assert.Must(info.IsClearedUnsafe())
+	}
+}
+
+func (s *Future) AssertAllNonTxnRecordKeysClearedUnsafe() {
+	//s.RLock()
+	//defer s.RUnlock()
+
+	for key, info := range s.keys {
+		assert.Must(key.IsTxnRecord() || info.IsClearedUnsafe())
 	}
 }

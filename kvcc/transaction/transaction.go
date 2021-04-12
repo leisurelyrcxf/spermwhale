@@ -116,7 +116,7 @@ func rollbackKey(ctx context.Context, key string, version uint64, opt types.KVCC
 	if opt.IsReadOnlyKey() {
 		return true, nil
 	}
-	if err := db.RollbackKey(ctx, key, version); err != nil {
+	if err := db.RollbackKey(ctx, key, version); err != nil && !errors.IsNotExistsErr(err) {
 		if glog.V(3) {
 			glog.Errorf("txn-%d rollback key '%s' failed: %v", version, key, err)
 		}
@@ -220,18 +220,20 @@ func (t *Transaction) checkVersion(ctx context.Context, futureKey types.TxnKeyUn
 func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveTxnRecordOption) (err error) {
 	// TODO skip if already removed
 	var (
+		isRollback        = opt.IsRollback()
 		action            string
 		keyStateAfterDone types.KeyState
 		futureKey         = types.NewTxnKeyUnionTxnRecord(t.ID)
 		dbMeta            types.DBMeta
 		terminateOnce     bool
 	)
-	if !opt.IsRollback() {
+	if !isRollback {
 		keyStateAfterDone, action = types.KeyStateCommittedCleared, "clear txn record on commit"
 
 		t.Lock() // NOTE: Lock is must though seems not needed
 		terminateOnce = t.setCommittedUnsafe(action)
 		dbMeta = t.future.MustGetDBMetaUnsafe(futureKey)
+		t.future.AssertAllNonTxnRecordKeysClearedUnsafe()
 		t.Unlock()
 	} else {
 		// TODO maybe skip if txn record not written?
@@ -251,14 +253,17 @@ func (t *Transaction) RemoveTxnRecord(ctx context.Context, opt types.KVCCRemoveT
 		return nil
 	}
 
-	if err = removeTxnRecord(ctx, t.ID.Version(), action, t.db); err == nil {
+	if err = removeTxnRecord(ctx, t.ID.Version(), isRollback, action, t.db); err == nil {
 		t.doneKey(futureKey, keyStateAfterDone)
 	}
 	return err
 }
 
-func removeTxnRecord(ctx context.Context, version uint64, action string, db types.KV) (err error) {
+func removeTxnRecord(ctx context.Context, version uint64, isRollback bool, action string, db types.KV) (err error) {
 	if err = db.RemoveTxnRecord(ctx, version); err != nil {
+		if errors.IsNotExistsErr(err) && isRollback {
+			return nil
+		}
 		if glog.V(4) {
 			glog.Errorf("[removeTxnRecord][txn-%d] %s failed: %v", version, action, err)
 		}
@@ -273,7 +278,7 @@ func removeTxnRecord(ctx context.Context, version uint64, action string, db type
 func (t *Transaction) doneKey(futureKey types.TxnKeyUnion, keyStateAfterDone types.KeyState) {
 	t.Lock()
 	if t.future.DoneKeyUnsafe(futureKey, keyStateAfterDone) {
-		t.future.AssertAllKeysClearedUnsafe(keyStateAfterDone) // TODO remove in product
+		t.future.AssertAllKeysClearedUnsafe() // TODO remove in product
 		txnState := types.TxnState(keyStateAfterDone)
 		assert.Must(t.future.TxnState == txnState)
 		t.AtomicTxnState.SetTxnStateUnsafe(txnState)
@@ -327,7 +332,7 @@ func (t *Transaction) setTxnStateUnsafe(state types.TxnState, reason string, arg
 			}
 			return val, true
 		}) {
-			t.future.AssertAllKeysClearedUnsafe(types.KeyStateRollbackedCleared) // TODO remove in product
+			t.future.AssertAllKeysClearedUnsafe() // TODO remove in product
 			assert.Must(t.future.TxnState == types.TxnStateRollbackedCleared)
 			t.AtomicTxnState.SetTxnStateUnsafe(types.TxnStateRollbackedCleared)
 			if glog.V(TabletTransactionVerboseLevel) {

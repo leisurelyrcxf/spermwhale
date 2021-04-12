@@ -100,13 +100,13 @@ func (tm *Manager) RemoveTxnRecord(ctx context.Context, version uint64, opt type
 	)
 	if !opt.IsRollback() {
 		if txn, err = tm.GetTxn(types.TxnId(version)); err != nil {
-			return removeTxnRecord(ctx, version, "clear txn record on commit", tm.db)
+			return removeTxnRecord(ctx, version, false, "clear txn record on commit", tm.db)
 		}
 	} else {
 		var inserted bool
 		if inserted, txn, err = tm.InsertTxnIfNotExists(types.TxnId(version)); err != nil {
 			glog.V(TableInsertOrGetTransactionFailedVerboseLevel).Infof("[Manager::RemoveTxnRecord] failed to insert txn-%d", version)
-			return removeTxnRecord(ctx, version, "rollback txn record", tm.db)
+			return removeTxnRecord(ctx, version, true, "rollback txn record", tm.db)
 		}
 		if inserted {
 			glog.V(TabletTransactionVerboseLevel).Infof("[Manager::RemoveTxnRecord] created new txn-%d", version)
