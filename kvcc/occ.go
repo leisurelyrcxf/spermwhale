@@ -253,20 +253,16 @@ func (kv *KVCC) getValue(ctx context.Context, key string, opt *types.KVCCReadOpt
 		if txn, getErr := kv.txnManager.GetTxn(types.TxnId(val.Version)); getErr == nil {
 			txnState := txn.GetTxnState()
 			if txnState.IsCommitted() {
-				assert.Must(val.Version != 0 && val.InternalVersion != 0)
-				if *atomicMaxReadVersion > val.Version { // No more write with val.Version would be possible after val.InternalVersion
-					val.UpdateTxnState(txnState)
-					return val, nil, false, 0
-				}
-				dbMeta, ok := txn.GetDBMetaWithoutTxnStateUnsafe(key)
-				if assert.Must(ok && !dbMeta.IsKeyStateInvalid() &&
-					val.InternalVersion <= dbMeta.InternalVersion); val.InternalVersion == dbMeta.InternalVersion {
-					val.UpdateTxnState(txnState)
-					return val, nil, false, 0
-				}
-				return val, nil, true, opt.DBReadVersion // retry to get latest committed value
+				assert.Must(val.Version != 0 && val.InternalVersion != 0 &&
+					*atomicMaxReadVersion > val.Version /*  No more write with val.Version would be possible after val.InternalVersion */)
+				val.UpdateTxnState(txnState)
+				return val, nil, false, 0
 			}
 			if txnState.IsAborted() {
+				if i == consts.MaxRetrySnapshotRead-1 {
+					*retriedTooManyTimes = true
+					return kv.checkPreCheckedGotValue(ctx, key, val, nil, opt, *atomicMaxReadVersion)
+				}
 				opt.SetDBReadVersion(val.Version - 1) // TODO check retry times
 				continue
 			}

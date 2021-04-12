@@ -162,7 +162,7 @@ const (
 
 const (
 	MaxRetryTxnGet                    = 2
-	MaxRetrySnapshotRead              = 5
+	MaxRetrySnapshotRead              = 10
 	MaxRetryResolveFoundedWriteIntent = 2
 )
 
