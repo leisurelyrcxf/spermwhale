@@ -90,19 +90,15 @@ func (a Ints) At(i int) interface{}  { return a[i] }
 
 // k starts with 1
 func KthMaxInPlace(a Slice, k int) interface{} {
-	k -= 1
-	if k >= a.Len() || k < 0 {
+	if k > a.Len() || k < 1 {
 		return nil
 	}
 	return kthMax(a, k)
 }
 
 func kthMax(a Slice, k int) interface{} {
-	assert.Must(k < a.Len() && k >= 0)
-	if a.Len() == 1 {
-		return a.At(0)
-	}
-	if k == 0 {
+	assert.Must(k <= a.Len() && k >= 1)
+	if k == 1 {
 		var maxIndex = 0
 		for i := 1; i < a.Len(); i++ {
 			if a.Greater(i, maxIndex) {
@@ -111,17 +107,27 @@ func kthMax(a Slice, k int) interface{} {
 		}
 		return a.At(maxIndex)
 	}
+	if k == a.Len() {
+		var minIndex = 0
+		for i := 1; i < a.Len(); i++ {
+			if a.Less(i, minIndex) {
+				minIndex = i
+			}
+		}
+		return a.At(minIndex)
+	}
 	left, right := threeWayPartitionReverseGeneral(a, 0, a.Len()-1)
 	left += 1
 	right -= 1
-	if k < left {
+	if k <= left {
 		return kthMax(a.Slice(0, left), k)
 	}
-	if k > right {
+	if k > right+1 {
 		return kthMax(a.Slice(right+1, a.Len()), k-right-1)
 	}
 	assert.Must(a.Equal(left, right))
-	return a.At(left)
+	assert.Must(a.Equal(left, k-1))
+	return a.At(k - 1)
 }
 
 func KthMin(a []int, k int) int {
@@ -157,19 +163,24 @@ func kthMin(a []int, k int) int {
 	return a[left]
 }
 
-func MinK(a []int, k int) {
-	if k >= len(a) {
-		return
+func MinK(a []int, k int) []int {
+	if k > len(a) || k < 1 {
+		return a
 	}
+	minK(a, k)
+	return a[:k]
+}
+
+func minK(a []int, k int) {
 	left, right := threeWayPartition(a, 0, len(a)-1, 0)
 	left += 1
 	right -= 1
-	if k < left {
-		MinK(a[:left], k)
+	if k <= left {
+		minK(a[:left], k)
 		return
 	}
 	if k > right+1 {
-		MinK(a[right+1:], k-right-1)
+		minK(a[right+1:], k-right-1)
 		return
 	}
 }

@@ -20,14 +20,14 @@ func sortedCopy(array []int) []int {
 	return copied
 }
 
-func TestTopK(t *testing.T) {
-	array := []int{4, 5, 5, 7, 5, 1, 2, 3, 6, 2, 101, 2, 3}
+func TestKthMax(t *testing.T) {
+	array := []int{4, 5, 5, 7, 5, 1, 2, 3, 6, 2, 101, 2, 3, 1, 2, 2, 3, 4}
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(array), func(i, j int) {
 		Ints(array).Swap(i, j)
 	})
 	assert := testifyassert.New(t)
-	for k := 1; k <= len(array)+2; k++ {
+	for k := 2; k <= len(array)+2; k++ {
 		aa := copyArray(array)
 		kth := KthMaxInPlace(Ints(aa), k)
 		fmt.Printf("%dth max: %d\n", k, kth)
@@ -37,6 +37,23 @@ func TestTopK(t *testing.T) {
 		}
 		//fmt.Printf("k_%d: %v\n", k, sortInts(a[:utils.minInt(k, len(a))]))
 	}
+}
 
-	//1 2 2 2 3 3 4 5 5 5 6 7 101
+func TestMinK(t *testing.T) {
+	array := []int{4, 5, 5, 7, 5, 1, 2, 3, 6, 2, 101, 2, 3, 1, 2, 2, 3, 4}
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(array), func(i, j int) {
+		Ints(array).Swap(i, j)
+	})
+	assert := testifyassert.New(t)
+	for k := 2; k <= len(array)+2; k++ {
+		aa := copyArray(array)
+		minKIntegers := MinK(aa, k)
+
+		if k <= len(array) {
+			sort.Ints(minKIntegers)
+			assert.Equal(sortedCopy(array)[0:k], minKIntegers)
+		}
+		//fmt.Printf("k_%d: %v\n", k, sortInts(a[:utils.minInt(k, len(a))]))
+	}
 }
